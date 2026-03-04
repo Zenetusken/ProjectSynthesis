@@ -418,7 +418,7 @@
       "VERIFY model_routing contains 'validate' key mapped to claude-sonnet"
     ],
     "expected_outcome": "MODEL_ROUTING contains all 5 pipeline stages",
-    "passes": false,
+    "passes": true,
     "id": 20
   },
   {
