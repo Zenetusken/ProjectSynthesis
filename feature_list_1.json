@@ -1125,7 +1125,7 @@
       "VERIFY the returned records are sorted by overall_score in descending order"
     ],
     "expected_outcome": "History sortable by sort parameter",
-    "passes": false,
+    "passes": true,
     "id": 53
   },
   {
