@@ -1022,7 +1022,7 @@
       "VERIFY the endpoint returns 200/201 (success) or 401/400 (auth required/invalid)"
     ],
     "expected_outcome": "POST /api/github/repos/link endpoint exists",
-    "passes": false,
+    "passes": true,
     "id": 48
   },
   {
