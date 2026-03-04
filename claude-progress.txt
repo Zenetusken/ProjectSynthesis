@@ -95,6 +95,56 @@ Fixed by adding `retry_of` parameter to `optimize_prompt()` and passing
 - T4: 0/70
 - T5: 0/30
 
+## Session 9 Summary (coding, 2026-03-04)
+
+**Completed:** 14 tests:
+- T0: #12 (MCP server WebSocket transport fix)
+- T2: #64 (Pipeline 4-stage flow), #65 (task_type), #66 (weaknesses/strengths),
+  #67 (complexity), #68 (strategy framework), #69 (optimized prompt), #71 (5 scores),
+  #72 (verdict/is_improvement), #73 (coding end-to-end), #77 (changes_made),
+  #83 (scores 1-10 integers), #84 (heuristic fallback), #85 (MODEL_ROUTING)
+
+**Code changes:**
+- Fixed MCP WebSocket transport: replaced invalid FastMCP.run(transport='websocket')
+  with custom Starlette ASGI app + uvicorn using mcp.server.websocket.websocket_server
+- Fixed EditorGroups layout: added h-full + min-h-0 to enable proper pipeline scrolling
+- Fixed RunHeader stage count: shows "N of 4" (not 5) when Explore is idle
+- Added visibleStages getter to forge store
+
+**Regressions fixed:** #12 (MCP server was crashing on startup since session 6)
+**In progress:** None
+
+**Next up:** T2 tests continuing:
+- #70 (streaming verification), #74 (writing end-to-end), #75 (analysis end-to-end)
+- #76 (prompt differs meaningfully), #78 (strategy override), #79-#80 (short/long prompts)
+- #81 (failed stage marks failed), #82 (validation retry), #86-#87 (duration/token display)
+- #86 needs token count added to RunHeader
+- #87 needs per-stage duration display (StageCard has duration code but result.duration may not be populated)
+- #88-#92 (SSE event verification)
+
+**Known issues:**
+- StageCard duration display: code exists but result?.duration may be undefined
+  (need to verify event handling in PromptEdit.svelte sets duration correctly)
+- Token count not tracked in SSE events or forge store — needed for tests #86-#87
+- Optimized prompt display shows raw JSON (```json wrapper) instead of clean text
+  when the LLM returns JSON-wrapped response — may need extraction improvement
+
+**Progress:** 76/335 tests passing (22.7%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (NOW WORKING — fixed WebSocket transport)
+- DB: backend/data/promptforge.db (3 tables, proper indexes, multiple test records)
+- Start: ./init.sh start
+
+**Tier status:**
+- T0: 18/18 ✓ (complete)
+- T1: 45/45 ✓ (complete)
+- T2: 13/106 (in progress)
+- T3: 0/66
+- T4: 0/70
+- T5: 0/30
+
 ## Integration Report — Session 7 (2026-03-04)
 
 **Gaps discovered:** 5
