@@ -744,7 +744,7 @@
       "VERIFY the first record has a more recent created_at than the last record"
     ],
     "expected_outcome": "History sorted by created_at DESC by default",
-    "passes": false,
+    "passes": true,
     "id": 35
   },
   {
