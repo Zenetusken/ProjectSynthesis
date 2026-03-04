@@ -1393,7 +1393,7 @@
       "VERIFY the task_type is one of: coding, analysis, reasoning, math, writing, creative, extraction, classification, formatting, medical, legal, education, general, other"
     ],
     "expected_outcome": "Stage 1 Analyze returns task_type classification",
-    "passes": false,
+    "passes": true,
     "id": 65
   },
   {
@@ -1420,7 +1420,7 @@
       "SCREENSHOT to verify weaknesses are visible in the Analyze stage card"
     ],
     "expected_outcome": "Stage 1 Analyze returns weaknesses and strengths",
-    "passes": false,
+    "passes": true,
     "id": 66
   },
   {
@@ -1447,7 +1447,7 @@
       "SCREENSHOT to verify the complexity badge is visible"
     ],
     "expected_outcome": "Stage 1 Analyze returns complexity rating",
-    "passes": false,
+    "passes": true,
     "id": 67
   },
   {
@@ -1475,7 +1475,7 @@
       "SCREENSHOT to verify strategy badge and rationale are visible"
     ],
     "expected_outcome": "Stage 2 Strategy selects framework from valid set",
-    "passes": false,
+    "passes": true,
     "id": 68
   },
   {
@@ -1503,7 +1503,7 @@
       "SCREENSHOT to verify optimized text is visible"
     ],
     "expected_outcome": "Stage 3 Optimize produces improved prompt",
-    "passes": false,
+    "passes": true,
     "id": 69
   },
   {
@@ -1563,7 +1563,7 @@
       "SCREENSHOT to verify all scores are visible"
     ],
     "expected_outcome": "Stage 4 Validate returns 5 dimension scores",
-    "passes": false,
+    "passes": true,
     "id": 71
   },
   {
@@ -1590,7 +1590,7 @@
       "SCREENSHOT to verify verdict is visible"
     ],
     "expected_outcome": "Stage 4 Validate returns verdict and is_improvement",
-    "passes": false,
+    "passes": true,
     "id": 72
   },
   {
