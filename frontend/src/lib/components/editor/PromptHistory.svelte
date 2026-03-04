@@ -19,7 +19,7 @@
             <ScoreCircle score={entry.overall_score} size={32} />
           {/if}
           <div class="flex-1 min-w-0">
-            <p class="text-sm text-text-primary line-clamp-2">{entry.original_prompt.slice(0, 100)}</p>
+            <p class="text-sm text-text-primary line-clamp-2">{entry.raw_prompt.slice(0, 100)}</p>
             <div class="flex items-center gap-2 mt-1.5">
               {#if entry.strategy}
                 <span class="text-[10px] px-1.5 py-0.5 rounded bg-neon-purple/10 text-neon-purple border border-neon-purple/20">

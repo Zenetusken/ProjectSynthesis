@@ -1,6 +1,6 @@
 export interface HistoryEntry {
   id: string;
-  original_prompt: string;
+  raw_prompt: string;
   optimized_prompt?: string;
   overall_score?: number;
   strategy?: string;

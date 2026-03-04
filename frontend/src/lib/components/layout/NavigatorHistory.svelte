@@ -21,7 +21,7 @@
       history.setEntries(
         res.items.map((item: Record<string, unknown>) => ({
           id: item.id as string,
-          original_prompt: (item.raw_prompt || item.original_prompt || '') as string,
+          raw_prompt: (item.raw_prompt || '') as string,
           optimized_prompt: item.optimized_prompt as string | undefined,
           overall_score: item.overall_score as number | undefined,
           strategy: (item.primary_framework || item.strategy) as string | undefined,
@@ -43,9 +43,9 @@
     history.select(entry.id);
     editor.openTab({
       id: `history-${entry.id}`,
-      label: entry.original_prompt.slice(0, 30) + (entry.original_prompt.length > 30 ? '...' : ''),
+      label: entry.raw_prompt.slice(0, 30) + (entry.raw_prompt.length > 30 ? '...' : ''),
       type: 'prompt',
-      promptText: entry.optimized_prompt || entry.original_prompt,
+      promptText: entry.optimized_prompt || entry.raw_prompt,
       dirty: false
     });
   }
@@ -88,7 +88,7 @@
               <ScoreCircle score={entry.overall_score} size={20} />
             {/if}
             <div class="flex-1 min-w-0">
-              <p class="text-text-primary truncate">{entry.original_prompt.slice(0, 50)}</p>
+              <p class="text-text-primary truncate">{entry.raw_prompt.slice(0, 50)}</p>
               <div class="flex items-center gap-2 mt-0.5">
                 {#if entry.strategy}
                   <span class="text-[10px] text-neon-purple">{entry.strategy}</span>
