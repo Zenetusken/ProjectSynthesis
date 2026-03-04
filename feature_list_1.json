@@ -856,7 +856,7 @@
       "VERIFY model_analyze, model_strategy, model_optimize, model_validate are set"
     ],
     "expected_outcome": "Optimization record includes provider and model info",
-    "passes": false,
+    "passes": true,
     "id": 40
   },
   {
