@@ -1,0 +1,20 @@
+[project]
+name = "promptforge-backend"
+version = "2.0.0"
+description = "PromptForge v2 - Intelligent Prompt Optimization Engine"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

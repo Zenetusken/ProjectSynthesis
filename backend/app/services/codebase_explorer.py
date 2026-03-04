@@ -1,0 +1,111 @@
+"""Stage 0: Codebase Explore
+
+Agentic exploration of a linked GitHub repository.
+Runs before the main pipeline when a repo is linked.
+"""
+
+import json
+import logging
+import asyncio
+from typing import AsyncGenerator, Optional
+from dataclasses import dataclass, field, asdict
+
+from app.providers.base import LLMProvider, MODEL_ROUTING
+from app.prompts.explore_prompt import get_explore_prompt
+from app.services.codebase_tools import build_codebase_tools
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CodebaseContext:
+    repo: str = ""
+    branch: str = "main"
+    tech_stack: list[str] = field(default_factory=list)
+    key_files_read: list[str] = field(default_factory=list)
+    relevant_snippets: list[dict] = field(default_factory=list)
+    observations: list[str] = field(default_factory=list)
+    grounding_notes: list[str] = field(default_factory=list)
+    files_read_count: int = 0
+    duration_ms: int = 0
+
+
+async def run_explore(
+    provider: LLMProvider,
+    raw_prompt: str,
+    repo_full_name: str,
+    repo_branch: str,
+    session_id: str,
+) -> AsyncGenerator[tuple[str, dict], None]:
+    """Run Stage 0 codebase exploration.
+
+    Yields:
+        ("tool_call", {...}) for each tool invocation
+        ("tool_result", {...}) for each tool result
+        ("explore_result", CodebaseContext dict) when done
+    """
+    model = MODEL_ROUTING["explore"]
+    system_prompt = get_explore_prompt(raw_prompt)
+
+    # Build tools with the GitHub token context
+    tools = build_codebase_tools(
+        session_id=session_id,
+        repo_full_name=repo_full_name,
+        repo_branch=repo_branch,
+    )
+
+    def on_tool_call(tool_name: str, tool_input: dict):
+        """Side-effect callback for SSE streaming of tool activity."""
+        pass  # Handled via the yielded events below
+
+    tool_call_events = []
+
+    def _on_tool_call(name: str, args: dict):
+        tool_call_events.append(("tool_call", {
+            "tool": name,
+            "input": args,
+            "status": "running",
+        }))
+
+    try:
+        result = await asyncio.wait_for(
+            provider.complete_agentic(
+                system=system_prompt,
+                user=f"Explore the repository {repo_full_name} (branch: {repo_branch}) "
+                     f"to build context for optimizing this prompt:\n\n{raw_prompt}",
+                model=model,
+                tools=tools,
+                max_turns=15,
+                on_tool_call=_on_tool_call,
+            ),
+            timeout=30.0,
+        )
+
+        # Yield accumulated tool call events
+        for evt in tool_call_events:
+            yield evt
+
+        # Parse the agent's response into a CodebaseContext
+        context = CodebaseContext(repo=repo_full_name, branch=repo_branch)
+        try:
+            parsed = json.loads(result.text)
+            context.tech_stack = parsed.get("tech_stack", [])
+            context.key_files_read = parsed.get("key_files_read", [])
+            context.relevant_snippets = parsed.get("relevant_code_snippets", [])
+            context.observations = parsed.get("codebase_observations", [])
+            context.grounding_notes = parsed.get("prompt_grounding_notes", [])
+            context.files_read_count = len(context.key_files_read)
+        except (json.JSONDecodeError, TypeError):
+            context.observations = [result.text[:500] if result.text else "No output"]
+
+        yield ("explore_result", asdict(context))
+
+    except asyncio.TimeoutError:
+        logger.warning("Stage 0 (Explore) timed out after 30 seconds")
+        context = CodebaseContext(repo=repo_full_name, branch=repo_branch)
+        context.observations = ["Exploration timed out - partial context only"]
+        yield ("explore_result", asdict(context))
+
+    except Exception as e:
+        logger.error(f"Stage 0 (Explore) error: {e}")
+        raise

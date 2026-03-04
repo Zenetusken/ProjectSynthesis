@@ -1,0 +1,184 @@
+@import "tailwindcss";
+
+@theme {
+  --color-neon-cyan: #00e5ff;
+  --color-neon-purple: #a855f7;
+  --color-neon-green: #22ff88;
+  --color-neon-red: #ff3366;
+  --color-neon-yellow: #fbbf24;
+  --color-neon-orange: #ff8c00;
+  --color-neon-blue: #4d8eff;
+  --color-neon-pink: #ff6eb4;
+  --color-neon-teal: #00d4aa;
+  --color-neon-indigo: #7b61ff;
+
+  --color-bg-primary: #06060c;
+  --color-bg-input: #0a0a14;
+  --color-bg-secondary: #0c0c16;
+  --color-bg-card: #11111e;
+  --color-bg-hover: #16162a;
+  --color-bg-glass: rgba(12, 12, 22, 0.7);
+
+  --color-text-primary: #e4e4f0;
+  --color-text-secondary: #8b8ba8;
+  --color-text-dim: #7a7a9e;
+
+  --color-border-subtle: rgba(74, 74, 106, 0.15);
+  --color-border-accent: rgba(0, 229, 255, 0.12);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-stagger-fade-in: stagger-fade-in 0.4s ease-out both;
+  --animate-slide-in-right: slide-in-right 0.25s ease-out both;
+  --animate-slide-out-right: slide-out-right 0.2s ease-in both;
+  --animate-slide-up-in: slide-up-in 0.3s ease-out both;
+  --animate-scale-in: scale-in 0.2s ease-out both;
+  --animate-dialog-in: dialog-in 0.3s ease-out both;
+  --animate-dropdown-enter: dropdown-enter 0.15s ease-out both;
+  --animate-dropdown-enter-up: dropdown-enter-up 0.15s ease-out both;
+  --animate-dropdown-exit: dropdown-exit 0.1s ease-in both;
+  --animate-dropdown-exit-up: dropdown-exit-up 0.1s ease-in both;
+  --animate-section-expand: section-expand 0.3s ease-out both;
+  --animate-copy-flash: copy-flash 0.6s ease-out both;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-gradient-flow: gradient-flow 3s ease infinite;
+  --animate-status-pulse: status-pulse 2s ease-in-out infinite;
+  --animate-forge-spark: forge-spark 1.5s ease-in-out infinite;
+}
+
+:root {
+  --gradient-forge: linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #a855f7 100%);
+  --nav-width: 240px;
+  --inspector-width: 280px;
+}
+
+/* Keyframe Animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes stagger-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-out-right {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(16px); }
+}
+
+@keyframes slide-up-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes dropdown-enter {
+  from { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+@keyframes dropdown-enter-up {
+  from { opacity: 0; transform: translateY(4px) scaleY(0.98); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+@keyframes dropdown-exit {
+  from { opacity: 1; transform: translateY(0) scaleY(1); }
+  to { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
+}
+
+@keyframes dropdown-exit-up {
+  from { opacity: 1; transform: translateY(0) scaleY(1); }
+  to { opacity: 0; transform: translateY(4px) scaleY(0.98); }
+}
+
+@keyframes section-expand {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 500px; }
+}
+
+@keyframes copy-flash {
+  0% { background-color: transparent; }
+  30% { background-color: rgba(0, 229, 255, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes gradient-flow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes forge-spark {
+  0%, 100% { box-shadow: 0 0 4px rgba(0, 229, 255, 0.3), 0 0 8px rgba(168, 85, 247, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(0, 229, 255, 0.6), 0 0 24px rgba(168, 85, 247, 0.4); }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(74, 74, 106, 0.3);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(74, 74, 106, 0.5);
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(0, 229, 255, 0.3);
+}
+
+/* Body base styles */
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

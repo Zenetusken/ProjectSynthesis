@@ -1,0 +1,52 @@
+"""Stage 2: Strategy
+
+Selects the optimal optimization framework combination.
+Uses claude-opus for deep reasoning about framework selection.
+"""
+
+import json
+import logging
+from typing import Optional
+
+from app.providers.base import LLMProvider, MODEL_ROUTING
+from app.prompts.strategy_prompt import get_strategy_prompt
+from app.services.strategy_selector import heuristic_strategy_fallback
+
+logger = logging.getLogger(__name__)
+
+
+async def run_strategy(
+    provider: LLMProvider,
+    raw_prompt: str,
+    analysis: dict,
+    codebase_context: Optional[dict] = None,
+) -> dict:
+    """Run Stage 2 strategy selection.
+
+    Returns:
+        dict with keys: primary_framework, secondary_frameworks, rationale, approach_notes
+    """
+    system_prompt = get_strategy_prompt()
+
+    user_message = (
+        f"Raw prompt:\n---\n{raw_prompt}\n---\n\n"
+        f"Analysis result:\n{json.dumps(analysis, indent=2)}"
+    )
+    if codebase_context:
+        user_message += f"\n\nCodebase context:\n{json.dumps(codebase_context, indent=2)}"
+
+    model = MODEL_ROUTING["strategy"]
+
+    try:
+        result = await provider.complete_json(system_prompt, user_message, model)
+    except Exception as e:
+        logger.error(f"Stage 2 (Strategy) failed: {e}. Using heuristic fallback.")
+        result = heuristic_strategy_fallback(analysis.get("task_type", "general"))
+
+    # Ensure required fields
+    result.setdefault("primary_framework", "CO-STAR")
+    result.setdefault("secondary_frameworks", [])
+    result.setdefault("rationale", "")
+    result.setdefault("approach_notes", "")
+
+    return result
