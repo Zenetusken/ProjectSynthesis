@@ -461,7 +461,7 @@
       "VERIFY the response contains an error message"
     ],
     "expected_outcome": "GitHub PAT submission with invalid token returns 401",
-    "passes": false,
+    "passes": true,
     "id": 22
   },
   {
