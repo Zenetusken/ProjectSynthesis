@@ -724,7 +724,7 @@
       "VERIFY the retry returns a new SSE stream or new optimization ID"
     ],
     "expected_outcome": "POST /api/optimize/{id}/retry creates new optimization run",
-    "passes": false,
+    "passes": true,
     "id": 34
   },
   {
