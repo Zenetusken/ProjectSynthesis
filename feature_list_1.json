@@ -1105,7 +1105,7 @@
       "VERIFY the records have different raw_prompt values"
     ],
     "expected_outcome": "Multiple optimizations stored independently",
-    "passes": false,
+    "passes": true,
     "id": 52
   },
   {
