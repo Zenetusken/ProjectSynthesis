@@ -614,7 +614,7 @@
       "VERIFY each record contains id, created_at, task_type, overall_score fields"
     ],
     "expected_outcome": "GET /api/history returns list of optimizations",
-    "passes": false,
+    "passes": true,
     "id": 29
   },
   {
