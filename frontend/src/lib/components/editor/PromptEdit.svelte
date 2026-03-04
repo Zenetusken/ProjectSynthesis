@@ -36,16 +36,30 @@
       (event: SSEEvent) => {
         const data = event.data as Record<string, unknown>;
         switch (event.event) {
-          case 'stage':
+          case 'stage': {
+            const stageName = data.stage as string;
             if (data.status === 'started') {
-              forge.setStageRunning(data.stage as string);
+              forge.setStageRunning(stageName);
             } else if (data.status === 'complete') {
+              // Always capture duration from stage complete event (it's the
+              // authoritative source — dedicated result events don't include it)
+              if (data.duration_ms != null && forge.stageResults[stageName]) {
+                forge.stageResults[stageName] = {
+                  ...forge.stageResults[stageName],
+                  duration: data.duration_ms as number
+                };
+              }
               // Only mark complete if a result event hasn't already done so
-              if (forge.stageStatuses[data.stage as string] !== 'done') {
-                forge.setStageComplete(data.stage as string);
+              if (forge.stageStatuses[stageName] !== 'done') {
+                forge.setStageComplete(stageName, {
+                  stage: stageName,
+                  data,
+                  duration: data.duration_ms as number | undefined
+                });
               }
             }
             break;
+          }
           case 'analysis':
             forge.setStageComplete('analyze', { stage: 'analyze', data, duration: data.duration_ms as number | undefined });
             break;

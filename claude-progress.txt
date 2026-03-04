@@ -1,55 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 276 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
 
-- T5: 0/30 passing
-
-**Integrator wiring verification (session 3):**
-- Settings panel (NavigatorSettings.svelte → GET/PATCH /api/settings): ✓ Data flows end-to-end
-- History panel (NavigatorHistory.svelte → GET /api/history): ✓ 3 records display correctly, no stuck spinner
-- GitHub PAT panel (github_auth.py → auth/github/me): ✓ Returns correct GitHubAuthStatus shape
-- All panels visually verified via Puppeteer screenshots
-
-**Cross-feature integration check:**
-- Frontend build: ✓ Clean (vite build succeeds)
-- All navigator panels functional: Files, History, GitHub, Settings
-- Pipeline tab: Shows proper empty state
-- Status bar: Shows "Connected" (backend reachable)
-- Visual coherence: ✓ Consistent cyberpunk dark theme
-
-**Guidance for next coding session:**
-- T1 tests are next (45 tests covering auth/CRUD):
-  - #19: Provider auto-detection selects available provider
-  - Optimization CRUD (create, list, get, delete, patch)
-  - SSE pipeline streaming
-  - History with pagination/filtering
-  - GitHub PAT flow
-  - Settings read/write
-- The duplicate router warning remains (github.py vs github_auth.py, optimize.py vs optimizations.py) — registration order matters
-- Seed data has 3 clean records with provider_used='claude_cli' for testing
-- All infrastructure is solid, no technical debt
-
-**Progress:** 52/335 tests passing (15.5%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws
-- DB: backend/data/promptforge.db (3 tables, proper indexes, 2 clean seed records)
-- Start: ./init.sh start
-
-## Session 5 Summary (coding, 2026-03-04)
-
-**Completed:** 34 T1 tests verified and marked passing:
-- Auth: #19 (provider auto-detect), #20 (MODEL_ROUTING), #21-#25 (GitHub PAT/auth/logout/OAuth)
-- CRUD: #26 (SSE stream), #28 (GET optimize), #29 (history list), #30 (pagination), #31 (DELETE), #32 (stats), #33 (PATCH), #34 (retry), #35 (sorted DESC), #36 (filter task_type), #37 (search)
-- Data: #39 (score fields), #40 (provider/model info), #41 (status tracking), #52 (multiple records), #55 (error_message column), #56 (codebase_aware_count), #58 (missing prompt 422), #59 (empty prompt 422), #62 (data persistence)
-- GitHub: #47 (repos endpoint), #48 (repos/link), #49 (repos/linked), #50 (repos/unlink), #51 (Fernet encryption)
-- Sort/Filter: #53 (sort by score), #54 (filter has_repo)
-
-**Regressions fixed:** None
-**In progress:** None
-
-**Remaining T1 (11 tests):** #27, #38, #42, #43, #44, #45, #46, #57, #60, #61, #63
-- All require full pipeline completion (30-60s per run with real Claude API)
-- Pipeline SSE works (verified in #26) but tests need the complete event
 - Key concern: Seed data overall_score=9 does not match weighted average formula (8.35 rounds to 8). Test #38 needs real pipeline validation.
 
 **Known issues:**
@@ -167,6 +117,47 @@ Fixed by adding `retry_of` parameter to `optimize_prompt()` and passing
 **Remaining gaps for future sessions:**
 - Toast.svelte needs a toast store + wiring (coding agent, low priority)
 - RepoPickerModal.svelte needs parent integration (coding agent, low priority)
+
+## Integration Report — Session 10 (2026-03-04)
+
+**Gaps discovered:** 5
+- [WIRING] StatusBar not showing overall score after forge — WIRED (forge.overallScore → StatusBar display)
+- [WIRING] StatusBar not showing strategy name after forge — WIRED (forge.stageResults.strategy.data.primary_framework → StatusBar display)
+- [ENDPOINT] /api/optimizations (5 routes) — no frontend consumer — SKIPPED (separate CRUD API, frontend uses /api/optimize + /api/history; flagged for coding agent)
+- [ORPHAN] RepoPickerModal — still not imported — SKIPPED (needs coding agent, same as session 7)
+- [ORPHAN] Toast — still not imported — SKIPPED (needs coding agent, same as session 7)
+
+**Gaps wired:** 2 of 5 (3 need coding agent)
+**Tests now passing (via wiring):** #168 (Status Bar updates through forge lifecycle)
+
+**Verification results:**
+- StatusBar pre-forge: "Connected | CLI | Ctrl+K" — verified via Puppeteer
+- StatusBar during forge: "Forging Analyze", "Forging Optimize", "Forging Validate" — verified via Puppeteer
+- StatusBar post-forge: "Score: 8/10 · Context-Enrichment" — verified via Puppeteer
+- Full pipeline run completed successfully (4/4 stages, score 8)
+
+**Also committed:** Uncommitted PromptEdit.svelte changes from session 9 (improved SSE stage duration capture)
+
+**Remaining gaps for future sessions:**
+- /api/optimizations endpoints not consumed by frontend (may be intentional alternative CRUD)
+- Toast.svelte + RepoPickerModal.svelte still need coding agent work
+- NavigatorHistory sort/filter doesn't trigger refetch (T3 requirement)
+
+**Progress:** 77/335 tests passing (23.0%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws
+- DB: backend/data/promptforge.db (3 tables)
+- Start: ./init.sh start
+
+**Tier status:**
+- T0: 18/18 ✓ (complete)
+- T1: 45/45 ✓ (complete)
+- T2: 14/106 (in progress)
+- T3: 0/66
+- T4: 0/70
+- T5: 0/30
 - /api/optimizations/* endpoints are dead code (frontend uses /api/optimize/* + /api/history/*)
 
 **Progress:** 63/335 tests passing (18.8%)

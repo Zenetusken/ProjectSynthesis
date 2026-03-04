@@ -38,6 +38,14 @@
         <span class="animate-status-pulse">Forging</span>
         <span class="capitalize">{forge.currentStage || '...'}</span>
       </div>
+    {:else if forge.overallScore != null}
+      <div class="flex items-center gap-1 text-neon-green">
+        <span>Score: {forge.overallScore}/10</span>
+        {#if forge.stageResults?.strategy?.data?.primary_framework}
+          <span class="text-text-dim">·</span>
+          <span class="text-neon-purple capitalize">{forge.stageResults.strategy.data.primary_framework}</span>
+        {/if}
+      </div>
     {/if}
   </div>
 

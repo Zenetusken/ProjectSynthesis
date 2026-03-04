@@ -26,7 +26,7 @@
       "SCREENSHOT to verify Status Bar post-forge state"
     ],
     "expected_outcome": "Status Bar updates through forge lifecycle",
-    "passes": false,
+    "passes": true,
     "id": 168
   },
   {
