@@ -877,7 +877,7 @@
       "RUN 'curl -s http://localhost:8000/api/optimize/{id}' and verify status is 'completed'"
     ],
     "expected_outcome": "Optimization status tracks running/completed/failed",
-    "passes": false,
+    "passes": true,
     "id": 41
   },
   {
