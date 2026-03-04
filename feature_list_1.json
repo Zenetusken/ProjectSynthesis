@@ -593,7 +593,7 @@
       "VERIFY the response contains primary_framework field"
     ],
     "expected_outcome": "GET /api/optimize/{id} returns full optimization details",
-    "passes": false,
+    "passes": true,
     "id": 28
   },
   {
