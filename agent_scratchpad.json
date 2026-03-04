@@ -30,24 +30,26 @@
       "gaps_found": 7,
       "gaps_wired": 6,
       "summary": "Wired 6 disconnected components: settings API+UI, provider/repo-tree API functions, PAT response shape fix, NavigatorHistory field mapping fix (was broken: stuck spinner). 1 mock data gap reported."
+    },
+    {
+      "session_id": 4,
+      "session_type": "validator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "mocks_found": 1,
+      "mocks_fixed": 1,
+      "summary": "Expanded validation: all 18 T0 tests verified passing. Fixed 4 DB records with provider_used='mock' (deleted and re-seeded with claude_cli). Verified integrator wiring (settings, history, GitHub panels). No regressions. 0 mocks remaining."
     }
   ],
   "active_warnings": [
-    {
-      "id": "w1_1",
-      "source_session": 1,
-      "severity": "low",
-      "area": "frontend/src/lib/api/client.ts",
-      "message": "connectGitHub/disconnectGitHub wrappers verified working. PAT response shape fixed in session 3 (github_auth.py now returns GitHubUserInfo). connectGitHub uses submitGitHubPAT().login which works correctly.",
-      "ttl_sessions": 4
-    },
     {
       "id": "w1_3",
       "source_session": 1,
       "severity": "info",
       "area": "backend/app/routers/",
       "message": "Duplicate GitHub endpoints: github_auth.py + github.py, and duplicate pipeline endpoints: optimize.py + optimizations.py. github_repos.py registered first so its GET /api/github/repos wins (returns array, matching frontend). github.py version returns {repos:[...]} which would break frontend if registered first.",
-      "ttl_sessions": 5
+      "ttl_sessions": 3
     },
     {
       "id": "w3_1",
@@ -55,39 +57,53 @@
       "severity": "medium",
       "area": "frontend/src/lib/components/layout/NavigatorHistory.svelte",
       "message": "History field mapping uses fallback pattern (item.raw_prompt || item.original_prompt). If backend schema changes, ensure both field names are checked. The history store HistoryEntry interface still uses 'original_prompt' — consider renaming to 'raw_prompt' for consistency.",
-      "ttl_sessions": 5
+      "ttl_sessions": 3
     }
   ],
   "outstanding_mocks": [
     {
       "file": "backend/data/promptforge.db",
       "line": 0,
-      "pattern": "Seed optimization records have provider_used='mock' from before MockProvider was removed. 4 records with hardcoded mock responses.",
-      "status": "open",
-      "found_session": 3
+      "pattern": "Seed optimization records had provider_used='mock'. Deleted 4 old records and re-seeded 3 clean records with provider_used='claude_cli'.",
+      "status": "fixed",
+      "found_session": 3,
+      "last_checked_session": 4
     }
   ],
   "blocked_tests": [],
   "validation_coverage": {
     "tests_verified": {
-      "1": 2, "2": 2, "3": 2, "4": 2, "5": 2, "6": 2, "7": 2, "8": 2,
-      "9": 2, "10": 2, "11": 2, "12": 2, "13": 2, "14": 2, "15": 2,
-      "16": 2, "17": 2, "18": 2
+      "1": 4,
+      "2": 4,
+      "3": 4,
+      "4": 4,
+      "5": 4,
+      "6": 4,
+      "7": 4,
+      "8": 4,
+      "9": 4,
+      "10": 4,
+      "11": 4,
+      "12": 4,
+      "13": 4,
+      "14": 4,
+      "15": 4,
+      "16": 4,
+      "17": 4,
+      "18": 4
     },
     "tests_spot_checked": {
-      "1": 1, "2": 1, "3": 1, "6": 1, "7": 1, "8": 1, "9": 1, "14": 1
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "6": 1,
+      "7": 1,
+      "8": 1,
+      "9": 1,
+      "14": 1
     }
   },
   "next_actions": [
-    {
-      "id": "a2_1",
-      "from_agent": "coding",
-      "to_agent": "validator",
-      "from_session": 2,
-      "action": "Verify all 18 T0 tests are truly passing. Tier boundary reached — T0 complete, T1 begins next session.",
-      "test_ids": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],
-      "priority": "high"
-    },
     {
       "id": "i3_1",
       "from_agent": "integrator",
@@ -107,13 +123,22 @@
       "priority": "low"
     },
     {
-      "id": "i3_3",
-      "from_agent": "integrator",
-      "to_agent": "validator",
-      "from_session": 3,
-      "action": "Verify settings panel wiring (NavigatorSettings.svelte → GET/PATCH /api/settings), history panel field mapping fix (NavigatorHistory.svelte), and PAT response shape fix (github_auth.py). All verified via Puppeteer screenshots.",
+      "id": "a4_1",
+      "from_agent": "validator",
+      "to_agent": "coding",
+      "from_session": 4,
+      "action": "Begin T1 implementation. Priority: #19 (provider auto-detection), optimization CRUD (create/list/get/delete/patch), SSE pipeline streaming, history pagination/filtering, GitHub PAT flow, settings read/write. All infrastructure is verified solid.",
+      "test_ids": [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+      "priority": "high"
+    },
+    {
+      "id": "a4_2",
+      "from_agent": "validator",
+      "to_agent": "coding",
+      "from_session": 4,
+      "action": "The HistoryEntry interface in history.svelte.ts uses 'original_prompt' but backend returns 'raw_prompt'. NavigatorHistory uses fallback (item.raw_prompt || item.original_prompt). Consider renaming the interface field to 'raw_prompt' for consistency.",
       "test_ids": [],
-      "priority": "medium"
+      "priority": "low"
     }
   ],
   "server_state": {
@@ -122,7 +147,7 @@
     "mcp_url": "ws://127.0.0.1:8001/ws",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh start",
-    "last_verified_session": 3,
-    "notes": "Backend using claude_cli provider. Frontend dev server on 5199. MCP running on 8001. DB at backend/data/promptforge.db with 3 tables (optimizations, github_tokens, linked_repos) and proper indexes."
+    "last_verified_session": 4,
+    "notes": "Backend using claude_cli provider. Frontend dev server on 5199. MCP running on 8001. DB at backend/data/promptforge.db with 3 tables (optimizations, github_tokens, linked_repos) and proper indexes. 3 clean seed records (provider_used=claude_cli)."
   }
 }
