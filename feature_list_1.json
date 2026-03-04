@@ -784,7 +784,7 @@
       "VERIFY returned records contain 'Python' in their raw_prompt or title fields"
     ],
     "expected_outcome": "History searchable by prompt text",
-    "passes": false,
+    "passes": true,
     "id": 37
   },
   {
