@@ -1062,7 +1062,7 @@
       "VERIFY the endpoint returns 200 or 204"
     ],
     "expected_outcome": "DELETE /api/github/repos/unlink removes link",
-    "passes": false,
+    "passes": true,
     "id": 50
   },
   {
