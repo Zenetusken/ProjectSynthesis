@@ -679,7 +679,7 @@
       "VERIFY the response includes provider_breakdown or model_usage information"
     ],
     "expected_outcome": "GET /api/history/stats returns aggregate statistics",
-    "passes": false,
+    "passes": true,
     "id": 32
   },
   {
