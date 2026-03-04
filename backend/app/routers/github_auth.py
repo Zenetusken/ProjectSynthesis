@@ -267,8 +267,10 @@ async def submit_pat(
     request.session["github_user_id"] = github_user_id
     request.session["github_login"] = github_login
 
-    return {
-        "login": github_login,
-        "id": github_user_id,
-        "avatar_url": user_data.get("avatar_url"),
-    }
+    return GitHubUserInfo(
+        connected=True,
+        login=github_login,
+        avatar_url=user_data.get("avatar_url"),
+        github_user_id=github_user_id,
+        token_type="pat",
+    ).model_dump()

@@ -334,6 +334,107 @@ export async function unlinkRepo(): Promise<void> {
   if (!res.ok) throw new Error(`Unlink repo failed: ${res.status}`);
 }
 
+// ---- Settings ----
+
+export interface AppSettings {
+  default_model: string;
+  pipeline_timeout: number;
+  max_retries: number;
+  default_strategy: string | null;
+  auto_validate: boolean;
+  stream_optimize: boolean;
+}
+
+export async function fetchSettings(): Promise<AppSettings> {
+  const res = await fetch(`${BASE}/api/settings`);
+  if (!res.ok) throw new Error(`Fetch settings failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateSettings(
+  data: Partial<AppSettings>
+): Promise<AppSettings> {
+  const res = await fetch(`${BASE}/api/settings`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(`Update settings failed: ${res.status}`);
+  return res.json();
+}
+
+// ---- Providers ----
+
+export interface ProviderDetectResponse {
+  providers: Record<string, { available: boolean; [key: string]: unknown }>;
+  active: string;
+  model_routing: Record<string, string>;
+}
+
+export interface ProviderStatusResponse {
+  status: string;
+  provider: string | null;
+  model_routing: Record<string, string>;
+  healthy: boolean;
+  message: string;
+}
+
+export async function fetchProviderDetect(): Promise<ProviderDetectResponse> {
+  const res = await fetch(`${BASE}/api/providers/detect`);
+  if (!res.ok) throw new Error(`Provider detect failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchProviderStatus(): Promise<ProviderStatusResponse> {
+  const res = await fetch(`${BASE}/api/providers/status`);
+  if (!res.ok) throw new Error(`Provider status failed: ${res.status}`);
+  return res.json();
+}
+
+// ---- GitHub Repo Tree / Files ----
+
+export interface RepoTreeEntry {
+  path: string;
+  sha: string;
+  size_bytes?: number;
+}
+
+export interface RepoTreeResponse {
+  tree: RepoTreeEntry[];
+  full_name: string;
+  branch: string;
+}
+
+export interface RepoFileResponse {
+  path: string;
+  content: string;
+  size_bytes: number;
+  sha: string;
+}
+
+export async function fetchRepoTree(
+  owner: string,
+  repo: string,
+  branch = 'main'
+): Promise<RepoTreeResponse> {
+  const params = new URLSearchParams({ branch });
+  const res = await fetch(`${BASE}/api/github/repos/${owner}/${repo}/tree?${params}`);
+  if (!res.ok) throw new Error(`Fetch repo tree failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchFileContent(
+  owner: string,
+  repo: string,
+  path: string,
+  branch = 'main'
+): Promise<RepoFileResponse> {
+  const params = new URLSearchParams({ branch });
+  const res = await fetch(`${BASE}/api/github/repos/${owner}/${repo}/files/${path}?${params}`);
+  if (!res.ok) throw new Error(`Fetch file content failed: ${res.status}`);
+  return res.json();
+}
+
 // ---- GitHub convenience wrappers (used by NavigatorGitHub) ----
 
 export async function connectGitHub(token: string): Promise<{ username: string; repos: RepoInfo[] }> {

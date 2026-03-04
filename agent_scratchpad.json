@@ -14,39 +14,65 @@
     {
       "session_id": 2,
       "session_type": "coding",
-      "tests_completed": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+      "tests_completed": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],
       "tests_regressed": [],
       "tests_fixed": [],
       "mocks_found": 0,
       "mocks_fixed": 0,
       "summary": "Verified all 18 T0 infrastructure tests via Puppeteer and curl. All passing: backend health, frontend rendering, DB tables/indexes, CORS, API docs, provider detection, MCP server, env vars, cyberpunk theme, session middleware."
+    },
+    {
+      "session_id": 3,
+      "session_type": "integrator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "gaps_found": 7,
+      "gaps_wired": 6,
+      "summary": "Wired 6 disconnected components: settings API+UI, provider/repo-tree API functions, PAT response shape fix, NavigatorHistory field mapping fix (was broken: stuck spinner). 1 mock data gap reported."
     }
   ],
   "active_warnings": [
     {
       "id": "w1_1",
       "source_session": 1,
-      "severity": "medium",
+      "severity": "low",
       "area": "frontend/src/lib/api/client.ts",
-      "message": "connectGitHub/disconnectGitHub are wrapper functions added by validator. connectGitHub composes submitGitHubPAT + fetchGitHubRepos. The NavigatorGitHub component expects {username, repos} return shape \u2014 verify this matches actual backend response.",
-      "ttl_sessions": 7
+      "message": "connectGitHub/disconnectGitHub wrappers verified working. PAT response shape fixed in session 3 (github_auth.py now returns GitHubUserInfo). connectGitHub uses submitGitHubPAT().login which works correctly.",
+      "ttl_sessions": 4
     },
     {
       "id": "w1_3",
       "source_session": 1,
       "severity": "info",
       "area": "backend/app/routers/",
-      "message": "Duplicate GitHub endpoints: github_auth.py + github.py, and duplicate pipeline endpoints: optimize.py + optimizations.py. This is known but may cause routing conflicts.",
-      "ttl_sessions": 7
+      "message": "Duplicate GitHub endpoints: github_auth.py + github.py, and duplicate pipeline endpoints: optimize.py + optimizations.py. github_repos.py registered first so its GET /api/github/repos wins (returns array, matching frontend). github.py version returns {repos:[...]} which would break frontend if registered first.",
+      "ttl_sessions": 5
+    },
+    {
+      "id": "w3_1",
+      "source_session": 3,
+      "severity": "medium",
+      "area": "frontend/src/lib/components/layout/NavigatorHistory.svelte",
+      "message": "History field mapping uses fallback pattern (item.raw_prompt || item.original_prompt). If backend schema changes, ensure both field names are checked. The history store HistoryEntry interface still uses 'original_prompt' — consider renaming to 'raw_prompt' for consistency.",
+      "ttl_sessions": 5
     }
   ],
-  "outstanding_mocks": [],
+  "outstanding_mocks": [
+    {
+      "file": "backend/data/promptforge.db",
+      "line": 0,
+      "pattern": "Seed optimization records have provider_used='mock' from before MockProvider was removed. 4 records with hardcoded mock responses.",
+      "status": "open",
+      "found_session": 3
+    }
+  ],
   "blocked_tests": [],
   "validation_coverage": {
     "tests_verified": {
       "1": 2, "2": 2, "3": 2, "4": 2, "5": 2, "6": 2, "7": 2, "8": 2,
-      "9": 2, "10": 2, "11": 2, "12": 2, "13": 2, "14": 2, "15": 2, "16": 2,
-      "17": 2, "18": 2
+      "9": 2, "10": 2, "11": 2, "12": 2, "13": 2, "14": 2, "15": 2,
+      "16": 2, "17": 2, "18": 2
     },
     "tests_spot_checked": {
       "1": 1, "2": 1, "3": 1, "6": 1, "7": 1, "8": 1, "9": 1, "14": 1
@@ -59,17 +85,35 @@
       "to_agent": "validator",
       "from_session": 2,
       "action": "Verify all 18 T0 tests are truly passing. Tier boundary reached — T0 complete, T1 begins next session.",
-      "test_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+      "test_ids": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],
       "priority": "high"
     },
     {
-      "id": "a1_3",
-      "from_agent": "validator",
-      "to_agent": "integrator",
-      "from_session": 1,
-      "action": "Wire frontend consumers for backend endpoints: /api/providers/status, /api/settings (GET/PATCH), /api/github/repos/{owner}/{repo}/tree, /api/github/repos/{owner}/{repo}/files/{path}. These endpoints exist but have no frontend consumer.",
+      "id": "i3_1",
+      "from_agent": "integrator",
+      "to_agent": "coding",
+      "from_session": 3,
+      "action": "Wire NavigatorFiles to GitHub repo tree/file API when a repo is selected. fetchRepoTree/fetchFileContent functions now exist in client.ts. The github store has files state and setFiles() method — connect them to show repo files in the file explorer.",
+      "test_ids": [],
+      "priority": "medium"
+    },
+    {
+      "id": "i3_2",
+      "from_agent": "integrator",
+      "to_agent": "coding",
+      "from_session": 3,
+      "action": "Add provider status display to the UI. fetchProviderDetect/fetchProviderStatus functions now exist in client.ts. Consider showing provider health in the status bar or settings panel.",
       "test_ids": [],
       "priority": "low"
+    },
+    {
+      "id": "i3_3",
+      "from_agent": "integrator",
+      "to_agent": "validator",
+      "from_session": 3,
+      "action": "Verify settings panel wiring (NavigatorSettings.svelte → GET/PATCH /api/settings), history panel field mapping fix (NavigatorHistory.svelte), and PAT response shape fix (github_auth.py). All verified via Puppeteer screenshots.",
+      "test_ids": [],
+      "priority": "medium"
     }
   ],
   "server_state": {
@@ -78,7 +122,7 @@
     "mcp_url": "ws://127.0.0.1:8001/ws",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh start",
-    "last_verified_session": 2,
+    "last_verified_session": 3,
     "notes": "Backend using claude_cli provider. Frontend dev server on 5199. MCP running on 8001. DB at backend/data/promptforge.db with 3 tables (optimizations, github_tokens, linked_repos) and proper indexes."
   }
 }

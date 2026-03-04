@@ -12,20 +12,20 @@
     try {
       const res = await fetchHistory({
         page: history.filters.page,
-        page_size: history.filters.pageSize,
+        per_page: history.filters.pageSize,
         search: history.filters.search || undefined,
-        strategy: history.filters.strategy || undefined,
-        sort_by: history.filters.sortBy,
-        sort_dir: history.filters.sortDir
+        task_type: history.filters.strategy || undefined,
+        sort: history.filters.sortBy,
+        order: history.filters.sortDir
       });
       history.setEntries(
         res.items.map((item: Record<string, unknown>) => ({
           id: item.id as string,
-          original_prompt: item.original_prompt as string,
+          original_prompt: (item.raw_prompt || item.original_prompt || '') as string,
           optimized_prompt: item.optimized_prompt as string | undefined,
           overall_score: item.overall_score as number | undefined,
-          strategy: item.strategy as string | undefined,
-          model: item.model as string | undefined,
+          strategy: (item.primary_framework || item.strategy) as string | undefined,
+          model: (item.provider_used || item.model) as string | undefined,
           created_at: item.created_at as string,
           duration_ms: item.duration_ms as number | undefined,
           tags: item.tags as string[] | undefined

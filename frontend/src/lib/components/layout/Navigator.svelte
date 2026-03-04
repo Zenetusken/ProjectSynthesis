@@ -4,6 +4,7 @@
   import NavigatorHistory from './NavigatorHistory.svelte';
   import NavigatorChains from './NavigatorChains.svelte';
   import NavigatorGitHub from './NavigatorGitHub.svelte';
+  import NavigatorSettings from './NavigatorSettings.svelte';
 
   const titles: Record<string, string> = {
     files: 'Files',
@@ -47,10 +48,7 @@
           />
         </div>
       {:else if workbench.activeActivity === 'settings'}
-        <div class="p-3 text-sm text-text-secondary">
-          <p class="mb-2 font-medium text-text-primary">Settings</p>
-          <p class="text-xs text-text-dim">Configure PromptForge preferences.</p>
-        </div>
+        <NavigatorSettings />
       {/if}
     </div>
   {/if}
