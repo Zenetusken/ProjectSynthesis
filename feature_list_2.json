@@ -2971,7 +2971,7 @@
       "SCREENSHOT to verify history empty state"
     ],
     "expected_outcome": "Empty state for Navigator History when no forges exist",
-    "passes": false,
+    "passes": true,
     "id": 287
   },
   {
@@ -2995,7 +2995,7 @@
       "SCREENSHOT to verify per-prompt empty history state"
     ],
     "expected_outcome": "Empty state for PromptHistory when no runs exist",
-    "passes": false,
+    "passes": true,
     "id": 288
   },
   {
@@ -3019,7 +3019,7 @@
       "SCREENSHOT to verify first-launch experience"
     ],
     "expected_outcome": "First-launch shows blank prompt with placeholder",
-    "passes": false,
+    "passes": true,
     "id": 289
   },
   {
@@ -3040,7 +3040,7 @@
       "VERIFY the empty state uses a simple icon at 30% opacity"
     ],
     "expected_outcome": "Empty state for Inspector when nothing is open",
-    "passes": false,
+    "passes": true,
     "id": 290
   },
   {
