@@ -3,7 +3,8 @@
   import { onMount } from 'svelte';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { editor } from '$lib/stores/editor.svelte';
-  import { fetchHealth } from '$lib/api/client';
+  import { github } from '$lib/stores/github.svelte';
+  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo } from '$lib/api/client';
   import ActivityBar from '$lib/components/layout/ActivityBar.svelte';
   import Navigator from '$lib/components/layout/Navigator.svelte';
   import EditorGroups from '$lib/components/layout/EditorGroups.svelte';
@@ -24,6 +25,36 @@
       })
       .catch(() => {
         workbench.isConnected = false;
+      });
+
+    // Hydrate GitHub connection state (persists across page refresh)
+    fetchGitHubAuthStatus()
+      .then(async (auth) => {
+        if (auth.connected && auth.login) {
+          try {
+            const repos = await fetchGitHubRepos();
+            github.setConnected(
+              auth.login,
+              repos.map((r: Record<string, unknown>) => ({
+                full_name: r.full_name as string,
+                description: (r.description || '') as string,
+                default_branch: (r.default_branch || 'main') as string,
+                private: !!r.private
+              }))
+            );
+            // Restore linked repo selection
+            const linked = await fetchLinkedRepo();
+            if (linked && linked.full_name) {
+              github.selectRepo(linked.full_name);
+            }
+          } catch {
+            // Repos fetch failed — mark connected but without repos
+            github.setConnected(auth.login, []);
+          }
+        }
+      })
+      .catch(() => {
+        // Not connected or auth check failed — leave github store in default state
       });
 
     // Ensure at least one tab is open
