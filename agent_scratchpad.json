@@ -97,6 +97,16 @@
       "gaps_found": 0,
       "gaps_wired": 0,
       "summary": "No integration gaps found. Session 33 wrote no new code (only marked tests passing). Previous integrator (session 31) already verified all wiring. T4 (70 CSS/styling tests) and T5 (30 tests) are coding agent work, not wiring. All services healthy."
+    },
+    {
+      "session_id": 35,
+      "session_type": "validator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "mocks_found": 0,
+      "mocks_fixed": 0,
+      "summary": "Expanded tier-boundary validation (T3→T4): 25 tests verified (19 from interrupted session + 6 new). 0 regressions, 0 mocks. Code audit clean. Real LLM pipeline confirmed with 2 different strategies (chain-of-thought, CO-STAR). Build passes. All T0-T3 verified. T4 ready."
     }
   ],
   "active_warnings": [],
@@ -303,7 +313,32 @@
       "222": 32,
       "223": 32,
       "224": 32,
-      "225": 32
+      "225": 32,
+      "4": 35,
+      "5": 35,
+      "6": 35,
+      "12": 35,
+      "13": 35,
+      "14": 35,
+      "15": 35,
+      "93": 35,
+      "100": 35,
+      "102": 35,
+      "108": 35,
+      "167": 35,
+      "169": 35,
+      "188": 35,
+      "189": 35,
+      "190": 35,
+      "205": 35,
+      "226": 35,
+      "228": 35,
+      "229": 35,
+      "230": 35,
+      "231": 35,
+      "233": 35,
+      "234": 35,
+      "235": 35
     },
     "tests_spot_checked": {
       "1": 19,
@@ -321,20 +356,6 @@
   },
   "next_actions": [
     {
-      "id": "a33_1",
-      "from_agent": "coding",
-      "to_agent": "validator",
-      "from_session": 33,
-      "action": "T3 is now complete (66/66). Please run expanded tier-boundary validation across all tiers (T0-T3) before T4 styling work begins. Verify #226, #233, #234, #235 via E2E browser tests.",
-      "test_ids": [
-        226,
-        233,
-        234,
-        235
-      ],
-      "priority": "high"
-    },
-    {
       "id": "a33_2",
       "from_agent": "coding",
       "to_agent": "coding",
@@ -342,6 +363,15 @@
       "action": "Start T4 styling/theming tests (70 tests). All functional features complete through T3. T4 is CSS/theming work: cyberpunk dark theme, neon colors, font families, badge colors, animations, borders.",
       "test_ids": [],
       "priority": "medium"
+    },
+    {
+      "id": "a35_1",
+      "from_agent": "validator",
+      "to_agent": "coding",
+      "from_session": 35,
+      "action": "T3 tier boundary validation COMPLETE. All 235 tests confirmed passing. T4 (70 CSS/styling tests) is clear to begin. Note: strategy field in DB history records is None — the actual strategy is stored in strategy_rationale. History table UI shows 'auto' for strategy column — consider updating PromptHistory to display strategy_rationale instead.",
+      "test_ids": [],
+      "priority": "low"
     }
   ],
   "server_state": {
@@ -350,43 +380,17 @@
     "mcp_url": "ws://127.0.0.1:8001/ws",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh start",
-    "last_verified_session": 33,
-    "notes": "All services healthy (session 33). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. Build passes. T0: 18/18, T1: 45/45, T2: 106/106, T3: 66/66. 235/335 tests passing (70.1%). T4 styling work ready to begin."
+    "last_verified_session": 35,
+    "notes": "All services healthy (session 35). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. Build passes (4.24s). T0: 18/18, T1: 45/45, T2: 106/106, T3: 66/66. 235/335 tests passing (70.1%). T4 styling work ready to begin. Tier boundary T3→T4 validated."
   },
   "session_checkpoint": {
-    "session_type": "validator",
-    "session_id": 35,
-    "audit_done": true,
-    "tests_verified_this_run": [
-      4,
-      5,
-      6,
-      12,
-      13,
-      14,
-      15,
-      188,
-      189,
-      190,
-      205,
-      93,
-      100,
-      102,
-      167,
-      169,
-      226,
-      233,
-      235,
-      108,
-      228,
-      229,
-      230,
-      231,
-      234
-    ],
+    "session_type": "",
+    "session_id": 0,
+    "audit_done": false,
+    "tests_verified_this_run": [],
     "tests_completed_this_run": [],
     "gaps_wired_this_run": [],
-    "last_step": "5",
-    "session_start_sha": "9352f38fda312ff4a4d3125985bddc15f11f9a25"
+    "last_step": "",
+    "session_start_sha": ""
   }
 }
