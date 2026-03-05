@@ -160,11 +160,13 @@
         Score {history.filters.sortBy === 'overall_score' ? (history.filters.sortDir === 'desc' ? '↓' : '↑') : ''}
       </button>
     </div>
-    {#if history.filters.search || history.filters.strategy}
-      <div class="text-[10px] text-text-dim">
-        {history.entries.length} of {history.totalCount} runs
-      </div>
-    {/if}
+    <div class="text-[10px] text-text-dim">
+      {#if history.filters.search || history.filters.strategy}
+        {history.totalCount} of {stats?.total_optimizations ?? history.totalCount} runs
+      {:else}
+        {history.totalCount} runs
+      {/if}
+    </div>
   </div>
 
   <!-- List -->
