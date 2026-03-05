@@ -2,35 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 26,
-      "session_type": "coding",
-      "tests_completed": [
-        170,
-        171,
-        172,
-        173,
-        174,
-        175,
-        176,
-        177,
-        178,
-        179,
-        180,
-        181,
-        182,
-        183,
-        184,
-        185,
-        186,
-        187
-      ],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "18 T3 tests completed (T3: 18/66). 187/335 passing (55.8%)."
-    },
-    {
       "session_id": 27,
       "session_type": "integrator",
       "tests_completed": [
@@ -399,13 +370,13 @@
     "notes": "All services healthy (session 30). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING with get_by_project tool added. DB at backend/data/promptforge.db. T0: 18/18, T1: 45/45, T2: 106/106, T3: 62/66. 231/335 tests passing (69.0%). Services restarted during session 30."
   },
   "session_checkpoint": {
-    "session_type": "",
-    "session_id": 0,
-    "audit_done": false,
-    "tests_verified_this_run": [],
+    "session_type": "validator",
+    "session_id": 32,
+    "audit_done": true,
+    "tests_verified_this_run": [198, 199, 200, 201, 202, 203, 204, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225],
     "tests_completed_this_run": [],
     "gaps_wired_this_run": [],
-    "last_step": "",
-    "session_start_sha": ""
+    "last_step": "5",
+    "session_start_sha": "0e044bd43c31b638b4b7b828e10f1d47c868eae6"
   }
 }
