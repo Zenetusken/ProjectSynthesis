@@ -43,7 +43,7 @@
     if (onselectrepo) {
       onselectrepo(expandedRepo, branchInput.trim());
     } else {
-      github.selectRepo(expandedRepo);
+      github.selectRepo(expandedRepo, branchInput.trim());
     }
     expandedRepo = null;
     onclose?.();
@@ -88,9 +88,16 @@
               {/if}
             </div>
             {#if github.selectedRepo === repo.full_name}
-              <svg class="w-4 h-4 text-neon-cyan shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
-              </svg>
+              <div class="flex items-center gap-1.5 shrink-0">
+                {#if github.selectedBranch}
+                  <span class="text-[10px] font-mono text-neon-cyan/70 bg-neon-cyan/10 px-1.5 py-0.5 rounded">
+                    {github.selectedBranch}
+                  </span>
+                {/if}
+                <svg class="w-4 h-4 text-neon-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
             {/if}
           </div>
           {#if repo.description}

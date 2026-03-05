@@ -29,6 +29,9 @@
       </svg>
       {#if github.selectedRepo}
         <span class="text-neon-purple">⬡ {github.selectedRepo}</span>
+        {#if github.selectedBranch}
+          <span class="text-neon-purple/60">@ {github.selectedBranch}</span>
+        {/if}
       {:else}
         <span class="text-text-dim/50">No repo</span>
       {/if}

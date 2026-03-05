@@ -125,6 +125,67 @@
 - These require adding ARIA attributes and keyboard navigation features
 - No mocks, no stubs, no TODOs in application code — codebase is clean
 
+## Session Summary — Session 41 (2026-03-05)
+
+**Completed:** #306, #307, #308, #309, #310, #311, #312, #313, #314, #315, #316, #317, #318, #319, #320, #321, #322, #323, #324, #325, #326, #327, #328, #329, #330, #331, #332, #333, #334, #335
+**Code changes:**
+- ARIA landmarks (#306): Already implemented — all 5 zones had aria-labels
+- F6 zone cycling (#307): Added global keydown handler in +layout.svelte cycling through 5 ARIA landmark zones
+- Roving tabindex (#308): EditorGroups tab bar — active tab tabindex=0, others -1, arrow key navigation
+- Focus trap (#309): CommandPalette — role=dialog, aria-modal=true, Tab/Shift+Tab cycling, Escape restores focus
+- ScoreCircle (#310): Added aria-label="Score: N out of 10", role="img"
+- Stage status icons (#311): Descriptive aria-labels (Status: running/complete/failed/idle)
+- aria-live (#312): Added aria-live="polite" to StageTrack, PromptPipeline, StageOptimize
+- StrategyBadge (#313): Added aria-label="Strategy: {name}"
+- ModelBadge (#314): Added aria-label="Model: Claude {variant}"
+- WCAG text-dim fix (#315): Changed body text from text-dim to text-secondary across 13 components
+- Tablist ARIA (#316): EditorGroups — role=tablist, role=tab, aria-selected, role=tabpanel
+- ActivityBar keyboard nav (#317): Arrow key navigation between activity icons
+- Navigator file tree keyboard nav (#318): ArrowUp/Down/Home/End navigation with data-file-item
+- History table keyboard nav (#319): ArrowUp/Down/Enter on history rows with data-history-row
+- Network error handling (#320): Already implemented — client.ts has try/catch + onError callback
+- Invalid API response (#321): Already implemented — SSE parser has try/catch for malformed JSON
+- Stage failure inline error (#322): First 80 chars in StageCard header, neon-red/70 mono
+- Failed stage icon (#323): neon-red/20 circle with × icon
+- Skipped stage (#324): 40% opacity with → icon
+- Timed-out stage (#325): neon-orange/20 circle with clock+× icon
+- Cancelled stage (#326): text-secondary circle with ⊘ icon
+- Backend 500 handler (#327): Global exception handler returning JSON
+- Pipeline partial success (#328): Already implemented — store preserves completed stages
+- Empty prompt toast (#329): Added validation in PromptEdit.svelte
+- Long prompt (#330): Already implemented — no max_length constraint
+- Special characters (#331): Already implemented — JSON transport preserves Unicode
+- Concurrent interactions (#332): Already implemented — independent stores
+- Page refresh (#333): Already implemented — store resets on mount
+- Docker files (#334): Already implemented — docker-compose.yml + Dockerfiles
+- MCP config (#335): Already implemented — .mcp.json with WebSocket transport
+
+**Files modified (24):**
+EditorGroups.svelte, CommandPalette.svelte, ScoreCircle.svelte, ModelBadge.svelte, StrategyBadge.svelte,
+StageCard.svelte, StageTrack.svelte, PromptPipeline.svelte, StageOptimize.svelte, StageExplore.svelte,
+StageAnalyze.svelte, StageStrategy.svelte, StageValidate.svelte, NavigatorSettings.svelte,
+NavigatorTemplates.svelte, NavigatorHistory.svelte, NavigatorChains.svelte, NavigatorFiles.svelte,
+ActivityBar.svelte, Inspector.svelte, +layout.svelte, forge.svelte.ts, backend/app/main.py, PromptEdit.svelte
+
+**Regressions fixed:** none
+**Known issues:** none — ALL TIERS COMPLETE
+
+**Progress:** 335/335 tests passing (100.0%) ✓ ALL COMPLETE
+**Tier breakdown:**
+- T0: 18/18 ✓
+- T1: 45/45 ✓
+- T2: 106/106 ✓
+- T3: 66/66 ✓
+- T4: 70/70 ✓
+- T5: 30/30 ✓
+
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
+
 ## Integration Report — Session 39 (2026-03-05)
 
 **Gaps discovered:** 0

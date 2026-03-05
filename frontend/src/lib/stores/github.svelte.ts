@@ -19,6 +19,7 @@ class GitHubStore {
   pat = $state('');
   repos = $state<GitHubRepo[]>([]);
   selectedRepo = $state<string | null>(null);
+  selectedBranch = $state<string | null>(null);
   isLoadingRepos = $state(false);
   files = $state<GitHubFile[]>([]);
   error = $state<string | null>(null);
@@ -44,12 +45,14 @@ class GitHubStore {
     this.pat = '';
     this.repos = [];
     this.selectedRepo = null;
+    this.selectedBranch = null;
     this.files = [];
     this.error = null;
   }
 
-  selectRepo(fullName: string) {
+  selectRepo(fullName: string, branch?: string) {
     this.selectedRepo = fullName;
+    this.selectedBranch = branch ?? null;
     this.files = [];
   }
 

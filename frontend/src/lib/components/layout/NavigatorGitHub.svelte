@@ -30,7 +30,7 @@
       fetchLinkedRepo()
         .then((linked) => {
           if (linked && linked.full_name) {
-            github.selectRepo(linked.full_name);
+            github.selectRepo(linked.full_name, linked.branch);
           }
         })
         .catch(() => {});
@@ -42,10 +42,10 @@
   }
 
   function handleSelectRepo(fullName: string, branch?: string) {
-    github.selectRepo(fullName);
-    // Persist repo link to backend (non-blocking — local state already updated)
     const repo = github.repos.find(r => r.full_name === fullName);
     const resolvedBranch = branch ?? repo?.default_branch;
+    github.selectRepo(fullName, resolvedBranch);
+    // Persist repo link to backend (non-blocking — local state already updated)
     linkRepo(fullName, resolvedBranch).catch(() => {
       // Link failed — local selection still works, just won't persist across refresh
     });
@@ -132,17 +132,20 @@
               : 'hover:bg-bg-hover text-text-secondary border border-transparent'}"
           onclick={() => handleSelectRepo(repo.full_name)}
         >
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1.5 min-w-0">
             {#if repo.private}
-              <svg class="w-3 h-3 text-neon-yellow" fill="currentColor" viewBox="0 0 24 24">
+              <svg class="w-3 h-3 text-neon-yellow shrink-0" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 1C8.676 1 6 3.676 6 7v2H4v14h16V9h-2V7c0-3.324-2.676-6-6-6zm0 2c2.276 0 4 1.724 4 4v2H8V7c0-2.276 1.724-4 4-4z"></path>
               </svg>
             {:else}
-              <svg class="w-3 h-3 text-text-dim" fill="currentColor" viewBox="0 0 24 24">
+              <svg class="w-3 h-3 text-text-dim shrink-0" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M3 3h18v18H3V3zm2 2v14h14V5H5z"></path>
               </svg>
             {/if}
             <span class="truncate">{repo.full_name}</span>
+            {#if github.selectedRepo === repo.full_name && github.selectedBranch}
+              <span class="text-[10px] font-mono text-neon-cyan/70 shrink-0">@ {github.selectedBranch}</span>
+            {/if}
           </div>
           {#if repo.description}
             <p class="text-[10px] text-text-dim mt-0.5 truncate">{repo.description}</p>

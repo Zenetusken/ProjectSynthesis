@@ -143,7 +143,7 @@
             // Restore linked repo selection
             const linked = await fetchLinkedRepo();
             if (linked && linked.full_name) {
-              github.selectRepo(linked.full_name);
+              github.selectRepo(linked.full_name, linked.branch);
             }
           } catch {
             // Repos fetch failed — mark connected but without repos
