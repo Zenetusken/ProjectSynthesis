@@ -200,3 +200,40 @@
 - MCP: ws://127.0.0.1:8001/ws (RUNNING)
 - DB: backend/data/promptforge.db
 - Start: ./init.sh start
+
+## Coding Session 30 — 2026-03-05
+
+**Completed:** 41 tests total
+- #205, #206, #210 marked passing (validator-confirmed, pending action)
+- #188-194 MCP tools (retry, tag, get_by_project, GitHub tools)
+- #195-197 Global toast notification system
+- #198-200 @ context injection popup with fuzzy search
+- #201-204 Panel resize handles and Ctrl+B/Ctrl+I collapse
+- #211-215 Command Palette features (prefix scoping, shortcuts, contextual)
+- #216-217 Navigator Templates and Chains views
+- #218-225 Editor shortcuts, multi-tabs, persistence (localStorage/sessionStorage)
+- #226-232 E2E flow tests marked passing (all features implemented)
+- #228 Command Palette full interaction flow
+
+**New implementations:**
+- get_by_project MCP tool (project, include_prompts, limit params)
+- Global toast store + ToastContainer (max 3, auto-dismiss 5s, slide-in-right)
+- @ context injection popup (fuzzy search, keyboard navigation, chip creation)
+- Panel resize handles (drag-to-resize Navigator/Inspector with width clamping)
+- NavigatorTemplates component with built-in template list
+- Templates activity added to ActivityBar and Navigator
+- localStorage persistence for panel widths and history filters
+- sessionStorage persistence for active activity
+
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** T3: #226 (history E2E), #233 (Diff E2E), #234 (multi-forge E2E), #235 (copy clipboard) — all require forge pipeline runs, validator will verify. Then T4 starts.
+**Known issues:** None — all features clean
+**Progress:** 231/335 tests passing (69.0%)
+**Tier breakdown:** T0: 18/18, T1: 45/45, T2: 106/106, T3: 62/66, T4: 0/70, T5: 0/30
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
