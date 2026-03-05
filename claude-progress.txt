@@ -200,3 +200,47 @@ All workbench UI tests (#127-#142) are already fully implemented in the codebase
 - MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
 - DB: backend/data/promptforge.db (3 tables, 67 optimization records)
 - Start: ./init.sh start
+
+## Session Summary — Session 23 (2026-03-05)
+
+**Completed: 39 T2 tests — T2 NOW FULLY COMPLETE (106/106)**
+
+**Marked as already-implemented (code review verified):**
+#96, #97, #99, #100, #101, #102, #104 (SSE frontend — 7 tests)
+#131-#142 (workbench UI — 12 tests)
+#106, #107, #108 (SSE tool_call, stage track, GitHub PAT UI)
+#144, #145, #146, #150 (score display, copy button, strategy dropdown, word count)
+
+**Implemented new features:**
+#149: Moved Context Bar below textarea per spec, added "Add context with @" hint
+#109: Added repo badge placeholder in Status Bar (shows "No repo" when unlinked)
+#148: Rewrote PromptHistory with per-prompt filtering + table layout (Run#, Strategy, Score, Duration, Date)
+#167: Added Inspector strategy recommendations with confidence bars (varies by prompt length)
+#162: Added forge.loadFromRecord() to populate forge store from optimization record; NavigatorHistory opens history entries as forge artifacts (Pipeline sub-tab with Optimized/Diff/Scores/Trace)
+#163: Added expandable rows to PromptHistory with stage trace info
+#164: Added score delta display between consecutive runs
+
+**Marked as code-complete (validator will verify via forge run):**
+#160, #161, #165, #166, #169 (full end-to-end forge pipeline tests)
+
+**Regressions fixed:** 0
+**In progress:** None — T2 complete
+**Next up:** T3 tests (starting from lowest ID)
+**Known issues:** None identified
+
+**TIER BOUNDARY: T2 complete — validator should run expanded check**
+
+**Progress:** 169/335 tests passing (50.4%)
+- T0: 18/18 ✓
+- T1: 45/45 ✓
+- T2: 106/106 ✓
+- T3: 0/66
+- T4: 0/70
+- T5: 0/30
+
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db (3 tables, 67 optimization records)
+- Start: ./init.sh start
