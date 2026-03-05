@@ -1,11 +1,30 @@
 export type Activity = 'files' | 'history' | 'chains' | 'templates' | 'github' | 'settings' | 'search';
 
+function loadNumber(key: string, fallback: number): number {
+  if (typeof window === 'undefined') return fallback;
+  const v = localStorage.getItem(key);
+  if (v !== null) {
+    const n = parseInt(v, 10);
+    if (!isNaN(n)) return n;
+  }
+  return fallback;
+}
+
+function loadActivity(): Activity {
+  if (typeof window === 'undefined') return 'files';
+  const v = sessionStorage.getItem('pf_activeActivity');
+  if (v && ['files', 'history', 'chains', 'templates', 'github', 'settings', 'search'].includes(v)) {
+    return v as Activity;
+  }
+  return 'files';
+}
+
 class WorkbenchStore {
-  activeActivity = $state<Activity>('files');
+  activeActivity = $state<Activity>(loadActivity());
   navigatorCollapsed = $state(false);
   inspectorCollapsed = $state(false);
-  navigatorWidth = $state(240);
-  inspectorWidth = $state(280);
+  navigatorWidth = $state(loadNumber('pf_navigatorWidth', 240));
+  inspectorWidth = $state(loadNumber('pf_inspectorWidth', 280));
   provider = $state<'anthropic' | 'openai' | 'claude_cli' | 'anthropic_api' | 'unknown'>('unknown');
   providerModel = $state('');
   isConnected = $state(false);
@@ -33,14 +52,23 @@ class WorkbenchStore {
       this.activeActivity = activity;
       this.navigatorCollapsed = false;
     }
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('pf_activeActivity', activity);
+    }
   }
 
   setNavigatorWidth(w: number) {
     this.navigatorWidth = Math.max(160, Math.min(480, w));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pf_navigatorWidth', String(this.navigatorWidth));
+    }
   }
 
   setInspectorWidth(w: number) {
     this.inspectorWidth = Math.max(180, Math.min(480, w));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pf_inspectorWidth', String(this.inspectorWidth));
+    }
   }
 }
 

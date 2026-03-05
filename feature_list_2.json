@@ -1255,7 +1255,7 @@
       "SCREENSHOT to verify save state"
     ],
     "expected_outcome": "Save prompt with Ctrl+S",
-    "passes": false,
+    "passes": true,
     "id": 218
   },
   {
@@ -1278,7 +1278,7 @@
       "SCREENSHOT to verify new prompt creation capability"
     ],
     "expected_outcome": "New prompt with Ctrl+N",
-    "passes": false,
+    "passes": true,
     "id": 219
   },
   {
@@ -1300,7 +1300,7 @@
       "SCREENSHOT to verify close button presence"
     ],
     "expected_outcome": "Tab close with close button or Ctrl+W",
-    "passes": false,
+    "passes": true,
     "id": 220
   },
   {
@@ -1323,7 +1323,7 @@
       "SCREENSHOT to verify multi-tab capability"
     ],
     "expected_outcome": "Multiple tabs can be open simultaneously",
-    "passes": false,
+    "passes": true,
     "id": 221
   },
   {
@@ -1346,7 +1346,7 @@
       "SCREENSHOT to verify modified indicator"
     ],
     "expected_outcome": "Tab modified indicator (\u25cf) shows unsaved changes",
-    "passes": false,
+    "passes": true,
     "id": 222
   },
   {
@@ -1368,7 +1368,7 @@
       "SCREENSHOT to verify initial panel widths"
     ],
     "expected_outcome": "Panel widths persist in localStorage",
-    "passes": false,
+    "passes": true,
     "id": 223
   },
   {
@@ -1390,7 +1390,7 @@
       "VERIFY sessionStorage stores the active activity state"
     ],
     "expected_outcome": "Active Activity persists in sessionStorage",
-    "passes": false,
+    "passes": true,
     "id": 224
   },
   {
@@ -1412,7 +1412,7 @@
       "VERIFY localStorage is used for history sort/filter preferences"
     ],
     "expected_outcome": "History sort/filter preferences persist",
-    "passes": false,
+    "passes": true,
     "id": 225
   },
   {

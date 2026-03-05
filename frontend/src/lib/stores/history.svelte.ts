@@ -19,19 +19,50 @@ export interface HistoryFilters {
   pageSize: number;
 }
 
-class HistoryStore {
-  entries = $state<HistoryEntry[]>([]);
-  totalCount = $state(0);
-  isLoading = $state(false);
-  selectedId = $state<string | null>(null);
-  filters = $state<HistoryFilters>({
+function loadFilters(): HistoryFilters {
+  const defaults: HistoryFilters = {
     search: '',
     strategy: null,
     sortBy: 'created_at',
     sortDir: 'desc',
     page: 1,
     pageSize: 20
-  });
+  };
+  if (typeof window === 'undefined') return defaults;
+  try {
+    const stored = localStorage.getItem('pf_historyFilters');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return {
+        ...defaults,
+        sortBy: parsed.sortBy || defaults.sortBy,
+        sortDir: parsed.sortDir || defaults.sortDir,
+        strategy: parsed.strategy ?? null,
+        pageSize: parsed.pageSize || defaults.pageSize
+      };
+    }
+  } catch { /* ignore */ }
+  return defaults;
+}
+
+function saveFilters(filters: HistoryFilters) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('pf_historyFilters', JSON.stringify({
+      sortBy: filters.sortBy,
+      sortDir: filters.sortDir,
+      strategy: filters.strategy,
+      pageSize: filters.pageSize
+    }));
+  } catch { /* ignore */ }
+}
+
+class HistoryStore {
+  entries = $state<HistoryEntry[]>([]);
+  totalCount = $state(0);
+  isLoading = $state(false);
+  selectedId = $state<string | null>(null);
+  filters = $state<HistoryFilters>(loadFilters());
 
   get selectedEntry(): HistoryEntry | undefined {
     return this.entries.find(e => e.id === this.selectedId);
@@ -61,6 +92,11 @@ class HistoryStore {
 
   select(id: string) {
     this.selectedId = id;
+  }
+
+  updateFilters(partial: Partial<HistoryFilters>) {
+    this.filters = { ...this.filters, ...partial };
+    saveFilters(this.filters);
   }
 }
 
