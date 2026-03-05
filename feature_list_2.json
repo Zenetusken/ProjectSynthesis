@@ -1447,7 +1447,7 @@
       "SCREENSHOT to verify artifact review flow"
     ],
     "expected_outcome": "Complete history navigation and artifact review flow",
-    "passes": false,
+    "passes": true,
     "id": 226
   },
   {
@@ -1657,7 +1657,7 @@
       "SCREENSHOT to verify inline diff mode"
     ],
     "expected_outcome": "Forge artifact Diff view with side-by-side and inline toggle",
-    "passes": false,
+    "passes": true,
     "id": 233
   },
   {
@@ -1691,7 +1691,7 @@
       "SCREENSHOT to verify different strategy runs"
     ],
     "expected_outcome": "Multiple forges with different strategies create distinct results",
-    "passes": false,
+    "passes": true,
     "id": 234
   },
   {
@@ -1721,7 +1721,7 @@
       "SCREENSHOT to capture the copy feedback state"
     ],
     "expected_outcome": "Forge result copy to clipboard with visual feedback",
-    "passes": false,
+    "passes": true,
     "id": 235
   },
   {
