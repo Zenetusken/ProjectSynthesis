@@ -2220,7 +2220,7 @@
       "SCREENSHOT to verify complete pipeline display"
     ],
     "expected_outcome": "Frontend receives and parses SSE events correctly",
-    "passes": false,
+    "passes": true,
     "id": 96
   },
   {
@@ -2249,7 +2249,7 @@
       "VERIFY the full optimized text is now displayed"
     ],
     "expected_outcome": "Frontend displays streaming text progressively in Stage 03",
-    "passes": false,
+    "passes": true,
     "id": 97
   },
   {
@@ -2304,7 +2304,7 @@
       "SCREENSHOT to verify all stages show success checkmarks"
     ],
     "expected_outcome": "Stage status indicators update in real-time",
-    "passes": false,
+    "passes": true,
     "id": 99
   },
   {
@@ -2332,7 +2332,7 @@
       "SCREENSHOT to verify expand/collapse behavior"
     ],
     "expected_outcome": "Stage completion events trigger UI collapse",
-    "passes": false,
+    "passes": true,
     "id": 100
   },
   {
@@ -2359,7 +2359,7 @@
       "SCREENSHOT to verify clean pipeline display"
     ],
     "expected_outcome": "Frontend SSE parsing handles split events correctly",
-    "passes": false,
+    "passes": true,
     "id": 101
   },
   {
@@ -2385,7 +2385,7 @@
       "VERIFY the optimization is available in history after completion"
     ],
     "expected_outcome": "SSE complete event includes optimization_id",
-    "passes": false,
+    "passes": true,
     "id": 102
   },
   {
@@ -2438,7 +2438,7 @@
       "VERIFY both runs appear in history with different prompts"
     ],
     "expected_outcome": "Multiple forge runs do not interfere",
-    "passes": false,
+    "passes": true,
     "id": 104
   },
   {
@@ -3042,7 +3042,7 @@
       "SCREENSHOT to verify sub-tab navigation"
     ],
     "expected_outcome": "Prompt document shows Edit/Pipeline/History sub-tabs",
-    "passes": false,
+    "passes": true,
     "id": 131
   },
   {
@@ -3067,7 +3067,7 @@
       "SCREENSHOT to verify textarea with entered text"
     ],
     "expected_outcome": "Edit sub-tab has textarea for prompt input",
-    "passes": false,
+    "passes": true,
     "id": 132
   },
   {
@@ -3094,7 +3094,7 @@
       "SCREENSHOT to verify forge initiated the pipeline"
     ],
     "expected_outcome": "Forge button visible and triggers optimization",
-    "passes": false,
+    "passes": true,
     "id": 133
   },
   {
@@ -3117,7 +3117,7 @@
       "SCREENSHOT to verify the Inspector panel rendering"
     ],
     "expected_outcome": "Inspector panel shows context-sensitive content",
-    "passes": false,
+    "passes": true,
     "id": 134
   },
   {
@@ -3141,7 +3141,7 @@
       "SCREENSHOT to verify the provider badge in Status Bar"
     ],
     "expected_outcome": "Status Bar shows provider badge",
-    "passes": false,
+    "passes": true,
     "id": 135
   },
   {
@@ -3163,7 +3163,7 @@
       "SCREENSHOT to verify the Ctrl+K hint is visible"
     ],
     "expected_outcome": "Status Bar shows Ctrl+K shortcut hint",
-    "passes": false,
+    "passes": true,
     "id": 136
   },
   {
@@ -3189,7 +3189,7 @@
       "SCREENSHOT to verify the Command Palette appearance"
     ],
     "expected_outcome": "Command Palette opens with Ctrl+K",
-    "passes": false,
+    "passes": true,
     "id": 137
   },
   {
@@ -3213,7 +3213,7 @@
       "SCREENSHOT to verify filtered command results"
     ],
     "expected_outcome": "Command Palette fuzzy search filters commands",
-    "passes": false,
+    "passes": true,
     "id": 138
   },
   {
@@ -3236,7 +3236,7 @@
       "SCREENSHOT to verify tab management controls"
     ],
     "expected_outcome": "Tab management: open and close tabs",
-    "passes": false,
+    "passes": true,
     "id": 139
   },
   {
@@ -3260,7 +3260,7 @@
       "SCREENSHOT to verify GitHub connection status view"
     ],
     "expected_outcome": "Navigator GitHub view shows connection status",
-    "passes": false,
+    "passes": true,
     "id": 140
   },
   {
@@ -3288,7 +3288,7 @@
       "SCREENSHOT to verify side-by-side diff display"
     ],
     "expected_outcome": "Diff view renders side-by-side comparison",
-    "passes": false,
+    "passes": true,
     "id": 141
   },
   {
@@ -3312,7 +3312,7 @@
       "SCREENSHOT to verify history list display"
     ],
     "expected_outcome": "Navigator History view shows run list",
-    "passes": false,
+    "passes": true,
     "id": 142
   },
   {
