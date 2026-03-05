@@ -1,40 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 255 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 237 lines. Earlier notes are in git history.]
 
-
-**Guidance for next coding session:**
-- Tests #226, #233, #234, #235 are the last 4 T3 tests — all features appear implemented, coding agent should verify and mark passing
-- T4 (70 CSS styling/theming tests) is ready to start — all functional features verified
-- No mocks, no stubs, no TODOs in application code
-- All persistence, toast, resize, Command Palette, and context injection features verified working
-- Frontend build passes cleanly (8.82s)
-
-**Progress:** 231/335 tests passing (69.0%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- DB: backend/data/promptforge.db
-- Start: ./init.sh start
-
-## Session Summary — Session 33 (2026-03-05)
-
-**Completed:** #226 History navigation and artifact review flow, #233 Diff view with side-by-side/inline toggle, #234 Multiple forges with different strategies, #235 Copy to clipboard with visual feedback
-**Regressions fixed:** None
-**In progress:** None
-**Next up:** T4 tests starting at #236 (Cyberpunk dark theme) — 70 CSS/styling/theming tests
-**Known issues:** None — all features clean, no mocks, no stubs
-**Progress:** 235/335 tests passing (70.1%)
-**Tier breakdown:** T0: 18/18, T1: 45/45, T2: 106/106, T3: 66/66 ✓ COMPLETE, T4: 0/70, T5: 0/30
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- DB: backend/data/promptforge.db
-- Start: ./init.sh start
-
-**Notes:** T3 tier boundary reached. All 4 remaining T3 tests (#226, #233, #234, #235) were already implemented (session 30) and verified by validator (session 32). Code review confirmed all features: NavigatorHistory with sorting, ForgeArtifact with 4 sub-tabs, DiffView with LCS diffing and mode toggle, strategy dropdown in PromptEdit, CopyButton with neon-green 600ms flash animation. Marked all 4 as passing. Exiting for tier boundary validation sweep before starting T4 styling work.
-
-## Integration Report — Session 34 (2026-03-05)
 
 **Gaps discovered:** 0
 - No new code since last integrator scan (session 31)
@@ -235,3 +200,27 @@
 - T5 tests are accessibility-focused (ARIA landmarks, focus traps, roving tabindex, aria-labels, aria-live)
 - These require adding ARIA attributes and keyboard navigation features
 - No mocks, no stubs, no TODOs in application code — codebase is clean
+
+## Integration Report — Session 39 (2026-03-05)
+
+**Gaps discovered:** 0
+- All endpoints have frontend consumers (verified: /api/optimize, /api/history, /api/settings, /api/providers, /api/github, /auth/github)
+- No duplicate routes
+- Frontend build passes
+- No new files added in recent commits (session 38 only modified existing files)
+- Note: /api/optimizations (5 endpoints) has 0 frontend consumers but is NOT in the app_spec — dead code, not a wiring gap
+
+**Gaps wired:** 0 of 0
+**Tests now passing (via wiring):** none
+
+**Remaining for coding agent:**
+- T5: 30 accessibility/error-handling/edge-case tests (#306-335) — all require new code implementation
+
+**Progress:** 305/335 tests passing (91.0%)
+**Tier breakdown:** T0: 18/18 ✓ | T1: 45/45 ✓ | T2: 106/106 ✓ | T3: 66/66 ✓ | T4: 70/70 ✓ | T5: 0/30
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
