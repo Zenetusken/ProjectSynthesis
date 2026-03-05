@@ -14,9 +14,29 @@ class CommandPaletteStore {
 
   get filteredCommands(): PaletteCommand[] {
     if (!this.query) return this.commands;
-    const q = this.query.toLowerCase();
+    let q = this.query;
+    // Prefix scoping: '>' shows only command items
+    if (q.startsWith('>')) {
+      const term = q.slice(1).trim().toLowerCase();
+      if (!term) return this.commands;
+      return this.commands.filter(
+        c => c.label.toLowerCase().includes(term) || c.category.toLowerCase().includes(term)
+      );
+    }
+    // Prefix scoping: '#' shows history-related items
+    if (q.startsWith('#')) {
+      const term = q.slice(1).trim().toLowerCase();
+      const historyCommands = this.commands.filter(c =>
+        c.category.toLowerCase() === 'view' && c.label.toLowerCase().includes('history')
+      );
+      if (!term) return historyCommands.length > 0 ? historyCommands : this.commands;
+      return this.commands.filter(
+        c => (c.label.toLowerCase().includes(term) || c.label.toLowerCase().includes('history'))
+      );
+    }
+    const lower = q.toLowerCase();
     return this.commands.filter(
-      c => c.label.toLowerCase().includes(q) || c.category.toLowerCase().includes(q)
+      c => c.label.toLowerCase().includes(lower) || c.category.toLowerCase().includes(lower)
     );
   }
 
