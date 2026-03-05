@@ -200,3 +200,28 @@
 - MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
 - DB: backend/data/promptforge.db (3 tables, 61 optimization records)
 - Start: ./init.sh start
+
+## Session Summary — Session 20 (2026-03-05)
+
+**Completed:** #143 Navigator Files view shows file tree, #127 Workbench 5-zone CSS Grid, #128 Activity Bar 6 icons, #129 Activity Bar clicking changes Navigator, #130 Editor Groups tab bar
+**Regressions fixed:** none
+**In progress:** none
+**Next up:** #131 (Edit/Pipeline/History sub-tabs), #132 (textarea), #133 (Forge button), #134 (Inspector), #135 (Status Bar provider), #136 (Ctrl+K hint) — all already implemented, just need marking
+**Known issues:** none new
+
+### Code changes this session:
+- Rewrote NavigatorFiles.svelte: replaced hardcoded sampleFiles with dynamic Workspace (prompt files) + Recent Forges (loaded from fetchHistory API) + Repository (fetchRepoTree when GitHub repo linked)
+- Added stats summary in NavigatorHistory header: total optimizations, average score, framework breakdown badges (uses fetchHistoryStats)
+- Added delete button (trash icon on hover) in NavigatorHistory list items (uses deleteOptimization)
+- All three integrator next_actions (i18_1, i18_2, i18_3) completed
+
+### Tests #127-#142 note:
+All workbench UI tests (#127-#142) are already fully implemented in the codebase. Only 5 were marked this session to stay within the 3-5 test budget. The remaining should be marked by the next coding session — they require no code changes.
+
+**Progress:** 130/335 tests passing (38.8%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
+- DB: backend/data/promptforge.db (3 tables, 61+ optimization records)
+- Start: ./init.sh start
