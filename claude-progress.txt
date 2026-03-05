@@ -1,23 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 262 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 220 lines. Earlier notes are in git history.]
 
-- Provider type: 'claude_cli' now in union type, cast aligned
-
-**Tests likely already passing (for validator to verify):**
-- #205 Inspector shows strategy recommendations in Edit mode (already implemented)
-- #206 Inspector shows score breakdown post-forge (already implemented)
-- #210 StatusBar shows forging progress during pipeline (already implemented)
-
-**Remaining gaps for future sessions:**
-- Strategy needs to be moved from PromptEdit local state to forge/editor store (i27_1)
-- RepoPickerModal needs parent (i24_6)
-- MCP frontend connection (no frontend WebSocket code yet — needs coding)
-- Global toast system (Toast only used locally in PromptEdit — needs coding)
-
-**Progress:** 190/335 tests passing (56.7%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
 - DB: backend/data/promptforge.db
 - Start: ./init.sh start
 
@@ -218,3 +200,29 @@ Full discovery scan completed (Steps 3a-3i):
 - Start: ./init.sh start
 
 **Notes:** T3 tier boundary reached. All 4 remaining T3 tests (#226, #233, #234, #235) were already implemented (session 30) and verified by validator (session 32). Code review confirmed all features: NavigatorHistory with sorting, ForgeArtifact with 4 sub-tabs, DiffView with LCS diffing and mode toggle, strategy dropdown in PromptEdit, CopyButton with neon-green 600ms flash animation. Marked all 4 as passing. Exiting for tier boundary validation sweep before starting T4 styling work.
+
+## Integration Report — Session 34 (2026-03-05)
+
+**Gaps discovered:** 0
+- No new code since last integrator scan (session 31)
+- Session 33 only updated feature_list_2.json (marked #226, #233, #234, #235 passing)
+- All services healthy: backend :8000, frontend :5199, MCP :8001
+
+**Gaps wired:** 0 of 0
+**Tests now passing (via wiring):** none
+
+**Verification results:**
+- Backend healthy: provider=claude_cli, db_connected=true
+- Frontend healthy: dev server on :5199
+
+**Remaining gaps for future sessions:**
+- T4: 70 CSS/styling tests — coding agent job (no wiring needed)
+- T5: 30 tests — coding agent job
+
+**Progress:** 235/335 tests passing (70.1%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
