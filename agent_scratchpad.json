@@ -2,16 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 11,
-      "session_type": "validator",
-      "tests_completed": [],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "Expanded validation: all 77 passing tests verified across T0-T2. 0 regressions. Code integrity audit clean. Full pipeline e2e confirmed (4/4 stages, score 9/10, RISEN). StatusBar lifecycle (#168) verified. Build clean."
-    },
-    {
       "session_id": 12,
       "session_type": "integrator",
       "tests_completed": [],
@@ -92,26 +82,19 @@
       "mocks_found": 0,
       "mocks_fixed": 0,
       "summary": "Expanded validation (retry): all 114 passing tests verified via git checkpoints across T0-T2. 0 regressions. Code audit completed (clean). Frontend restarted (was down from timeout). Build clean. Cross-feature integration check: history sidebar shows real data, settings panel functional, all API endpoints returning real data (51 optimizations, real scores/frameworks). Visual coherence confirmed."
-    }
-  ],
-  "active_warnings": [
-    {
-      "id": "w15_1",
-      "source_session": 15,
-      "severity": "info",
-      "area": "backend/app/services/codebase_explorer.py",
-      "message": "tool_result SSE events not yet emitted from Stage 0 (only tool_call events are yielded). Test #106 needs this for full pass.",
-      "ttl_sessions": 1
     },
     {
-      "id": "w15_2",
-      "source_session": 15,
-      "severity": "info",
-      "area": "backend/app/mcp_server.py",
-      "message": "MCP github_set_token stores tokens in module-level dict keyed by 'current' (not per-connection). Token is NOT discarded on WebSocket disconnect \u2014 test #158 may need refinement.",
-      "ttl_sessions": 1
+      "session_id": 18,
+      "session_type": "integrator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "gaps_found": 8,
+      "gaps_wired": 1,
+      "summary": "Wired GitHub state hydration on init (+layout.svelte): fetchGitHubAuthStatus/fetchGitHubRepos/fetchLinkedRepo called on mount to persist GitHub connection across page refreshes. 7 remaining gaps flagged for coding agent (RepoPickerModal orphan, retryOptimization unused, NavigatorFiles hardcoded, fetchHistoryStats/deleteOptimization no UI, fetchProviderDetect/Status unused). Field audit: all 39 OptimizationRecord fields match backend schema. No TS/Pydantic mismatches."
     }
   ],
+  "active_warnings": [],
   "outstanding_mocks": [],
   "blocked_tests": [],
   "validation_coverage": {
@@ -265,13 +248,31 @@
       "priority": "medium"
     },
     {
-      "id": "i16_3",
+      "id": "i18_1",
       "from_agent": "integrator",
       "to_agent": "coding",
-      "from_session": 16,
-      "action": "fetchGitHubAuthStatus() is not called on app init \u2014 GitHub connection state is lost on page refresh. Add an onMount in +layout.svelte (or NavigatorGitHub) that calls fetchGitHubAuthStatus() and hydrates the github store if already connected.",
-      "test_ids": [],
+      "from_session": 18,
+      "action": "NavigatorFiles.svelte uses hardcoded sampleFiles array — needs to be rewritten to use fetchRepoTree() and fetchFileContent() from client.ts to show actual repo file tree when a GitHub repo is linked.",
+      "test_ids": [143],
       "priority": "medium"
+    },
+    {
+      "id": "i18_2",
+      "from_agent": "integrator",
+      "to_agent": "coding",
+      "from_session": 18,
+      "action": "fetchHistoryStats() in client.ts is defined but has no UI consumer — needs a stats display section (e.g., in NavigatorHistory header or Inspector) showing total_optimizations, average_score, framework_distribution from GET /api/history/stats.",
+      "test_ids": [],
+      "priority": "low"
+    },
+    {
+      "id": "i18_3",
+      "from_agent": "integrator",
+      "to_agent": "coding",
+      "from_session": 18,
+      "action": "deleteOptimization() in client.ts is defined but has no UI trigger — needs a delete button/icon in NavigatorHistory list items that calls deleteOptimization(id) and refreshes the history list.",
+      "test_ids": [],
+      "priority": "low"
     }
   ],
   "server_state": {
@@ -280,8 +281,8 @@
     "mcp_url": "ws://127.0.0.1:8001/ws",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh start",
-    "last_verified_session": 17,
-    "notes": "All services healthy (verified session 17). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db (3 tables, 51 optimization records). T0: 18/18, T1: 45/45, T2: 51/106. 114/335 tests passing (34.0%). Full pipeline e2e confirmed working. Frontend was restarted (down from previous timeout)."
+    "last_verified_session": 18,
+    "notes": "All services healthy (verified session 18). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db (3 tables, 51 optimization records). T0: 18/18, T1: 45/45, T2: 54/106. 117/335 tests passing (34.9%). GitHub state hydration wired into +layout.svelte. Frontend restarted by init.sh."
   },
   "session_checkpoint": {
     "session_type": "",
