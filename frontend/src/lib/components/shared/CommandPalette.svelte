@@ -251,7 +251,7 @@
       {/each}
 
       {#if commandPalette.filteredCommands.length === 0}
-        <div class="px-4 py-6 text-center text-sm text-text-dim">No commands found.</div>
+        <div class="px-4 py-6 text-center text-sm text-text-secondary">No commands found.</div>
       {/if}
     </div>
   </div>

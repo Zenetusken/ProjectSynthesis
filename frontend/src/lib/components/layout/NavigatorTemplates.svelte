@@ -41,7 +41,7 @@
       {/each}
     </div>
   {:else}
-    <div class="text-xs text-text-dim px-2 py-6 text-center">
+    <div class="text-xs text-text-secondary px-2 py-6 text-center">
       <p>No templates available.</p>
       <p class="mt-1 text-[10px]">Templates help you start with pre-built prompt structures.</p>
     </div>

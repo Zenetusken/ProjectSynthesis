@@ -3715,7 +3715,7 @@
       "SCREENSHOT to verify text contrast"
     ],
     "expected_outcome": "text-dim not used for body text (WCAG AA failure)",
-    "passes": false,
+    "passes": true,
     "id": 315
   },
   {

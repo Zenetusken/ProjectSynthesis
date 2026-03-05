@@ -49,7 +49,7 @@
     </div>
 
     {#if data.summary}
-      <p class="text-text-dim mt-1 italic text-xs">{data.summary}</p>
+      <p class="text-text-secondary mt-1 italic text-xs">{data.summary}</p>
     {/if}
 
     {#if toolCalls.length > 0}
@@ -58,6 +58,6 @@
       </div>
     {/if}
   {:else}
-    <p class="text-text-dim">Waiting to start...</p>
+    <p class="text-text-secondary">Waiting to start...</p>
   {/if}
 </div>

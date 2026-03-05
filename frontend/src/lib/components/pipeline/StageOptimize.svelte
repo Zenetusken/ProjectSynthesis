@@ -40,6 +40,6 @@
       </div>
     {/if}
   {:else}
-    <p class="text-text-dim">Waiting for Strategy stage...</p>
+    <p class="text-text-secondary">Waiting for Strategy stage...</p>
   {/if}
 </div>

@@ -70,9 +70,9 @@
     {/if}
 
     {#if data.approach_notes}
-      <p class="text-text-dim mt-1 italic text-xs">{data.approach_notes}</p>
+      <p class="text-text-secondary mt-1 italic text-xs">{data.approach_notes}</p>
     {/if}
   {:else}
-    <p class="text-text-dim">Waiting for Analyze stage...</p>
+    <p class="text-text-secondary">Waiting for Analyze stage...</p>
   {/if}
 </div>

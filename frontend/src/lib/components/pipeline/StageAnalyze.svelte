@@ -87,6 +87,6 @@
       </div>
     {/if}
   {:else}
-    <p class="text-text-dim">Waiting for Explore stage...</p>
+    <p class="text-text-secondary">Waiting for Explore stage...</p>
   {/if}
 </div>

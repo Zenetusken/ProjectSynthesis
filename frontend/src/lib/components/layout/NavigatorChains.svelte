@@ -25,7 +25,7 @@
     </button>
   </div>
 
-  <div class="text-xs text-text-dim px-2 py-6 text-center">
+  <div class="text-xs text-text-secondary px-2 py-6 text-center">
     <p class="mb-2">Chain multiple prompts together for complex workflows.</p>
     <button
       class="text-neon-cyan hover:text-neon-cyan/80 transition-colors"

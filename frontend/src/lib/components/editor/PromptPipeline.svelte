@@ -15,7 +15,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
       </svg>
       <p class="text-sm text-text-secondary mb-1">No pipeline running</p>
-      <p class="text-xs text-text-dim">Click "Forge" in the Edit tab to start optimizing your prompt.</p>
+      <p class="text-xs text-text-secondary">Click "Forge" in the Edit tab to start optimizing your prompt.</p>
     </div>
   {:else if showArtifact}
     <ForgeArtifact />

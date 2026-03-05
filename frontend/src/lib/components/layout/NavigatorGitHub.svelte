@@ -20,7 +20,9 @@
           full_name: r.full_name as string,
           description: (r.description || '') as string,
           default_branch: (r.default_branch || 'main') as string,
-          private: !!r.private
+          private: !!r.private,
+          language: r.language as string | undefined,
+          size_kb: r.size_kb as number | undefined,
         }))
       );
       patInput = '';
@@ -39,11 +41,12 @@
     }
   }
 
-  async function handleSelectRepo(fullName: string) {
+  async function handleSelectRepo(fullName: string, branch?: string) {
     github.selectRepo(fullName);
     // Persist repo link to backend (non-blocking — local state already updated)
     const repo = github.repos.find(r => r.full_name === fullName);
-    linkRepo(fullName, repo?.default_branch).catch(() => {
+    const resolvedBranch = branch ?? repo?.default_branch;
+    linkRepo(fullName, resolvedBranch).catch(() => {
       // Link failed — local selection still works, just won't persist across refresh
     });
   }

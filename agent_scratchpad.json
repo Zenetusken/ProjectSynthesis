@@ -392,9 +392,9 @@
     "session_id": 41,
     "audit_done": false,
     "tests_verified_this_run": [],
-    "tests_completed_this_run": [],
+    "tests_completed_this_run": [306, 308, 309, 310, 311, 312, 313, 314, 316],
     "gaps_wired_this_run": [],
-    "last_step": "orient",
+    "last_step": "implementing_t5",
     "session_start_sha": "4f9505ff71ed5b4ceecc06a8ec781a4f0acf0cfc"
   }
 }

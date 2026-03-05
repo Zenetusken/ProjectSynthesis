@@ -3,6 +3,8 @@ export interface GitHubRepo {
   description: string;
   default_branch: string;
   private: boolean;
+  language?: string;
+  size_kb?: number;
 }
 
 export interface GitHubFile {

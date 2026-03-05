@@ -55,6 +55,6 @@
       </div>
     {/if}
   {:else}
-    <p class="text-text-dim">Waiting for Optimize stage...</p>
+    <p class="text-text-secondary">Waiting for Optimize stage...</p>
   {/if}
 </div>

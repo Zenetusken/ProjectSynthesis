@@ -215,7 +215,7 @@
       <svg class="w-8 h-8 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
       </svg>
-      <p class="text-xs text-text-dim">No prompts yet</p>
+      <p class="text-xs text-text-secondary">No prompts yet</p>
       <p class="text-[10px] text-text-dim/50 mt-0.5">Create a new prompt to get started.</p>
       <button
         class="mt-2 px-3 py-1 text-[10px] rounded bg-neon-cyan/10 border border-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/20 transition-colors"

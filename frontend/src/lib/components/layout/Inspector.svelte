@@ -115,7 +115,7 @@
                       style="width: {rec.confidence * 100}%; background: linear-gradient(90deg, var(--color-neon-cyan), var(--color-neon-purple))"
                     ></div>
                   </div>
-                  <p class="text-[10px] text-text-dim">{rec.desc}</p>
+                  <p class="text-[10px] text-text-secondary">{rec.desc}</p>
                 </div>
               {/each}
             </div>
@@ -125,7 +125,7 @@
         <!-- Document Info -->
         <div class="space-y-2">
           <h3 class="font-display text-[12px] font-bold text-text-dim uppercase">Document Info</h3>
-          <div class="text-xs text-text-dim space-y-1">
+          <div class="text-xs text-text-secondary space-y-1">
             <div class="flex justify-between">
               <span>Type</span>
               <span class="text-text-secondary capitalize">{editor.activeTab.type}</span>

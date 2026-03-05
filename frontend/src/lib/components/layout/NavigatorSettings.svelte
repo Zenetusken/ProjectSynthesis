@@ -62,7 +62,7 @@
   </div>
 
   {#if loading}
-    <div class="text-xs text-text-dim px-2 py-4 text-center">Loading settings...</div>
+    <div class="text-xs text-text-secondary px-2 py-4 text-center">Loading settings...</div>
   {:else if error}
     <div class="text-xs text-neon-red bg-neon-red/10 px-2 py-1.5 rounded border border-neon-red/20">
       {error}
