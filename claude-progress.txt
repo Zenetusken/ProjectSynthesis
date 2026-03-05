@@ -1,4 +1,4 @@
-[Trimmed by orchestrator: kept last 200 of 260 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
 
 **Progress:** 231/335 tests passing (69.0%)
 **Tier breakdown:** T0: 18/18, T1: 45/45, T2: 106/106, T3: 62/66, T4: 0/70, T5: 0/30
@@ -194,6 +194,36 @@ Full discovery scan completed (Steps 3a-3i):
 - Skipped 17 never-verified tests — next validator session can cover: #101,104,106,161-166,191-194,206,210,227,232
 
 **Progress:** 235/335 tests passing (70.1%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
+
+## Integration Report — Session 36 (2026-03-05)
+
+**Gaps discovered:** 0
+- Coding agent did T4 styling work (#236-285): 33 files modified, 0 new files added
+- All changes were CSS/styling modifications to existing, already-wired components
+- All 7 stores well-consumed (10-150+ references each)
+- All backend endpoints have frontend API client consumers
+- ScoreBar/ScoreCircle components properly imported in all files that use them
+- Frontend build passes cleanly (3.73s)
+- No duplicate routes, consistent session patterns, CORS configured
+
+**Gaps wired:** 0 of 0
+**Tests now passing (via wiring):** none
+
+**Verification results:**
+- Backend healthy: provider=claude_cli, db_connected=true
+- Frontend healthy: dev server on :5199, build passes
+
+**Remaining gaps for future sessions:**
+- T4: 20 remaining CSS/styling tests — coding agent job
+- T5: 30 tests — coding agent job
+
+**Progress:** 285/335 tests passing (85.1%)
 **Server info:**
 - Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
 - Frontend: http://localhost:5199 (SvelteKit 2 + Vite)

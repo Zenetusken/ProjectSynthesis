@@ -55,6 +55,16 @@
       "mocks_found": 0,
       "mocks_fixed": 0,
       "summary": "Expanded tier-boundary validation (T3\u2192T4): 25 tests verified (19 from interrupted session + 6 new). 0 regressions, 0 mocks. Code audit clean. Real LLM pipeline confirmed with 2 different strategies (chain-of-thought, CO-STAR). Build passes. All T0-T3 verified. T4 ready."
+    },
+    {
+      "session_id": 36,
+      "session_type": "integrator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "gaps_found": 0,
+      "gaps_wired": 0,
+      "summary": "No integration gaps found. Coding agent did T4 styling work (33 files modified, 0 new files). All CSS/styling changes to existing wired components. All stores consumed (10-150+ refs), all endpoints have frontend consumers, ScoreBar/ScoreCircle properly imported, no duplicate routes, build passes (3.73s). 285/335 passing (85.1%)."
     }
   ],
   "active_warnings": [],
@@ -297,16 +307,6 @@
   },
   "next_actions": [
     {
-      "id": "a33_2",
-      "from_agent": "coding",
-      "to_agent": "coding",
-      "from_session": 33,
-      "action": "Start T4 styling/theming tests (70 tests). All functional features complete through T3. T4 is CSS/theming work: cyberpunk dark theme, neon colors, font families, badge colors, animations, borders.",
-      "test_ids": [],
-      "priority": "medium",
-      "status": "expired"
-    },
-    {
       "id": "a35_1",
       "from_agent": "validator",
       "to_agent": "coding",
@@ -322,17 +322,17 @@
     "mcp_url": "ws://127.0.0.1:8001/ws",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh start",
-    "last_verified_session": 35,
-    "notes": "All services healthy (session 35). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. Build passes (4.24s). T0: 18/18, T1: 45/45, T2: 106/106, T3: 66/66. 235/335 tests passing (70.1%). T4 styling work ready to begin. Tier boundary T3\u2192T4 validated."
+    "last_verified_session": 36,
+    "notes": "All services healthy (session 36). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. Build passes (3.73s). T0: 18/18, T1: 45/45, T2: 106/106, T3: 66/66, T4: 50/70. 285/335 tests passing (85.1%). T4 styling work in progress."
   },
   "session_checkpoint": {
-    "session_type": "coding",
-    "session_id": 36,
+    "session_type": "",
+    "session_id": 0,
     "audit_done": false,
     "tests_verified_this_run": [],
-    "tests_completed_this_run": [236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 251],
+    "tests_completed_this_run": [],
     "gaps_wired_this_run": [],
-    "last_step": "implementing T4 batch 2",
-    "session_start_sha": "42471d6e42aa9e2c31bf70d0dddd06eca753e15e"
+    "last_step": "",
+    "session_start_sha": ""
   }
 }
