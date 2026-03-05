@@ -2940,7 +2940,7 @@
       "VERIFY the layout uses CSS Grid with proper grid-template-columns"
     ],
     "expected_outcome": "Workbench renders 5-zone CSS Grid layout",
-    "passes": false,
+    "passes": true,
     "id": 127
   },
   {
