@@ -2948,7 +2948,7 @@
       "SCREENSHOT to verify empty state display"
     ],
     "expected_outcome": "Empty state for Navigator Files when no prompts exist",
-    "passes": false,
+    "passes": true,
     "id": 286
   },
   {

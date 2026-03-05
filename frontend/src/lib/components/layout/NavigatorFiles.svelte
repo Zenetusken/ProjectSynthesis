@@ -11,11 +11,7 @@
     promptText?: string;
   }
 
-  let promptFiles = $state<FileEntry[]>([
-    { name: 'system-prompt.md', type: 'prompt' },
-    { name: 'code-review.md', type: 'prompt' },
-    { name: 'data-analysis.md', type: 'prompt' }
-  ]);
+  let promptFiles = $state<FileEntry[]>([]);
 
   let forgeFiles = $state<FileEntry[]>([]);
 
@@ -120,17 +116,27 @@
       </button>
     </div>
 
-    {#each promptFiles as file}
-      <button
-        class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-        onclick={() => openFile(file)}
-      >
-        <svg class="w-3.5 h-3.5 text-neon-cyan/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+    {#if promptFiles.length > 0}
+      {#each promptFiles as file}
+        <button
+          class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          onclick={() => openFile(file)}
+        >
+          <svg class="w-3.5 h-3.5 text-neon-cyan/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+          <span class="truncate">{file.name}</span>
+        </button>
+      {/each}
+    {:else}
+      <div class="flex flex-col items-center text-center px-2 py-4">
+        <svg class="w-6 h-6 mb-1.5 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
         </svg>
-        <span class="truncate">{file.name}</span>
-      </button>
-    {/each}
+        <p class="text-[10px] text-text-dim">No prompts yet</p>
+        <p class="text-[10px] text-text-dim/50 mt-0.5">Click + to create a new prompt.</p>
+      </div>
+    {/if}
   </div>
 
   <!-- Recent Forges section -->
@@ -205,6 +211,18 @@
   {/if}
 
   {#if promptFiles.length === 0 && forgeFiles.length === 0 && !github.selectedRepo}
-    <p class="text-xs text-text-dim px-2 py-4 text-center">No files in workspace</p>
+    <div class="flex flex-col items-center justify-center text-center px-2 py-8">
+      <svg class="w-8 h-8 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+      </svg>
+      <p class="text-xs text-text-dim">No prompts yet</p>
+      <p class="text-[10px] text-text-dim/50 mt-0.5">Create a new prompt to get started.</p>
+      <button
+        class="mt-2 px-3 py-1 text-[10px] rounded bg-neon-cyan/10 border border-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/20 transition-colors"
+        onclick={() => editor.openTab({ id: `prompt-${Date.now()}`, label: 'New Prompt', type: 'prompt', promptText: '', dirty: false })}
+      >
+        + New Prompt
+      </button>
+    </div>
   {/if}
 </div>
