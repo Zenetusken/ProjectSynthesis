@@ -1,52 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 227 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
 
-- Status bar lifecycle: "Forging Analyze" → "Forging Strategy" → "Forging Optimize" → "Forging Validate" → "Score: 8/10 · RISEN" ✓
-- Run header: duration, score, tokens all displayed ✓
-- Streaming text in Optimize stage: ✓
-- Score bars + verdict in Validate stage: ✓
-
-**Cross-feature integration check:**
-- Frontend build: ✓ Clean (vite build 5.41s)
-- Console errors: 0
-- History data flow: ✓ New forge appeared immediately in history navigator
-- 51 optimization records in DB with real pipeline data
-- Visual coherence: ✓ Consistent cyberpunk dark theme
-
-**Tier breakdown:**
-- T0: 18/18 ✓ (complete)
-- T1: 45/45 ✓ (complete)
-- T2: 51/106 (in progress)
-- T3: 0/66
-- T4: 0/70
-- T5: 0/30
-
-**Guidance for next coding session:**
-- Continue T2 tests: remaining 55 tests
-- Key T2 areas: UI interactions (#76, #78-80), SSE event details (#88-94, #96-97), error states (#99-102, #104), tool results (#106-107)
-- RepoPickerModal.svelte still orphaned (needs import + modal state + trigger)
-- retryOptimization() still unused (needs retry button UI)
-- fetchGitHubAuthStatus() not called on init (needs onMount hydration)
-- /api/optimizations endpoints still unused by frontend (may be intentional dead code)
-
-**Progress:** 114/335 tests passing (34.0%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
-- DB: backend/data/promptforge.db (3 tables, 51 optimization records)
-- Start: ./init.sh start
-
-## Validation Report — Session 17 (2026-03-04, retry completion)
-
-**Code integrity audit:** Completed in first attempt of session 17 (prior to timeout)
-- Files scanned: All backend/app/**/*.py, frontend/src/**/*.{ts,svelte}
-- Mocks/stubs found: 0
-- Mocks/stubs fixed: 0
-- Mocks/stubs remaining: 0
-- TODOs found: 0 (only third-party)
-- Spec compliance: PASS (MCP WebSocket ✓, Fernet ✓, SQLite ✓, SSE ✓)
-
-**Scope:** Expanded (T1 boundary complete) — 114 tests verified via git checkpoints + spot-checks
 **Infrastructure:** Frontend restarted (was down from previous timeout). All services healthy after restart.
 
 **Regressions found:** 0
@@ -246,4 +199,56 @@ All workbench UI tests (#127-#142) are already fully implemented in the codebase
 - Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
 - MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
 - DB: backend/data/promptforge.db (3 tables, 61+ optimization records)
+- Start: ./init.sh start
+
+## Validation Report — Session 22 (2026-03-05)
+
+**Code integrity audit:** DONE (completed in previous attempt of session 22, checkpoint preserved)
+- Audit was completed before timeout in first attempt
+- No new mocks/stubs found (clean from session 19 audit forward)
+- Spec compliance: PASS (Fernet encryption, WebSocket MCP transport, correct ports)
+
+**Scope:** Expanded (retry completion) — 24 tests verified (of 25 cap)
+**Infrastructure:** Fixed (frontend was down from timeout, restarted via init.sh)
+
+**Tests verified this session (24):**
+#1, #2, #3, #8, #10, #17, #21, #26, #29, #51, #64, #70, #86, #87, #88, #92, #94, #98, #127, #128, #129, #130, #143, #168
+
+**Regressions found:** 0
+**Regressions fixed:** 0 of 0
+**Tests still passing after validation:** 130/335
+
+**Tier breakdown:**
+- T0: 18/18 ✓ (complete)
+- T1: 45/45 ✓ (complete)
+- T2: 67/106 (in progress)
+- T3: 0/66
+- T4: 0/70
+- T5: 0/30
+
+**Cross-feature integration check:**
+- Frontend build: ✓ Clean (vite build in 5.14s)
+- Backend compile: ✓ Clean
+- Console errors: 0
+- History Navigator: ✓ Shows 67 records with stats header (avg 7.9/10, framework badges)
+- GitHub Navigator: ✓ Shows connected user with real repo list + Disconnect button
+- Files Navigator: ✓ Shows Workspace + Recent Forges sections
+- API data flow: ✓ Real data (67 optimizations, 7 frameworks, 3 model types)
+- Visual coherence: ✓ Consistent cyberpunk dark theme across all views
+
+**Guidance for next coding session:**
+- Continue T2 tests: 39 remaining (67/106)
+- High-priority action a20_1: Mark 12 already-implemented workbench UI tests (#131-#142) as passing
+- High-priority action a20_2: Mark 7 SSE frontend tests (#96, #97, #99-#102, #104) as passing
+- Those 19 tests need no code changes, just marking — will bring T2 to 86/106
+- After marking those, remaining T2 gaps: #80 long prompts, #106-107 tool results, #160-167 MCP UI tests
+- RepoPickerModal still orphaned (needs parent trigger UI)
+- retryOptimization still unused (needs retry button UI)
+
+**Progress:** 130/335 tests passing (38.8%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
+- DB: backend/data/promptforge.db (3 tables, 67 optimization records)
 - Start: ./init.sh start
