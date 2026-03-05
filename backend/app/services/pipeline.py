@@ -77,6 +77,8 @@ async def run_pipeline(
             ):
                 if event_type == "explore_result":
                     codebase_context = event_data
+                    # Also yield so optimize.py can persist the snapshot
+                    yield ("codebase_context", event_data)
                 else:
                     yield (event_type, event_data)
 

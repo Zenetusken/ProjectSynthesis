@@ -472,9 +472,15 @@ if __name__ == "__main__":
     from starlette.routing import WebSocketRoute
     from mcp.server.websocket import websocket_server
 
-    async def ws_endpoint(scope, receive, send):
-        """Handle WebSocket connections for MCP protocol."""
-        async with websocket_server(scope, receive, send) as (read_stream, write_stream):
+    async def ws_endpoint(websocket):
+        """Handle WebSocket connections for MCP protocol.
+
+        Starlette WebSocketRoute passes a WebSocket object; we extract the raw
+        ASGI (scope, receive, send) for the MCP websocket_server context manager.
+        """
+        async with websocket_server(
+            websocket.scope, websocket._receive, websocket._send
+        ) as (read_stream, write_stream):
             await mcp._mcp_server.run(
                 read_stream,
                 write_stream,

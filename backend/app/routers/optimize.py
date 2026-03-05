@@ -96,7 +96,9 @@ async def optimize_prompt(
                     pipeline_error_message = event_data.get("error", "Unknown stage failure")
 
                 # Update the optimization record with pipeline results
-                if event_type == "analysis":
+                if event_type == "codebase_context":
+                    optimization.codebase_context_snapshot = json.dumps(event_data)
+                elif event_type == "analysis":
                     optimization.task_type = event_data.get("task_type")
                     optimization.complexity = event_data.get("complexity")
                     optimization.weaknesses = json.dumps(event_data.get("weaknesses", []))

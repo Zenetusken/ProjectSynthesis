@@ -2577,7 +2577,7 @@
       "VERIFY Stage 0 is skipped when no repo is linked"
     ],
     "expected_outcome": "Stage 0 Explore activates when repo linked",
-    "passes": false,
+    "passes": true,
     "id": 110
   },
   {
@@ -2598,7 +2598,7 @@
       "VERIFY the context is passed to Stage 1 Analyze as additional input"
     ],
     "expected_outcome": "CodebaseContext object created from Stage 0 output",
-    "passes": false,
+    "passes": true,
     "id": 111
   },
   {
@@ -2619,7 +2619,7 @@
       "VERIFY the analysis result includes codebase_informed boolean field"
     ],
     "expected_outcome": "Analysis stage receives CodebaseContext",
-    "passes": false,
+    "passes": true,
     "id": 112
   },
   {
@@ -2640,7 +2640,7 @@
       "VERIFY the pipeline stores the CodebaseContext JSON when a repo was linked"
     ],
     "expected_outcome": "Codebase context snapshot persisted in optimization record",
-    "passes": false,
+    "passes": true,
     "id": 113
   },
   {
@@ -2661,7 +2661,7 @@
       "VERIFY the handler returns JSON list of file paths and sizes"
     ],
     "expected_outcome": "list_repo_files tool definition correct",
-    "passes": false,
+    "passes": true,
     "id": 114
   },
   {
@@ -2682,7 +2682,7 @@
       "VERIFY the handler returns file content as a string"
     ],
     "expected_outcome": "read_file tool definition correct",
-    "passes": false,
+    "passes": true,
     "id": 115
   },
   {
@@ -2703,7 +2703,7 @@
       "VERIFY the handler returns formatted matches with file:line:content format"
     ],
     "expected_outcome": "search_code tool definition correct",
-    "passes": false,
+    "passes": true,
     "id": 116
   },
   {
@@ -2724,7 +2724,7 @@
       "VERIFY the handler returns content separated by clear headers"
     ],
     "expected_outcome": "read_multiple_files tool definition correct",
-    "passes": false,
+    "passes": true,
     "id": 117
   },
   {
@@ -2745,7 +2745,7 @@
       "VERIFY total output is limited to 300 lines"
     ],
     "expected_outcome": "get_repo_summary tool definition correct",
-    "passes": false,
+    "passes": true,
     "id": 118
   },
   {
@@ -2765,7 +2765,7 @@
       "VERIFY the complete_agentic method tracks and enforces the turn limit"
     ],
     "expected_outcome": "Stage 0 bounded by max 15 tool-call turns",
-    "passes": false,
+    "passes": true,
     "id": 119
   },
   {
@@ -2786,7 +2786,7 @@
       "VERIFY a timeout does not crash the pipeline"
     ],
     "expected_outcome": "Stage 0 bounded by 30-second timeout",
-    "passes": false,
+    "passes": true,
     "id": 120
   },
   {
@@ -2807,7 +2807,7 @@
       "VERIFY max file size per file is 100KB"
     ],
     "expected_outcome": "File filtering excludes binary and vendor directories",
-    "passes": false,
+    "passes": true,
     "id": 121
   },
   {
@@ -2829,7 +2829,7 @@
       "VERIFY the linked repo can be retrieved via GET /api/github/repos/linked"
     ],
     "expected_outcome": "Repo linking stores full_name and branch in DB",
-    "passes": false,
+    "passes": true,
     "id": 122
   },
   {
@@ -2850,7 +2850,7 @@
       "VERIFY subsequent optimizations run without Stage 0"
     ],
     "expected_outcome": "Repo unlink removes linked_repos record",
-    "passes": false,
+    "passes": true,
     "id": 123
   },
   {
@@ -2871,7 +2871,7 @@
       "VERIFY an error event is emitted but the pipeline is not terminated"
     ],
     "expected_outcome": "Stage 0 gracefully degrades on explore error",
-    "passes": false,
+    "passes": true,
     "id": 124
   },
   {
@@ -2892,7 +2892,7 @@
       "VERIFY the endpoint handles missing auth with appropriate error"
     ],
     "expected_outcome": "Repo list endpoint returns accessible repos",
-    "passes": false,
+    "passes": true,
     "id": 125
   },
   {
@@ -2913,7 +2913,7 @@
       "VERIFY subsequent requests within 5 minutes return cached data"
     ],
     "expected_outcome": "Repo list cached for 5 minutes",
-    "passes": false,
+    "passes": true,
     "id": 126
   },
   {
@@ -3537,7 +3537,7 @@
       "VERIFY the connection is established successfully"
     ],
     "expected_outcome": "MCP server WebSocket endpoint accessible",
-    "passes": false,
+    "passes": true,
     "id": 151
   },
   {
@@ -3558,7 +3558,7 @@
       "VERIFY the tool returns the optimization result with optimized_prompt and scores"
     ],
     "expected_outcome": "MCP optimize tool executes full pipeline",
-    "passes": false,
+    "passes": true,
     "id": 152
   },
   {
@@ -3579,7 +3579,7 @@
       "VERIFY the tool returns an array of optimization records"
     ],
     "expected_outcome": "MCP list tool returns optimization history",
-    "passes": false,
+    "passes": true,
     "id": 153
   },
   {
@@ -3600,7 +3600,7 @@
       "VERIFY the tool returns the full optimization record"
     ],
     "expected_outcome": "MCP get tool retrieves specific optimization",
-    "passes": false,
+    "passes": true,
     "id": 154
   },
   {
@@ -3621,7 +3621,7 @@
       "VERIFY the tool returns matching optimization records"
     ],
     "expected_outcome": "MCP search tool finds optimizations by query",
-    "passes": false,
+    "passes": true,
     "id": 155
   },
   {
@@ -3642,7 +3642,7 @@
       "VERIFY the tool confirms deletion success"
     ],
     "expected_outcome": "MCP delete tool removes optimization",
-    "passes": false,
+    "passes": true,
     "id": 156
   },
   {
@@ -3662,7 +3662,7 @@
       "VERIFY the tool returns total count, average score, and provider breakdown"
     ],
     "expected_outcome": "MCP stats tool returns aggregate statistics",
-    "passes": false,
+    "passes": true,
     "id": 157
   },
   {
@@ -3683,7 +3683,7 @@
       "VERIFY the token is discarded on WebSocket disconnect"
     ],
     "expected_outcome": "MCP github_set_token tool stores token in memory",
-    "passes": false,
+    "passes": true,
     "id": 158
   },
   {
@@ -3704,7 +3704,7 @@
       "VERIFY the server does not crash on malformed input"
     ],
     "expected_outcome": "MCP server handles malformed requests gracefully",
-    "passes": false,
+    "passes": true,
     "id": 159
   },
   {
