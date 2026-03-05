@@ -41,6 +41,7 @@
       isActive={forge.currentStage === stage}
       duration={result?.duration}
       model={result?.data?.model as string | undefined}
+      tokenCount={result?.tokenCount}
     >
       {#if stage === 'explore'}
         <StageExplore />

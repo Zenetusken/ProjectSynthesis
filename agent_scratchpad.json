@@ -2,28 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 6,
-      "session_type": "coding",
-      "tests_completed": [
-        27,
-        38,
-        42,
-        43,
-        44,
-        45,
-        46,
-        57,
-        60,
-        61,
-        63
-      ],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "Completed all 11 remaining T1 tests via real pipeline runs. Fixed retry_of bug in optimize.py (retry endpoint wasn't linking new records to originals). T1 tier complete: 45/45. Tier boundary reached, exiting for validator."
-    },
-    {
       "session_id": 7,
       "session_type": "integrator",
       "tests_completed": [],
@@ -200,7 +178,8 @@
         86,
         87
       ],
-      "priority": "medium"
+      "priority": "medium",
+      "status": "expired"
     },
     {
       "id": "i10_2",

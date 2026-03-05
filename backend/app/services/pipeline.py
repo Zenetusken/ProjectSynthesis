@@ -18,6 +18,13 @@ from app.services.codebase_explorer import run_explore
 logger = logging.getLogger(__name__)
 
 
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text (~4 chars per token)."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
 async def run_pipeline(
     provider: LLMProvider,
     raw_prompt: str,
@@ -75,6 +82,8 @@ async def run_pipeline(
                 "recoverable": True,
             })
 
+    total_tokens = 0
+
     # ---- Stage 1: Analyze ----
     yield ("stage", {"stage": "analyze", "status": "started"})
     start = time.time()
@@ -86,11 +95,15 @@ async def run_pipeline(
     )
     analysis["model"] = MODEL_ROUTING["analyze"]
 
+    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
+    total_tokens += stage_tokens
+
     yield ("analysis", analysis)
     yield ("stage", {
         "stage": "analyze",
         "status": "complete",
         "duration_ms": int((time.time() - start) * 1000),
+        "token_count": stage_tokens,
     })
 
     # ---- Stage 2: Strategy ----
@@ -114,11 +127,15 @@ async def run_pipeline(
         )
         strategy_result["model"] = MODEL_ROUTING["strategy"]
 
+    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(strategy_result))
+    total_tokens += stage_tokens
+
     yield ("strategy", strategy_result)
     yield ("stage", {
         "stage": "strategy",
         "status": "complete",
         "duration_ms": int((time.time() - start) * 1000),
+        "token_count": stage_tokens,
     })
 
     # ---- Stage 3: Optimize (streaming) ----
@@ -138,10 +155,15 @@ async def run_pipeline(
             optimization_result["model"] = MODEL_ROUTING["optimize"]
         yield (event_type, event_data)
 
+    opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
+    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis)) + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
+    total_tokens += stage_tokens
+
     yield ("stage", {
         "stage": "optimize",
         "status": "complete",
         "duration_ms": int((time.time() - start) * 1000),
+        "token_count": stage_tokens,
     })
 
     # ---- Stage 4: Validate ----
@@ -159,9 +181,13 @@ async def run_pipeline(
     )
     validation["model"] = MODEL_ROUTING["validate"]
 
+    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt) + _estimate_tokens(json.dumps(validation))
+    total_tokens += stage_tokens
+
     yield ("validation", validation)
     yield ("stage", {
         "stage": "validate",
         "status": "complete",
         "duration_ms": int((time.time() - start) * 1000),
+        "token_count": stage_tokens,
     })

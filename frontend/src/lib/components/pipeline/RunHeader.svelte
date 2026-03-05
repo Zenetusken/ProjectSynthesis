@@ -22,10 +22,16 @@
             Forge Error
           {/if}
         </h3>
-        <p class="text-xs text-text-dim mt-0.5">
+        <p class="text-xs text-text-dim mt-0.5 font-mono">
           {forge.completedStages} of {forge.visibleStages.length} stages completed
           {#if forge.totalDuration != null}
             <span class="ml-1">· {(forge.totalDuration / 1000).toFixed(1)}s</span>
+          {/if}
+          {#if forge.overallScore != null}
+            <span class="ml-1">· {forge.overallScore}/10</span>
+          {/if}
+          {#if forge.totalTokens != null}
+            <span class="ml-1">· {forge.totalTokens.toLocaleString()} tok</span>
           {/if}
           {#if forge.error}
             <span class="text-neon-red ml-1">{forge.error}</span>

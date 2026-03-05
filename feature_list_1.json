@@ -1531,7 +1531,7 @@
       "SCREENSHOT to verify the full optimized text is shown"
     ],
     "expected_outcome": "Stage 3 Optimize streams text progressively",
-    "passes": false,
+    "passes": true,
     "id": 70
   },
   {
@@ -1956,7 +1956,7 @@
       "SCREENSHOT to verify the run header information"
     ],
     "expected_outcome": "Pipeline duration shown in run header",
-    "passes": false,
+    "passes": true,
     "id": 86
   },
   {
@@ -1983,7 +1983,7 @@
       "SCREENSHOT to verify stage metadata is displayed"
     ],
     "expected_outcome": "Pipeline stage duration and token counts displayed",
-    "passes": false,
+    "passes": true,
     "id": 87
   },
   {
@@ -2276,7 +2276,7 @@
       "SCREENSHOT to verify the Pipeline sub-tab is showing the Stage Track"
     ],
     "expected_outcome": "Frontend auto-switches to Pipeline sub-tab on forge",
-    "passes": false,
+    "passes": true,
     "id": 98
   },
   {

@@ -71,6 +71,8 @@ async def optimize_prompt(
             # Import pipeline here to avoid circular imports
             from app.services.pipeline import run_pipeline
 
+            total_tokens = 0
+
             async for event_type, event_data in run_pipeline(
                 provider=_provider,
                 raw_prompt=request.prompt,
@@ -81,6 +83,10 @@ async def optimize_prompt(
                 session_id=req.session.get("session_id"),
             ):
                 yield _sse_event(event_type, event_data)
+
+                # Track total tokens from stage complete events
+                if event_type == "stage" and event_data.get("status") == "complete":
+                    total_tokens += event_data.get("token_count", 0)
 
                 # Update the optimization record with pipeline results
                 if event_type == "analysis":
@@ -127,6 +133,7 @@ async def optimize_prompt(
             yield _sse_event("complete", {
                 "optimization_id": opt_id,
                 "total_duration_ms": duration_ms,
+                "total_tokens": total_tokens,
             })
 
         except Exception as e:

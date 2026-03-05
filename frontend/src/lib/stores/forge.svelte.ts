@@ -4,6 +4,7 @@ export interface StageResult {
   stage: string;
   data: Record<string, unknown>;
   duration?: number;
+  tokenCount?: number;
 }
 
 export interface PipelineEvent {
@@ -30,6 +31,7 @@ class ForgeStore {
   overallScore = $state<number | null>(null);
   pipelineEvents = $state<PipelineEvent[]>([]);
   totalDuration = $state<number | null>(null);
+  totalTokens = $state<number | null>(null);
   error = $state<string | null>(null);
 
   get stages() {
@@ -61,6 +63,7 @@ class ForgeStore {
     this.overallScore = null;
     this.pipelineEvents = [];
     this.totalDuration = null;
+    this.totalTokens = null;
     this.error = null;
   }
 
@@ -94,7 +97,7 @@ class ForgeStore {
     this.streamingText += chunk;
   }
 
-  finishForge(score?: number, duration?: number) {
+  finishForge(score?: number, duration?: number, tokens?: number) {
     this.isForging = false;
     this.currentStage = null;
     if (score != null) {
@@ -102,6 +105,9 @@ class ForgeStore {
     }
     if (duration != null) {
       this.totalDuration = duration;
+    }
+    if (tokens != null) {
+      this.totalTokens = tokens;
     }
     this.addEvent({ type: 'forge_complete', timestamp: Date.now() });
   }

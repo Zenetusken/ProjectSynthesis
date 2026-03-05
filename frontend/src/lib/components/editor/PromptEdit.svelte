@@ -41,12 +41,13 @@
             if (data.status === 'started') {
               forge.setStageRunning(stageName);
             } else if (data.status === 'complete') {
-              // Always capture duration from stage complete event (it's the
-              // authoritative source — dedicated result events don't include it)
-              if (data.duration_ms != null && forge.stageResults[stageName]) {
+              // Always capture duration and token count from stage complete event
+              // (it's the authoritative source — dedicated result events don't include it)
+              if (forge.stageResults[stageName]) {
                 forge.stageResults[stageName] = {
                   ...forge.stageResults[stageName],
-                  duration: data.duration_ms as number
+                  duration: data.duration_ms as number | undefined,
+                  tokenCount: data.token_count as number | undefined
                 };
               }
               // Only mark complete if a result event hasn't already done so
@@ -54,7 +55,8 @@
                 forge.setStageComplete(stageName, {
                   stage: stageName,
                   data,
-                  duration: data.duration_ms as number | undefined
+                  duration: data.duration_ms as number | undefined,
+                  tokenCount: data.token_count as number | undefined
                 });
               }
             }
@@ -87,7 +89,7 @@
             if (data.optimization_id) {
               forge.optimizationId = data.optimization_id as string;
             }
-            forge.finishForge(forge.overallScore ?? undefined, data.total_duration_ms as number | undefined);
+            forge.finishForge(forge.overallScore ?? undefined, data.total_duration_ms as number | undefined, data.total_tokens as number | undefined);
             break;
           case 'error':
             forge.setStageFailed(data.stage as string || 'pipeline', data.error as string);
