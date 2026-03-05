@@ -1,58 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 255 lines. Earlier notes are in git history.]
 
-
-**TIER BOUNDARY: T2 complete — validator should run expanded check**
-
-**Progress:** 169/335 tests passing (50.4%)
-- T0: 18/18 ✓
-- T1: 45/45 ✓
-- T2: 106/106 ✓
-- T3: 0/66
-- T4: 0/70
-- T5: 0/30
-
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- DB: backend/data/promptforge.db (3 tables, 67 optimization records)
-- Start: ./init.sh start
-
-## Integration Report — Session 24 (2026-03-05)
-
-**Gaps discovered:** 8
-- [KEYBOARD] Global keyboard shortcuts not bound — WIRED (Ctrl+B/I/N/W/S/Enter)
-- [KEYBOARD] Inspector shortcut Ctrl+Shift+B changed to Ctrl+I per spec — WIRED
-- [FILTER] Strategy filter sent task_type but chips show primary_framework — WIRED (added framework param)
-- [PALETTE] CommandPalette prefix scoping (> for commands, # for history) — WIRED
-- [API] retryOptimization unused — SKIP (needs Re-forge button UI)
-- [COMPONENT] RepoPickerModal orphaned — SKIP (needs trigger UI)
-- [COMPONENT] No panel resize drag handles — SKIP (needs new code)
-- [PERSISTENCE] No localStorage/sessionStorage — SKIP (needs new code)
-
-**Gaps wired:** 4 of 8
-**Tests potentially passing (validator should verify):** #170-#173, #176, #202, #204, #211, #213, #215, #219
-
-**Verification results (screenshot-verified):**
-- Ctrl+B toggle Navigator: collapse/expand works
-- Ctrl+I toggle Inspector: collapse/expand works
-- Ctrl+N new prompt: creates tab
-- Ctrl+W close tab: closes active tab
-- Ctrl+K command palette: opens with all shortcuts displayed
-- > prefix scoping: filters to matching commands
-- Strategy filter: correctly returns filtered results (was broken, now fixed)
-- Search debounce: python search returns 20 of 28 runs
-
-**Coding agent actions (in scratchpad i24_1 through i24_6):**
-- Panel resize drag handles, persistence, context popup, DiffView toggle, Re-forge button, RepoPickerModal
-
-**Progress:** 169/335 tests passing (50.4%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- DB: backend/data/promptforge.db
-- Start: ./init.sh start
 
 ## Validation Report — Session 25 (2026-03-05)
 

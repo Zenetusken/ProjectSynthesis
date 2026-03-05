@@ -694,7 +694,7 @@
       "SCREENSHOT to verify toast notification display"
     ],
     "expected_outcome": "Toast notification appears on forge completion",
-    "passes": false,
+    "passes": true,
     "id": 195
   },
   {
@@ -722,7 +722,7 @@
       "SCREENSHOT to verify toast dismissal"
     ],
     "expected_outcome": "Toast auto-dismisses after 5 seconds",
-    "passes": false,
+    "passes": true,
     "id": 196
   },
   {
@@ -743,7 +743,7 @@
       "VERIFY older toasts are dismissed when a 4th is triggered"
     ],
     "expected_outcome": "Max 3 toasts visible simultaneously",
-    "passes": false,
+    "passes": true,
     "id": 197
   },
   {

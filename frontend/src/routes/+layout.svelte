@@ -11,6 +11,7 @@
   import Inspector from '$lib/components/layout/Inspector.svelte';
   import StatusBar from '$lib/components/layout/StatusBar.svelte';
   import CommandPalette from '$lib/components/shared/CommandPalette.svelte';
+  import ToastContainer from '$lib/components/shared/ToastContainer.svelte';
 
   import type { Snippet } from 'svelte';
   let { children }: { children: Snippet } = $props();
@@ -102,3 +103,4 @@
 
 <!-- Global overlays -->
 <CommandPalette />
+<ToastContainer />
