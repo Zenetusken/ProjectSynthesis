@@ -237,7 +237,11 @@ class AnthropicAPIProvider(LLMProvider):
                         response.stop_reason,
                         turns,
                     )
-                return AgenticResult(text=text, tool_calls=all_tool_calls)
+                return AgenticResult(
+                    text=text,
+                    tool_calls=all_tool_calls,
+                    stop_reason=response.stop_reason or "end_turn",
+                )
 
         logger.warning(f"Agentic loop hit max_turns ({max_turns})")
-        return AgenticResult(text="", tool_calls=all_tool_calls)
+        return AgenticResult(text="", tool_calls=all_tool_calls, stop_reason="max_turns")

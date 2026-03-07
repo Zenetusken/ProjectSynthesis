@@ -61,6 +61,15 @@ class AgenticResult:
     text: str
     tool_calls: list[dict] = field(default_factory=list)
     output: dict | None = None  # Structured output captured via submit_result tool or SDK output_format
+    stop_reason: str = "end_turn"
+    """Why the agentic loop terminated.
+
+    Values:
+      "end_turn"   — model completed naturally (most common)
+      "max_turns"  — loop hit the max_turns limit without completing
+      "tool_error" — a tool call failed after exhausting retries
+      "cancelled"  — loop was cancelled externally
+    """
 
 
 class LLMProvider(ABC):
