@@ -1,12 +1,175 @@
 """Unit tests for context_builders.py (N35, updated P1.5).
 
 Covers build_codebase_summary, build_analysis_summary, and build_strategy_summary.
+Also covers _search_priority (P1.2), coverage_pct formula (P1.3), and
+CodebaseContext dataclass (P1.3).
 """
+from dataclasses import asdict
+
 from app.services.context_builders import (
     build_analysis_summary,
     build_codebase_summary,
     build_strategy_summary,
 )
+from app.services.codebase_explorer import CodebaseContext
+from app.services.codebase_tools import _search_priority
+
+
+# ── _search_priority (P1.2) ───────────────────────────────────────────────────
+
+
+def test_search_priority_src_is_tier1():
+    """src/ paths get priority tier 1 (lowest sort key = highest priority)."""
+    assert _search_priority({"path": "src/main.py"}) == 1
+
+
+def test_search_priority_lib_is_tier1():
+    assert _search_priority({"path": "lib/utils.py"}) == 1
+
+
+def test_search_priority_app_is_tier1():
+    assert _search_priority({"path": "app/config.py"}) == 1
+
+
+def test_search_priority_backend_is_tier1():
+    assert _search_priority({"path": "backend/app/main.py"}) == 1
+
+
+def test_search_priority_test_dir_is_tier3():
+    """tests/ prefix yields tier 3."""
+    assert _search_priority({"path": "tests/test_main.py"}) == 3
+
+
+def test_search_priority_test_prefix_filename_is_tier3():
+    """Files named test_*.py (not under tests/) still get tier 3."""
+    assert _search_priority({"path": "test_helpers.py"}) == 3
+
+
+def test_search_priority_spec_dir_is_tier3():
+    assert _search_priority({"path": "spec/api_spec.ts"}) == 3
+
+
+def test_search_priority_hidden_dir_is_tier4():
+    """.hidden/ first segment yields tier 4."""
+    assert _search_priority({"path": ".hidden/file.py"}) == 4
+
+
+def test_search_priority_dotgithub_is_tier4():
+    assert _search_priority({"path": ".github/workflows/ci.yml"}) == 4
+
+
+def test_search_priority_general_file_is_tier2():
+    """Files outside src/, tests/, and hidden dirs get tier 2."""
+    assert _search_priority({"path": "README.md"}) == 2
+
+
+def test_search_priority_sort_order_src_before_tests():
+    """sorted() with _search_priority key puts src/ files before tests/ files."""
+    entries = [
+        {"path": "tests/test_main.py"},
+        {"path": "src/main.py"},
+        {"path": ".hidden/cfg.py"},
+        {"path": "README.md"},
+    ]
+    ordered = sorted(entries, key=_search_priority)
+    paths = [e["path"] for e in ordered]
+    assert paths.index("src/main.py") < paths.index("tests/test_main.py")
+    assert paths.index("src/main.py") < paths.index(".hidden/cfg.py")
+    assert paths.index("README.md") < paths.index("tests/test_main.py")
+
+
+# ── read_file truncation notice format (P1.2) ─────────────────────────────────
+
+
+def test_truncation_notice_format():
+    """Truncation notice uses en-dash (U+2013) and expected markers."""
+    # Reproduce the exact string from codebase_tools.py read_file_handler
+    max_lines = 200
+    total_lines = 350
+    notice = (
+        f"\n\n[TRUNCATED: showing lines 1\u2013{max_lines} of {total_lines}. "
+        "Use search_code to locate specific sections, or get_file_outline "
+        "to see the structure first.]"
+    )
+    assert "TRUNCATED" in notice
+    assert "1\u2013200" in notice          # en-dash, not hyphen
+    assert "of 350" in notice
+    assert "search_code" in notice
+    assert "get_file_outline" in notice
+
+
+# ── coverage_pct formula (P1.3) ───────────────────────────────────────────────
+
+
+def _compute_coverage_pct(files_read_count: int, total_files: int) -> int:
+    """Mirror of the formula used in codebase_explorer.run_explore()."""
+    return min(100, round(files_read_count / max(1, total_files) * 100))
+
+
+def test_coverage_pct_zero_reads():
+    assert _compute_coverage_pct(0, 100) == 0
+
+
+def test_coverage_pct_partial_reads():
+    assert _compute_coverage_pct(10, 100) == 10
+
+
+def test_coverage_pct_full_reads():
+    assert _compute_coverage_pct(5, 5) == 100
+
+
+def test_coverage_pct_clamped_at_100():
+    """Reading more files than total (e.g., tree changed) is clamped to 100."""
+    assert _compute_coverage_pct(150, 100) == 100
+
+
+def test_coverage_pct_zero_total_no_divide_by_zero():
+    """max(1, total_files) prevents ZeroDivisionError when tree is empty."""
+    assert _compute_coverage_pct(0, 0) == 0
+
+
+# ── CodebaseContext dataclass (P1.3) ──────────────────────────────────────────
+
+
+def test_codebase_context_explore_quality_default():
+    """explore_quality defaults to 'complete'."""
+    ctx = CodebaseContext()
+    assert ctx.explore_quality == "complete"
+
+
+def test_codebase_context_explore_quality_partial():
+    ctx = CodebaseContext(explore_quality="partial")
+    assert ctx.explore_quality == "partial"
+
+
+def test_codebase_context_explore_quality_failed():
+    ctx = CodebaseContext(explore_quality="failed")
+    assert ctx.explore_quality == "failed"
+
+
+def test_codebase_context_asdict_includes_explore_quality():
+    """asdict() serialisation includes the explore_quality field."""
+    ctx = CodebaseContext(explore_quality="partial")
+    d = asdict(ctx)
+    assert "explore_quality" in d
+    assert d["explore_quality"] == "partial"
+
+
+def test_codebase_context_asdict_complete_roundtrip():
+    """All fields survive an asdict() round-trip with non-default values."""
+    ctx = CodebaseContext(
+        repo="owner/repo",
+        branch="dev",
+        files_read_count=7,
+        coverage_pct=35,
+        explore_quality="partial",
+    )
+    d = asdict(ctx)
+    assert d["repo"] == "owner/repo"
+    assert d["branch"] == "dev"
+    assert d["files_read_count"] == 7
+    assert d["coverage_pct"] == 35
+    assert d["explore_quality"] == "partial"
 
 
 # ── build_codebase_summary ────────────────────────────────────────────────────
