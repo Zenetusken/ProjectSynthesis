@@ -1,7 +1,9 @@
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env")
     ANTHROPIC_API_KEY: str = ""
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
@@ -20,8 +22,6 @@ class Settings(BaseSettings):
     OPTIMIZE_TIMEOUT_SECONDS: int = 40   # 20s spec target + 20s buffer
     VALIDATE_TIMEOUT_SECONDS: int = 10   # 5s spec target + 5s buffer
 
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()
