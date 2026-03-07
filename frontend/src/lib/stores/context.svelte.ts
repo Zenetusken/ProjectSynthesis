@@ -2,13 +2,14 @@ export interface ContextChip {
   id: string;
   label: string;
   type: string;
-  size?: number; // M7: optional byte size
+  size?: number;    // optional byte size (M7)
+  content?: string; // N24: actual content for file/instruction/url chips
 }
 
 class ContextStore {
   chips = $state<ContextChip[]>([]);
 
-  addChip(type: string, label?: string, size?: number) {
+  addChip(type: string, label?: string, size?: number, content?: string) {
     const chipLabel = label || `@${type}`;
     this.chips = [
       ...this.chips,
@@ -17,6 +18,7 @@ class ContextStore {
         label: chipLabel,
         type,
         size,
+        content,
       },
     ];
   }

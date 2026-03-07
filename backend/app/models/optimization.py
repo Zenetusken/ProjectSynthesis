@@ -30,6 +30,8 @@ class Optimization(Base):
 
     # Strategy results
     primary_framework = Column(Text, nullable=True)
+    secondary_frameworks = Column(Text, nullable=True)  # JSON array
+    approach_notes = Column(Text, nullable=True)
     framework_applied = Column(Text, nullable=True)
     optimization_notes = Column(Text, nullable=True)
     strategy_rationale = Column(Text, nullable=True)
@@ -87,7 +89,7 @@ class Optimization(Base):
             if isinstance(value, datetime):
                 value = value.isoformat()
             # Parse JSON fields
-            if col.name in ("weaknesses", "strengths", "changes_made", "issues", "tags"):
+            if col.name in ("weaknesses", "strengths", "changes_made", "issues", "tags", "secondary_frameworks"):
                 if value and isinstance(value, str):
                     try:
                         value = json.loads(value)

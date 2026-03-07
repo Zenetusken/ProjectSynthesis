@@ -39,6 +39,23 @@
         </span>
       </div>
     {/if}
+
+    <!-- Changes Made (N16) -->
+    {@const optimizeData = (forge.stageResults['optimize']?.data || {}) as Record<string, unknown>}
+    {@const changesMade = (optimizeData.changes_made || []) as string[]}
+    {#if changesMade.length > 0}
+      <div class="mt-2">
+        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Changes Made</span>
+        <ul class="mt-1 space-y-0.5">
+          {#each changesMade as change}
+            <li class="flex gap-1.5 items-start">
+              <span class="text-neon-cyan/60 shrink-0 font-mono">→</span>
+              <span class="text-text-secondary text-xs">{change}</span>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
   {:else}
     <p class="text-text-secondary">Waiting for Strategy stage...</p>
   {/if}

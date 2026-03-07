@@ -69,6 +69,21 @@
         {/if}
       </div>
     {/if}
+
+    <!-- Issues (N17) -->
+    {#if (data.issues as string[])?.length > 0}
+      <div class="mt-2 p-2 bg-bg-primary border border-neon-red/20">
+        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Issues</span>
+        <ul class="mt-1 space-y-0.5">
+          {#each (data.issues as string[]) as issue}
+            <li class="flex gap-1.5 items-start">
+              <span class="text-neon-red/60 shrink-0 font-mono">!</span>
+              <span class="text-text-secondary text-xs">{issue}</span>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
   {:else}
     <p class="text-text-secondary">Waiting for Optimize stage...</p>
   {/if}

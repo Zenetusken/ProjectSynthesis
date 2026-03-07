@@ -21,6 +21,10 @@ export interface OptimizeRequest {
   strategy?: string;
   repo_full_name?: string;
   repo_branch?: string;
+  github_token?: string;
+  file_contexts?: { name: string; content: string }[];
+  instructions?: string[];
+  url_contexts?: string[];
 }
 
 export interface HistoryParams {

@@ -14,6 +14,10 @@ class OptimizeRequest(BaseModel):
     strategy: Optional[str] = None
     repo_full_name: Optional[str] = None
     repo_branch: Optional[str] = None
+    github_token: Optional[str] = None          # N23: non-browser clients
+    file_contexts: Optional[list[dict]] = None  # N24: attached file content
+    instructions: Optional[list[str]] = None    # N25: user output constraints
+    url_contexts: Optional[list[str]] = None    # N26: URLs to fetch and inject
 
 
 class PatchOptimizationRequest(BaseModel):
@@ -25,6 +29,10 @@ class PatchOptimizationRequest(BaseModel):
 
 class RetryRequest(BaseModel):
     strategy: Optional[str] = None
+    file_contexts: Optional[list[dict]] = None  # N32: forward file context on retry
+    instructions: Optional[list[str]] = None    # N32: forward output constraints on retry
+    url_contexts: Optional[list[str]] = None    # N32: forward URLs to fetch on retry
+    github_token: Optional[str] = None          # N40: re-run Explore on retry
 
 
 class HistoryStatsResponse(BaseModel):

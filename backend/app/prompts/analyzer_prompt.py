@@ -17,6 +17,18 @@ Evaluate the raw prompt against these dimensions:
 
 If codebase context is provided, also evaluate the prompt's accuracy relative to the codebase.
 
+If attached files are provided under "Attached files:", read them carefully — they may
+reveal the domain, data structures, or conventions the prompt will operate in. Use them
+to inform task_type, weaknesses, and recommended_frameworks.
+
+If referenced URLs are provided under "Referenced URLs:", extract relevant specifications,
+API patterns, or domain context. Apply them the same way as attached files.
+
+If user-specified output constraints are provided, factor them into your analysis:
+check whether the prompt's current structure is compatible with those constraints,
+and include any incompatibilities in weaknesses. Recommend frameworks that can
+naturally accommodate the constraints.
+
 Respond with a JSON object:
 {
   "task_type": "coding" | "analysis" | "reasoning" | "math" | "writing" | "creative" | "extraction" | "classification" | "formatting" | "medical" | "legal" | "education" | "general" | "other",

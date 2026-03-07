@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.models.optimization import Optimization
 from app.schemas.optimization import OptimizeRequest, PatchOptimizationRequest, RetryRequest
+from app.services.url_fetcher import fetch_url_contexts
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["optimize"])
@@ -88,6 +89,9 @@ async def optimize_prompt(
             pipeline_failed = False
             pipeline_error_message = None
 
+            # N26/N30: pre-fetch URL contexts with HTML stripping (shared service)
+            url_fetched = await fetch_url_contexts(request.url_contexts)
+
             async for event_type, event_data in run_pipeline(
                 provider=_provider,
                 raw_prompt=request.prompt,
@@ -96,6 +100,10 @@ async def optimize_prompt(
                 repo_full_name=request.repo_full_name,
                 repo_branch=request.repo_branch,
                 session_id=req.session.get("session_id"),
+                github_token=request.github_token,          # N23
+                file_contexts=request.file_contexts,        # N24
+                instructions=request.instructions,          # N25
+                url_fetched_contexts=url_fetched,           # N26
             ):
                 yield _sse_event(event_type, event_data)
 
@@ -120,6 +128,10 @@ async def optimize_prompt(
                     optimization.model_analyze = event_data.get("model")
                 elif event_type == "strategy":
                     optimization.primary_framework = event_data.get("primary_framework")
+                    optimization.secondary_frameworks = json.dumps(
+                        event_data.get("secondary_frameworks", [])
+                    )
+                    optimization.approach_notes = event_data.get("approach_notes")
                     optimization.strategy_rationale = event_data.get("rationale")
                     optimization.model_strategy = event_data.get("model")
                 elif event_type == "optimization":
@@ -271,6 +283,10 @@ async def retry_optimization(
         strategy=body.strategy,
         repo_full_name=str(original.linked_repo_full_name) if original.linked_repo_full_name else None,
         repo_branch=str(original.linked_repo_branch) if original.linked_repo_branch else None,
+        file_contexts=body.file_contexts,    # N32
+        instructions=body.instructions,      # N32
+        url_contexts=body.url_contexts,      # N32
+        github_token=body.github_token,      # N40: re-run Explore on retry
     )
 
     # Reuse the optimize endpoint logic, linking retry to original

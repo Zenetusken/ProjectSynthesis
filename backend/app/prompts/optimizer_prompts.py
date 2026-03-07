@@ -9,6 +9,14 @@ IMPORTANT INSTRUCTIONS:
 3. Preserve the original intent and all key requirements
 4. Make the prompt more specific, structured, and actionable
 5. If codebase context is provided, ground the prompt in actual codebase details
+6. If attached files are provided under "Attached files:", incorporate domain-specific
+   details, data shapes, or conventions from those files into the optimized prompt
+7. If referenced URLs are provided under "Referenced URLs:", extract and apply relevant
+   specifications, patterns, or constraints from their content
+8. If secondary frameworks are listed in the Strategy section, incorporate their core
+   technique into the primary structure — they complement, not compete
+9. If user-specified output constraints appear at the top, they take absolute priority
+   over all other considerations — every constraint must be honored in the output
 
 You MUST respond with ONLY a JSON object (no markdown, no explanation outside JSON):
 {{

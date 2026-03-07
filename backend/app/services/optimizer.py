@@ -13,9 +13,13 @@ from typing import AsyncGenerator, Optional
 from app.config import settings
 from app.prompts.optimizer_prompts import get_optimizer_prompt
 from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
+from app.services.context_builders import (
+    build_analysis_summary,
+    build_codebase_summary,
+    build_strategy_summary,
+)
 
 logger = logging.getLogger(__name__)
-
 
 
 async def run_optimize(
@@ -25,6 +29,9 @@ async def run_optimize(
     strategy: dict,
     codebase_context: Optional[dict] = None,
     retry_constraints: Optional[dict] = None,
+    file_contexts: list[dict] | None = None,        # N24: attached file content
+    instructions: list[str] | None = None,          # N25: user output constraints
+    url_fetched_contexts: list[dict] | None = None, # N26: pre-fetched URL content
 ) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 3 optimization with streaming.
 
@@ -39,13 +46,36 @@ async def run_optimize(
     task_type = analysis.get("task_type", "general")
     system_prompt = get_optimizer_prompt(task_type)
 
+    analysis_summary = build_analysis_summary(analysis)
+    strategy_summary = build_strategy_summary(strategy)
+
     user_message = (
         f"Raw prompt to optimize:\n---\n{raw_prompt}\n---\n\n"
-        f"Analysis:\n{json.dumps(analysis, indent=2)}\n\n"
-        f"Strategy:\n{json.dumps(strategy, indent=2)}"
+        f"Analysis:\n{analysis_summary}\n\n"
+        f"Strategy:\n{strategy_summary}"
     )
     if codebase_context:
-        user_message += f"\n\nCodebase context:\n{json.dumps(codebase_context, indent=2)}"
+        codebase_summary = build_codebase_summary(codebase_context)
+        if codebase_summary:
+            user_message += f"\n\nCodebase context:\n{codebase_summary}"
+
+    # N24: inject attached file content
+    if file_contexts:
+        blocks = []
+        for fc in file_contexts[:5]:
+            name = fc.get("name", "file")
+            content = str(fc.get("content", ""))[:1500]
+            blocks.append(f"[{name}]\n{content}")
+        user_message += "\n\nAttached files:\n" + "\n\n".join(blocks)
+
+    # N26: inject pre-fetched URL content
+    if url_fetched_contexts:
+        blocks = []
+        for uc in url_fetched_contexts[:3]:
+            url = uc.get("url", "url")
+            content = str(uc.get("content", ""))  # N41: capped at source (url_fetcher.py)
+            blocks.append(f"[{url}]\n{content}")
+        user_message += "\n\nReferenced URLs:\n" + "\n\n".join(blocks)
 
     if retry_constraints:
         user_message += (
@@ -55,6 +85,14 @@ async def run_optimize(
             f"Focus on improving these issues: {json.dumps(retry_constraints.get('focus_areas', []))}\n"
             f"Be MORE specific, structured, and detailed than the previous attempt.\n"
             f"Ensure the optimized prompt is substantially better than the original."
+        )
+
+    # N25: prepend instruction constraints so they take highest priority
+    if instructions:
+        constraint_block = "\n".join(f"  - {i}" for i in instructions[:10])
+        user_message = (
+            f"User-specified output constraints (MUST follow):\n{constraint_block}\n\n"
+            + user_message
         )
 
     model = MODEL_ROUTING["optimize"]

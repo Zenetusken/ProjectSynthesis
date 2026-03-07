@@ -42,6 +42,53 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+async def _migrate_add_missing_columns() -> None:
+    """Add any new columns to existing tables (SQLite ALTER TABLE migration).
+
+    SQLAlchemy create_all is idempotent for table creation but does NOT add
+    new columns to existing tables. This function bridges that gap by issuing
+    ALTER TABLE … ADD COLUMN statements when a column is absent.
+
+    New columns must be added here AND to the SQLAlchemy model.
+    """
+    import sqlalchemy as sa
+
+    # Map: table_name -> {column_name: column_type_sql}
+    _new_columns: dict[str, dict[str, str]] = {
+        "optimizations": {
+            "secondary_frameworks": "TEXT",
+            "approach_notes": "TEXT",
+        }
+    }
+
+    async with engine.begin() as conn:
+        for table_name, columns in _new_columns.items():
+            # Fetch existing column names via PRAGMA (SQLite) or information_schema
+            if "sqlite" in str(engine.url):
+                existing_cols_result = await conn.execute(
+                    sa.text(f"PRAGMA table_info({table_name})")
+                )
+                existing_cols = {row[1] for row in existing_cols_result.fetchall()}
+            else:
+                existing_cols_result = await conn.execute(
+                    sa.text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = :t"
+                    ),
+                    {"t": table_name},
+                )
+                existing_cols = {row[0] for row in existing_cols_result.fetchall()}
+
+            for col_name, col_type in columns.items():
+                if col_name not in existing_cols:
+                    await conn.execute(
+                        sa.text(
+                            f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
+                        )
+                    )
+                    logger.info("Migration: added column %s.%s", table_name, col_name)
+
+
 async def create_tables():
     """Create all tables on startup. Acts as simple migration."""
     # Import all models so they register with Base.metadata
@@ -50,6 +97,10 @@ async def create_tables():
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Idempotently add any new columns to existing tables
+    await _migrate_add_missing_columns()
+
     logger.info("Database tables created/verified")
 
 

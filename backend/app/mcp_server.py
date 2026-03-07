@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from app.config import settings
 from app.database import async_session
 from app.models.optimization import Optimization
+from app.services.url_fetcher import fetch_url_contexts
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,9 @@ def create_mcp_server(provider=None) -> FastMCP:
         repo_full_name: Optional[str] = None,
         repo_branch: Optional[str] = None,
         github_token: Optional[str] = None,
+        file_contexts: Optional[list[dict]] = None,  # N31: [{name, content}]
+        instructions: Optional[list[str]] = None,    # N31: output constraints
+        url_contexts: Optional[list[str]] = None,    # N31: URLs to fetch+inject
         project: Optional[str] = None,
         title: Optional[str] = None,
         ctx: Optional[Context] = None,
@@ -201,6 +205,12 @@ def create_mcp_server(provider=None) -> FastMCP:
             repo_branch: Branch to explore (defaults to 'main' when repo_full_name is set)
             github_token: GitHub PAT required when repo_full_name is set. Must have
                           'Contents: Read' permission. Omit to skip the Explore stage.
+            file_contexts: List of {"name": str, "content": str} dicts for attached files.
+                           Content is injected into all pipeline stages for domain context.
+            instructions: List of output constraint strings (e.g. "always use bullet points").
+                          These take absolute priority in the optimized prompt.
+            url_contexts: List of URLs to fetch and inject as reference material.
+                          HTML is stripped; plain text is extracted automatically.
             project: Project label for grouping optimizations in history
             title: Human-readable title for this optimization run
 
@@ -212,6 +222,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         from app.services.pipeline import run_pipeline
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
+        url_fetched = await fetch_url_contexts(url_contexts)
         results = {}
         async for event_type, event_data in run_pipeline(
             provider=prov,
@@ -221,6 +232,9 @@ def create_mcp_server(provider=None) -> FastMCP:
             repo_full_name=repo_full_name,
             repo_branch=repo_branch,
             github_token=github_token,
+            file_contexts=file_contexts,
+            instructions=instructions,
+            url_fetched_contexts=url_fetched,
         ):
             if event_type in ("analysis", "strategy", "optimization", "validation", "complete"):
                 results[event_type] = event_data
@@ -567,6 +581,9 @@ def create_mcp_server(provider=None) -> FastMCP:
         optimization_id: str,
         strategy: Optional[str] = None,
         github_token: Optional[str] = None,
+        file_contexts: Optional[list[dict]] = None,  # N31: [{name, content}]
+        instructions: Optional[list[str]] = None,    # N31: output constraints
+        url_contexts: Optional[list[str]] = None,    # N31: URLs to fetch+inject
         ctx: Optional[Context] = None,
     ) -> str:
         """Re-run the optimization pipeline for an existing record with an optional strategy override.
@@ -581,6 +598,9 @@ def create_mcp_server(provider=None) -> FastMCP:
                       Omit to let the pipeline auto-select again.
             github_token: GitHub PAT if the original had a linked repo and you want
                           the Explore stage to run. Same requirements as optimize().
+            file_contexts: List of {"name": str, "content": str} dicts for attached files.
+            instructions: List of output constraint strings for this retry run.
+            url_contexts: List of URLs to fetch and inject as reference material.
 
         Returns:
             JSON with keys: analysis, strategy, optimization, validation.
@@ -597,6 +617,7 @@ def create_mcp_server(provider=None) -> FastMCP:
 
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
+        url_fetched = await fetch_url_contexts(url_contexts)
         results = {}
         async for event_type, event_data in run_pipeline(
             provider=prov,
@@ -606,6 +627,9 @@ def create_mcp_server(provider=None) -> FastMCP:
             repo_full_name=repo_full_name,
             repo_branch=repo_branch,
             github_token=github_token,
+            file_contexts=file_contexts,
+            instructions=instructions,
+            url_fetched_contexts=url_fetched,
         ):
             if event_type in ("analysis", "strategy", "optimization", "validation", "complete"):
                 results[event_type] = event_data

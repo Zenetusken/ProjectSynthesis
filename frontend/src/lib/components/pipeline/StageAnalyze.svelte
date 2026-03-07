@@ -87,6 +87,21 @@
         </ul>
       </div>
     {/if}
+
+    <!-- Suggested Frameworks (N19) -->
+    {@const recFrameworks = ((data.recommended_frameworks || []) as string[])}
+    {#if recFrameworks.length > 0}
+      <div class="mt-2">
+        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Suggested Frameworks</span>
+        <div class="flex flex-wrap gap-1 mt-1">
+          {#each recFrameworks as fw}
+            <span class="px-2 py-0.5 font-mono text-[9px] font-medium border border-neon-indigo/30 text-neon-indigo bg-neon-indigo/5">
+              {fw}
+            </span>
+          {/each}
+        </div>
+      </div>
+    {/if}
   {:else}
     <p class="text-text-secondary">Waiting for Explore stage...</p>
   {/if}

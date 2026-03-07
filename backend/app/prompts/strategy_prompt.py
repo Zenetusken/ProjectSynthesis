@@ -23,6 +23,12 @@ Consider:
 - Which weaknesses the framework directly addresses
 - Whether codebase context is available (affects framework choice)
 - Whether secondary frameworks complement without conflicting
+- The recommended_frameworks from analysis — treat these as weighted candidates; favour
+  them when selecting primary and secondary unless a stronger case exists for another framework
+- Whether attached files or referenced URLs reveal domain constraints that favour specific
+  frameworks (e.g. constraint-injection for compliance docs, context-enrichment for API specs)
+- Whether user output constraints (labeled "User-specified output constraints")
+  narrow the valid framework choices — e.g. bullet-point instructions favour step-by-step
 
 If `analysis.recommended_frameworks` is non-empty, treat the first item as the **strongly preferred primary framework** unless a more specific framework better addresses the highest-severity weakness identified in the analysis.
 

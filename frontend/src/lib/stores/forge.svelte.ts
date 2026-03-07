@@ -9,13 +9,23 @@ export interface ForgeRecord {
   complexity?: string | null;
   weaknesses?: string[] | null;
   strengths?: string[] | null;
+  // Strategy fields (N13)
   primary_framework?: string | null;
+  secondary_frameworks?: string[];
+  approach_notes?: string | null;
   strategy_rationale?: string | null;
+  // Validation scores
   clarity_score?: number | null;
   specificity_score?: number | null;
   structure_score?: number | null;
   faithfulness_score?: number | null;
   conciseness_score?: number | null;
+  // Explore / codebase fields (N18)
+  linked_repo_full_name?: string | null;
+  codebase_context_snapshot?: string | null;
+  // Live-session only — no DB column (N19)
+  recommended_frameworks?: string[];
+  // Timing
   duration_ms?: number | null;
   total_tokens?: number | null;
 }
@@ -207,8 +217,35 @@ class ForgeStore {
         stage: 'strategy',
         data: {
           primary_framework: record.primary_framework,
-          rationale: record.strategy_rationale
+          rationale: record.strategy_rationale,
+          secondary_frameworks: record.secondary_frameworks ?? [],  // N13
+          approach_notes: record.approach_notes ?? null,            // N13
         }
+      };
+    }
+
+    // N18: Restore explore stage from codebase_context_snapshot
+    if (record.linked_repo_full_name) {
+      // Start with bare minimum — repo name always known, quality defaults to 'complete'
+      let exploreData: Record<string, unknown> = {
+        repo: record.linked_repo_full_name,
+        explore_quality: 'complete'
+      };
+
+      if (record.codebase_context_snapshot) {
+        try {
+          const snapshot = JSON.parse(record.codebase_context_snapshot);
+          // Merge snapshot first, then let explicit fields override (repo always wins)
+          exploreData = { ...snapshot, ...exploreData };
+        } catch {
+          // Malformed snapshot — bare minimal data is fine
+        }
+      }
+
+      this.stageStatuses['explore'] = 'done';
+      this.stageResults['explore'] = {
+        stage: 'explore',
+        data: exploreData
       };
     }
 
