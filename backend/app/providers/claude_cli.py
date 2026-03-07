@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import AsyncGenerator, Callable
 
 from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, parse_json_robust
 
 logger = logging.getLogger(__name__)
+
+# The SDK's default stream-close timeout is 60 s — far too short for
+# the Explore stage which runs up to 25 tool turns with network I/O.
+# After 60 s, wait_for_result_and_end_input() closes stdin even while
+# the CLI is still mid-conversation, causing the next transport.write()
+# to raise CLIConnectionError("ProcessTransport is not ready for writing").
+# Set the timeout to 10 minutes so stdin stays open for the full run.
+os.environ.setdefault("CLAUDE_CODE_STREAM_CLOSE_TIMEOUT", "600000")
 
 
 class ClaudeCLIProvider(LLMProvider):
