@@ -1,17 +1,50 @@
 """Codebase exploration tools for Stage 0.
 
-Defines 5 ToolDefinition objects that the agentic explore stage can call.
+Defines 6 ToolDefinition objects that the agentic explore stage can call.
 Each tool fetches data from the linked GitHub repository.
 """
 
 import json
 import logging
+import re
 
 from app.providers.base import ToolDefinition
 from app.services.github_service import get_repo_tree as _svc_get_repo_tree
 from app.services.github_service import read_file_content as _svc_read_file_content
 
 logger = logging.getLogger(__name__)
+
+# Regex for get_file_outline: matches top-level function/class/interface definitions
+OUTLINE_PATTERNS = re.compile(
+    r'^(\s*)'
+    r'(def |async def |class |function |export function |export default function |export class |export interface |export type |interface |type |const .+ = \(|module\.exports|fn |pub fn |pub struct |pub enum |pub trait |impl )',
+    re.MULTILINE,
+)
+
+# Priority tiers for search_code file ordering
+_TIER1_PREFIXES = ("src/", "lib/", "app/", "backend/", "server/", "core/", "pkg/")
+_TIER3_PREFIXES = ("test/", "tests/", "spec/", "__tests__/")
+_TIER3_PATTERNS = re.compile(r'(^test_|_test\.|\.spec\.|\.test\.)', re.IGNORECASE)
+
+
+def _search_priority(entry: dict) -> int:
+    """Return sort key (lower = higher priority) for search_code file ordering."""
+    path = entry["path"]
+    name = path.split("/")[-1]
+    # Tier 1: core source directories
+    if any(path.startswith(p) for p in _TIER1_PREFIXES):
+        return 1
+    # Tier 4: hidden directories
+    first_segment = path.split("/")[0]
+    if first_segment.startswith("."):
+        return 4
+    # Tier 3: test/spec paths
+    if any(path.startswith(p) for p in _TIER3_PREFIXES):
+        return 3
+    if _TIER3_PATTERNS.search(name):
+        return 3
+    # Tier 2: everything else
+    return 2
 
 
 def build_codebase_tools(
@@ -98,9 +131,14 @@ def build_codebase_tools(
             if content is None:
                 return f"Error: File '{path}' could not be read from repository."
             lines = content.split("\n")
-            if len(lines) > max_lines:
+            total_lines = len(lines)
+            if total_lines > max_lines:
                 content = "\n".join(lines[:max_lines])
-                content += f"\n\n... (truncated at {max_lines} lines, {len(lines)} total)"
+                content += (
+                    f"\n\n[TRUNCATED: showing lines 1\u2013{max_lines} of {total_lines}. "
+                    "Use search_code to locate specific sections, or get_file_outline "
+                    "to see the structure first.]"
+                )
             return content
         except Exception as e:
             return f"Error reading '{path}': {e}"
@@ -143,9 +181,12 @@ def build_codebase_tools(
             ext = file_extension if file_extension.startswith(".") else f".{file_extension}"
             tree = [e for e in tree if e["path"].endswith(ext)]
 
+        # Sort by priority tier before scanning; stable sort preserves original order within tier
+        sorted_tree = sorted(tree, key=_search_priority)
+
         matches = []
         files_checked = 0
-        for entry in tree[:20]:  # Max 20 files per search
+        for entry in sorted_tree[:50]:  # Max 50 files per search
             sha = entry.get("sha", "")
             if not sha:
                 continue
@@ -204,8 +245,8 @@ def build_codebase_tools(
         paths = args.get("paths", [])
         if not paths:
             return "Error: 'paths' is required and must be a non-empty list."
-        if len(paths) > 5:
-            paths = paths[:5]
+        if len(paths) > 8:
+            paths = paths[:8]
 
         tree = await _get_tree()
         tree_map = {e["path"]: e for e in tree}
@@ -227,9 +268,9 @@ def build_codebase_tools(
                     output_parts.append(f"=== {path} ===\nError: File could not be read.\n")
                     continue
                 lines = content.split("\n")
-                if len(lines) > 150:
-                    content = "\n".join(lines[:150])
-                    content += "\n... (truncated at 150 lines)"
+                if len(lines) > 200:
+                    content = "\n".join(lines[:200])
+                    content += "\n... (truncated at 200 lines)"
                 output_parts.append(f"=== {path} ===\n{content}\n")
             except Exception as e:
                 output_parts.append(f"=== {path} ===\nError: {e}\n")
@@ -239,7 +280,7 @@ def build_codebase_tools(
     read_multiple_files = ToolDefinition(
         name="read_multiple_files",
         description=(
-            "Read up to 5 files at once. More efficient than calling read_file multiple times. "
+            "Read up to 8 files at once. More efficient than calling read_file multiple times. "
             "Returns each file separated by a clear header."
         ),
         input_schema={
@@ -248,7 +289,7 @@ def build_codebase_tools(
                 "paths": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of file paths (max 5)",
+                    "description": "List of file paths (max 8)",
                 },
             },
             "required": ["paths"],
@@ -264,7 +305,10 @@ def build_codebase_tools(
         summary_files = [
             "README.md", "README.rst", "README",
             "package.json", "pyproject.toml", "Cargo.toml",
-            ".env.example", "CLAUDE.md",
+            "setup.py", "go.mod", "go.sum",
+            "Makefile", "Dockerfile", "docker-compose.yml",
+            "CONTRIBUTING.md", "architecture.md", "ARCHITECTURE.md",
+            "openapi.yaml", "openapi.json", ".env.example", "CLAUDE.md",
         ]
 
         parts = []
@@ -282,7 +326,7 @@ def build_codebase_tools(
         total_lines = len("\n".join(parts).split("\n"))
 
         for fname in summary_files:
-            if total_lines >= 300:
+            if total_lines >= 400:
                 break
             entry = tree_map.get(fname)
             if not entry:
@@ -296,7 +340,7 @@ def build_codebase_tools(
                 if content is None:
                     continue
                 lines = content.split("\n")
-                max_lines = min(100, 300 - total_lines)
+                max_lines = min(100, 400 - total_lines)
                 if len(lines) > max_lines:
                     content = "\n".join(lines[:max_lines]) + "\n... (truncated)"
                 parts.append(f"\n=== {fname} ===\n{content}")
@@ -321,10 +365,77 @@ def build_codebase_tools(
         handler=get_repo_summary_handler,
     )
 
+    # ---- Tool 6: get_file_outline ----
+    async def get_file_outline_handler(args: dict) -> str:
+        path = args.get("path", "")
+        if not path:
+            return "Error: 'path' is required."
+
+        tree = await _get_tree()
+        entry = next((e for e in tree if e["path"] == path), None)
+        if not entry:
+            return f"Error: File '{path}' not found in repository."
+
+        sha = entry.get("sha", "")
+        if not sha:
+            return f"Error: No SHA found for '{path}'."
+
+        try:
+            content = await _svc_read_file_content(token, repo_full_name, sha)
+            if content is None:
+                return f"Error: File '{path}' could not be read from repository."
+        except Exception as e:
+            return f"Error reading '{path}': {e}"
+
+        outline_lines = []
+        for match in OUTLINE_PATTERNS.finditer(content):
+            indent = match.group(1)
+            indent_len = len(indent.expandtabs(4))
+            # Include top-level (0) and class members (2–4 spaces); skip deep nesting (>=8)
+            if indent_len >= 8:
+                continue
+            # Compute line number from match start
+            line_no = content[: match.start()].count("\n") + 1
+            line_text = content.split("\n")[line_no - 1].rstrip()
+            outline_lines.append((line_no, line_text))
+
+        if not outline_lines:
+            return f"No outline found for {path} (binary or template file?)"
+
+        total = len(outline_lines)
+        truncated = total > 100
+        display = outline_lines[:100]
+
+        outline = "\n".join(f"  L{ln}: {text}" for ln, text in display)
+        if truncated:
+            outline += f"\n[100 of {total} definitions shown]"
+
+        return f"path: {path}\n\n{outline}"
+
+    get_file_outline = ToolDefinition(
+        name="get_file_outline",
+        description=(
+            "Get function, class, and interface signatures from a file without reading full content. "
+            "Useful for understanding the structure of large files before deciding which section to read."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path from list_repo_files",
+                },
+            },
+            "required": ["path"],
+        },
+        handler=get_file_outline_handler,
+    )
+
     return [
         list_repo_files,
         read_file,
         search_code,
         read_multiple_files,
         get_repo_summary,
+        get_file_outline,
     ]
