@@ -9,6 +9,8 @@ import logging
 from dataclasses import asdict, dataclass, field
 from typing import AsyncGenerator, Optional
 
+import anyio
+
 from app.config import settings
 from app.prompts.explore_prompt import get_explore_prompt
 from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
@@ -60,7 +62,7 @@ EXPLORE_OUTPUT_SCHEMA: dict = {
         },
         "coverage_pct": {
             "type": "integer",
-            "description": "Percentage of repository files read during exploration (0–100)",
+            "description": "Server-computed — do not set. Percentage of repository files read during exploration.",
         },
     },
     "required": ["tech_stack", "key_files_read", "codebase_observations", "prompt_grounding_notes"],
@@ -120,25 +122,18 @@ async def run_explore(
             )
 
         # Attempt to build tools with the requested branch; if the branch
-        # doesn't exist (or the tree fetch returns empty due to a 404), fall
-        # back to the repository's default branch.
+        # doesn't exist, fall back to the repository's default branch.
+        # All failures trigger the fallback — we don't distinguish between
+        # 404 and auth errors; both are unrecoverable without user intervention.
         try:
-            from app.services.github_service import get_repo_tree as _probe_tree
-            from github import GithubException  # type: ignore[import]
-            # Probe the branch by fetching the tree directly.  get_repo_tree()
-            # swallows exceptions and returns [], so we call the underlying
-            # PyGithub API here to distinguish 404 from other errors.
             def _check_branch_sync() -> None:
                 from github import Auth, Github
                 g = Github(auth=Auth.Token(token))
                 repo = g.get_repo(repo_full_name)
-                repo.get_branch(repo_branch)
+                repo.get_branch(repo_branch)  # probe the requested branch, not the fallback
 
-            import anyio
             await anyio.to_thread.run_sync(_check_branch_sync)
         except Exception as branch_err:
-            # Any failure (GithubException 404, UnknownObjectException, network
-            # error) triggers the fallback; log the original branch and error.
             logger.warning(
                 "Stage 0 (Explore): branch %r not found for %s (%s); "
                 "falling back to default branch",
@@ -152,11 +147,25 @@ async def run_explore(
                     used_branch, repo_full_name,
                 )
             except Exception as fb_err:
-                logger.error(
-                    "Stage 0 (Explore): could not retrieve default branch for %s: %s",
-                    repo_full_name, fb_err,
-                )
-                # Keep original branch; build_codebase_tools will get an empty tree
+                logger.warning("Could not get default branch: %s", fb_err)
+                yield ("explore_result", {
+                    "explore_quality": "failed",
+                    "explore_failed": True,
+                    "explore_error": (
+                        f"Branch '{repo_branch}' not found and default branch lookup "
+                        f"also failed: {fb_err}"
+                    ),
+                    "observations": [
+                        f"Branch '{repo_branch}' does not exist and fallback failed."
+                    ],
+                    "tech_stack": [],
+                    "key_files_read": [],
+                    "relevant_snippets": [],
+                    "grounding_notes": [],
+                    "coverage_pct": 0,
+                    "files_read_count": 0,
+                })
+                return
 
         tools = build_codebase_tools(
             token=token,
@@ -173,8 +182,7 @@ async def run_explore(
     # Emit branch_fallback SSE event before starting the agentic loop so
     # pipeline.py and the frontend know which branch was actually used.
     if branch_fallback:
-        yield ("stage", {
-            "stage": "explore",
+        yield ("explore_info", {
             "branch_fallback": True,
             "original_branch": repo_branch,
             "used_branch": used_branch,
