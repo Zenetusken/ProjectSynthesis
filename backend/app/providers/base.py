@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Awaitable, Callable
+
+logger = logging.getLogger(__name__)
 
 
 def parse_json_robust(text: str) -> dict:
@@ -36,6 +39,10 @@ def parse_json_robust(text: str) -> dict:
         except (json.JSONDecodeError, TypeError):
             pass
 
+    logger.warning(
+        "parse_json_robust: all 3 strategies failed. Input excerpt: %r",
+        text[:300],
+    )
     raise ValueError(f"Could not parse JSON from response: {text[:200]}...")
 
 
@@ -87,8 +94,13 @@ class LLMProvider(ABC):
         ...
 
     @abstractmethod
-    def stream(self, system: str, user: str, model: str) -> AsyncGenerator[str, None]:
-        """Streaming completion. Yields text chunks as they arrive."""
+    async def stream(self, system: str, user: str, model: str) -> AsyncGenerator[str, None]:
+        """Streaming completion. Yields text chunks as they arrive.
+
+        AnthropicAPIProvider: true token-level streaming via SDK text_stream.
+        ClaudeCLIProvider: simulated streaming (full TextBlocks chunked into
+        word-boundary pieces with a small inter-chunk delay for progressive UI).
+        """
         ...
 
     @abstractmethod
