@@ -118,11 +118,15 @@ async def test_complete_agentic_tool_error_returns_error_to_model():
 
     # Turn 1: model calls tool → handler raises
     # Turn 2: model receives error result → returns end_turn
+    tool_block = MagicMock()
+    tool_block.type = "tool_use"
+    tool_block.name = "read_file"
+    tool_block.id = "tu_1"
+    tool_block.input = {"path": "/etc/foo"}
+
     turn1_response = MagicMock()
     turn1_response.stop_reason = "tool_use"
-    turn1_response.content = [
-        MagicMock(type="tool_use", name="read_file", id="tu_1", input={"path": "/etc/foo"})
-    ]
+    turn1_response.content = [tool_block]
 
     turn2_response = MagicMock()
     turn2_response.stop_reason = "end_turn"
@@ -132,8 +136,9 @@ async def test_complete_agentic_tool_error_returns_error_to_model():
     mock_stream = AsyncMock()
     mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
     mock_stream.__aexit__ = AsyncMock(return_value=None)
+    mock_stream.get_final_message = AsyncMock(return_value=turn1_response)
 
-    async def side_effect(*args, **kwargs):
+    def side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
         mock_stream.get_final_message = AsyncMock(
@@ -149,13 +154,20 @@ async def test_complete_agentic_tool_error_returns_error_to_model():
 
     assert isinstance(result, AgenticResult)
     assert result.text == "Could not read file."
-    # Verify tool_result with is_error was sent back on turn 2
+    # Verify tool_result with is_error was sent back on turn 2.
+    # messages is mutated in place; by the time we assert, it contains:
+    #   [user, assistant(turn1), user(tool_result), assistant(turn2)]
+    # So the tool_result content is at [-2] (second to last entry).
     turn2_messages = provider._client.messages.stream.call_args_list[1].kwargs["messages"]
-    last_user_content = turn2_messages[-1]["content"]
-    assert any(
-        r.get("is_error") is True for r in last_user_content
-        if isinstance(r, dict)
-    )
+    # Find the tool_result entry (role=user, content is a list with type=tool_result)
+    tool_result_entries = [
+        m for m in turn2_messages
+        if m.get("role") == "user" and isinstance(m.get("content"), list)
+        and any(isinstance(r, dict) and r.get("type") == "tool_result" for r in m["content"])
+    ]
+    assert tool_result_entries, "No tool_result message found in turn 2 messages"
+    tool_results = tool_result_entries[0]["content"]
+    assert any(r.get("is_error") is True for r in tool_results if isinstance(r, dict))
 
 
 # ---------------------------------------------------------------------------
