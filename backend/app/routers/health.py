@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.config import settings
 from app.database import check_db_connection
+from app.providers.base import MODEL_ROUTING
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["health"])
@@ -57,6 +58,7 @@ async def health_check():
     return {
         "status": overall,
         "provider": provider_name,
+        "model_routing": MODEL_ROUTING,
         "github_oauth_enabled": github_oauth_enabled,
         "db_connected": db_ok,
         "mcp_connected": mcp_ok,
