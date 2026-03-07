@@ -52,7 +52,7 @@ def build_codebase_tools(
     repo_full_name: str,
     repo_branch: str,
 ) -> list[ToolDefinition]:
-    """Build the 5 codebase exploration tool definitions.
+    """Build the 6 codebase exploration tool definitions.
 
     Each tool handler is an async function that fetches data from GitHub.
     """
@@ -268,9 +268,14 @@ def build_codebase_tools(
                     output_parts.append(f"=== {path} ===\nError: File could not be read.\n")
                     continue
                 lines = content.split("\n")
-                if len(lines) > 200:
+                total_lines = len(lines)
+                if total_lines > 200:
                     content = "\n".join(lines[:200])
-                    content += "\n... (truncated at 200 lines)"
+                    content += (
+                        f"\n\n[TRUNCATED: showing lines 1\u2013200 of {total_lines}. "
+                        "Use search_code to locate specific sections, or get_file_outline "
+                        "to see the structure first.]"
+                    )
                 output_parts.append(f"=== {path} ===\n{content}\n")
             except Exception as e:
                 output_parts.append(f"=== {path} ===\nError: {e}\n")
@@ -340,9 +345,14 @@ def build_codebase_tools(
                 if content is None:
                     continue
                 lines = content.split("\n")
+                total_file_lines = len(lines)
                 max_lines = min(100, 400 - total_lines)
-                if len(lines) > max_lines:
-                    content = "\n".join(lines[:max_lines]) + "\n... (truncated)"
+                if total_file_lines > max_lines:
+                    content = "\n".join(lines[:max_lines]) + (
+                        f"\n\n[TRUNCATED: showing lines 1\u2013{max_lines} of {total_file_lines}. "
+                        "Use search_code to locate specific sections, or get_file_outline "
+                        "to see the structure first.]"
+                    )
                 parts.append(f"\n=== {fname} ===\n{content}")
                 total_lines += len(content.split("\n"))
             except Exception:
@@ -387,16 +397,16 @@ def build_codebase_tools(
         except Exception as e:
             return f"Error reading '{path}': {e}"
 
+        all_lines = content.split("\n")
         outline_lines = []
         for match in OUTLINE_PATTERNS.finditer(content):
-            indent = match.group(1)
-            indent_len = len(indent.expandtabs(4))
+            indent_len = len(match.group(1))
             # Include top-level (0) and class members (2–4 spaces); skip deep nesting (>=8)
             if indent_len >= 8:
                 continue
             # Compute line number from match start
             line_no = content[: match.start()].count("\n") + 1
-            line_text = content.split("\n")[line_no - 1].rstrip()
+            line_text = all_lines[line_no - 1].rstrip()
             outline_lines.append((line_no, line_text))
 
         if not outline_lines:
