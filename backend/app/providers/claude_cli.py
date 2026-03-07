@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import logging
-import os
-from typing import TYPE_CHECKING, AsyncGenerator, Callable
-
-if TYPE_CHECKING:
-    from app.providers.anthropic_api import AnthropicAPIProvider
+from typing import AsyncGenerator, Callable
 
 from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, parse_json_robust
 
@@ -16,11 +12,8 @@ class ClaudeCLIProvider(LLMProvider):
     """LLM provider using Claude Code CLI via claude-agent-sdk.
 
     Uses Max subscription via CLI for zero API cost.
-
-    At call time, if the CLAUDECODE environment variable is set (meaning the
-    backend is running inside an active Claude Code session), all methods
-    transparently delegate to AnthropicAPIProvider to avoid nested-subprocess
-    crashes (anyio ExceptionGroup from SubprocessCLITransport).
+    init.sh unsets CLAUDECODE before launching the backend so nested-session
+    issues never arise in normal operation.
     """
 
     def __init__(self):
@@ -32,48 +25,12 @@ class ClaudeCLIProvider(LLMProvider):
                 "claude-agent-sdk is required for ClaudeCLIProvider. "
                 "Install it with: pip install claude-agent-sdk"
             )
-        # Lazy API fallback — initialized on first call to _get_api_fallback().
-        self._api_fallback: AnthropicAPIProvider | None = None
-        self._api_fallback_initialized: bool = False
 
     @property
     def name(self) -> str:
         return "claude_cli"
 
-    def _get_api_fallback(self) -> "AnthropicAPIProvider | None":
-        """Lazily create an AnthropicAPIProvider fallback if ANTHROPIC_API_KEY is available."""
-        if not self._api_fallback_initialized:
-            from app.config import settings
-            if settings.ANTHROPIC_API_KEY:
-                from app.providers.anthropic_api import AnthropicAPIProvider
-                self._api_fallback = AnthropicAPIProvider(api_key=settings.ANTHROPIC_API_KEY)
-                logger.info("ClaudeCLIProvider: created AnthropicAPIProvider fallback for nested-session delegation")
-            self._api_fallback_initialized = True
-        return self._api_fallback
-
-    def _check_nested_session(self) -> "AnthropicAPIProvider | None":
-        """Return API fallback provider if running inside a Claude Code session, else None.
-
-        When CLAUDECODE env var is set, spawning a subprocess via claude-agent-sdk
-        will crash with an anyio ExceptionGroup (nested session). Delegating to the
-        API provider avoids this entirely.
-        """
-        if os.environ.get("CLAUDECODE"):
-            fallback = self._get_api_fallback()
-            if fallback is None:
-                raise RuntimeError(
-                    "ClaudeCLIProvider cannot run inside a Claude Code session "
-                    "(CLAUDECODE env is set) without a fallback API key. "
-                    "Set ANTHROPIC_API_KEY in your .env file to enable automatic "
-                    "delegation to AnthropicAPIProvider."
-                )
-            return fallback
-        return None
-
     async def complete(self, system: str, user: str, model: str) -> str:
-        if fb := self._check_nested_session():
-            return await fb.complete(system, user, model)
-
         from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock
 
         options = ClaudeAgentOptions(
@@ -96,11 +53,6 @@ class ClaudeCLIProvider(LLMProvider):
         smaller chunks to simulate token-level streaming and provide a
         responsive UI experience.
         """
-        if fb := self._check_nested_session():
-            async for chunk in fb.stream(system, user, model):
-                yield chunk
-            return
-
         import asyncio
 
         from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock
@@ -146,22 +98,6 @@ class ClaudeCLIProvider(LLMProvider):
         model: str,
         schema: dict | None = None,
     ) -> dict:
-        if fb := self._check_nested_session():
-            return await fb.complete_json(system, user, model, schema)
-
-        # When a schema dict is provided, delegate to the API provider for
-        # native output_config.format enforcement (guaranteed schema compliance).
-        # CLI has no mechanism for schema-enforced generation.
-        if schema is not None:
-            if api := self._get_api_fallback():
-                return await api.complete_json(system, user, model, schema)
-            # No API key — fall through to best-effort text parsing with a warning.
-            logger.warning(
-                "complete_json(schema=...) called on ClaudeCLIProvider with no "
-                "ANTHROPIC_API_KEY — schema will NOT be enforced at generation time. "
-                "Set ANTHROPIC_API_KEY in your .env file for guaranteed JSON schema compliance."
-            )
-
         raw = await self.complete(system, user, model)
         return parse_json_robust(raw)
 
@@ -175,23 +111,6 @@ class ClaudeCLIProvider(LLMProvider):
         on_tool_call: Callable[[str, dict], None] | None = None,
         output_schema: dict | None = None,
     ) -> AgenticResult:
-        if fb := self._check_nested_session():
-            return await fb.complete_agentic(system, user, model, tools, max_turns, on_tool_call, output_schema)
-
-        # complete_agentic uses create_sdk_mcp_server, which communicates via the
-        # CLI subprocess's stdin/stdout control protocol.  There is a persistent
-        # race condition in the SDK: _handle_control_request tasks (MCP tool
-        # responses) run concurrently with stream_input, which closes stdin as
-        # soon as _first_result_event fires.  If a tool-response write lands just
-        # after end_input(), the transport raises CLIConnectionError regardless of
-        # whether we use a string prompt or an async generator.
-        #
-        # The API provider uses the Anthropic messages API with native tool_use —
-        # no subprocess transport, no race condition.  Always prefer it for agentic
-        # calls; fall back to the CLI path only when no API key is available.
-        if api := self._get_api_fallback():
-            return await api.complete_agentic(system, user, model, tools, max_turns, on_tool_call, output_schema)
-
         from claude_agent_sdk import (
             AssistantMessage,
             ClaudeAgentOptions,
@@ -310,22 +229,6 @@ class ClaudeCLIProvider(LLMProvider):
                     type(actual).__name__,
                     actual,
                 )
-
-            # CLIConnectionError means the subprocess/MCP transport failed to start.
-            # This happens when the CLI can't open an interactive session (nested session,
-            # auth issue, or MCP subprocess conflict). Fall back to API provider if available.
-            if type(actual).__name__ in ("CLIConnectionError", "ProcessError"):
-                fallback = self._get_api_fallback()
-                if fallback is not None:
-                    logger.warning(
-                        "Falling back to AnthropicAPIProvider for agentic call "
-                        "due to %s: %s",
-                        type(actual).__name__,
-                        actual,
-                    )
-                    return await fallback.complete_agentic(
-                        system, user, model, tools, max_turns, on_tool_call, output_schema
-                    )
 
             if actual is not e:
                 raise actual from e
