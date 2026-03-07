@@ -9,9 +9,9 @@ import json
 import logging
 from typing import Optional
 
-from app.providers.base import LLMProvider, MODEL_ROUTING
-from app.prompts.analyzer_prompt import get_analyzer_prompt
 from app.config import settings
+from app.prompts.analyzer_prompt import get_analyzer_prompt
+from app.providers.base import MODEL_ROUTING, LLMProvider
 
 logger = logging.getLogger(__name__)
 

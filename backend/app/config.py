@@ -23,5 +23,4 @@ class Settings(BaseSettings):
     VALIDATE_TIMEOUT_SECONDS: int = 10   # 5s spec target + 5s buffer
 
 
-
 settings = Settings()

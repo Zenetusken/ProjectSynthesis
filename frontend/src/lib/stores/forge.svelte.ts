@@ -1,5 +1,25 @@
 export type StageStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped' | 'timed_out' | 'cancelled';
 
+export interface ForgeRecord {
+  id: string;
+  raw_prompt: string;
+  optimized_prompt?: string | null;
+  overall_score?: number | null;
+  task_type?: string | null;
+  complexity?: string | null;
+  weaknesses?: string[] | null;
+  strengths?: string[] | null;
+  primary_framework?: string | null;
+  strategy_rationale?: string | null;
+  clarity_score?: number | null;
+  specificity_score?: number | null;
+  structure_score?: number | null;
+  faithfulness_score?: number | null;
+  conciseness_score?: number | null;
+  duration_ms?: number | null;
+  total_tokens?: number | null;
+}
+
 export interface StageResult {
   stage: string;
   data: Record<string, unknown>;
@@ -17,6 +37,8 @@ export interface PipelineEvent {
 class ForgeStore {
   isForging = $state(false);
   currentStage = $state<string | null>(null);
+  private _abortController = $state<AbortController | null>(null);
+  private _recordCache = new Map<string, ForgeRecord>();
   stageStatuses = $state<Record<string, StageStatus>>({
     explore: 'idle',
     analyze: 'idle',
@@ -46,7 +68,23 @@ class ForgeStore {
     return Object.values(this.stageStatuses).filter(s => s === 'done').length;
   }
 
+  setAbortController(controller: AbortController | null) {
+    this._abortController = controller;
+  }
+
+  cancel() {
+    if (this._abortController) {
+      this._abortController.abort();
+      this._abortController = null;
+    }
+    this.isForging = false;
+  }
+
   resetPipeline() {
+    if (this._abortController) {
+      this._abortController.abort();
+      this._abortController = null;
+    }
     this.isForging = false;
     this.currentStage = null;
     this.stageStatuses = {
@@ -116,6 +154,7 @@ class ForgeStore {
   finishForge(score?: number, duration?: number, tokens?: number) {
     this.isForging = false;
     this.currentStage = null;
+    this._abortController = null;
     if (score != null) {
       this.overallScore = score;
     }
@@ -128,25 +167,7 @@ class ForgeStore {
     this.addEvent({ type: 'forge_complete', timestamp: Date.now() });
   }
 
-  loadFromRecord(record: {
-    id: string;
-    raw_prompt: string;
-    optimized_prompt?: string | null;
-    overall_score?: number | null;
-    task_type?: string | null;
-    complexity?: string | null;
-    weaknesses?: string[] | null;
-    strengths?: string[] | null;
-    primary_framework?: string | null;
-    strategy_rationale?: string | null;
-    clarity_score?: number | null;
-    specificity_score?: number | null;
-    structure_score?: number | null;
-    faithfulness_score?: number | null;
-    conciseness_score?: number | null;
-    duration_ms?: number | null;
-    total_tokens?: number | null;
-  }) {
+  loadFromRecord(record: ForgeRecord) {
     this.resetPipeline();
     this.optimizationId = record.id;
     this.rawPrompt = record.raw_prompt;
@@ -203,6 +224,14 @@ class ForgeStore {
         data: { scores, overall_score: record.overall_score }
       };
     }
+  }
+
+  cacheRecord(id: string, record: ForgeRecord) {
+    this._recordCache.set(id, record);
+  }
+
+  getRecord(id: string): ForgeRecord | undefined {
+    return this._recordCache.get(id);
   }
 
   private addEvent(event: PipelineEvent) {

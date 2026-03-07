@@ -11,7 +11,7 @@
 <div class="space-y-2 text-xs">
   {#if forge.stageStatuses['validate'] === 'running'}
     <div class="flex items-center gap-2 text-neon-cyan">
-      <span class="w-3 h-3 rounded-full animate-spin" style="border: 2px solid transparent; border-top-color: #00e5ff;"></span>
+      <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #00e5ff;"></span>
       <span>Validating optimized prompt...</span>
     </div>
   {:else if result}
@@ -44,7 +44,7 @@
     {#if data.verdict}
       <div class="mt-2 p-2 bg-bg-primary rounded-lg border border-border-subtle">
         <div class="flex items-center gap-2 mb-1">
-          <span class="font-display text-[11px] font-bold uppercase text-text-dim" style="letter-spacing: 0.08em;">Verdict</span>
+          <span class="font-display text-[11px] font-bold uppercase text-text-dim">Verdict</span>
           {#if data.is_improvement === true}
             <span class="text-[10px] text-neon-green font-mono">✓ Improved</span>
           {:else if data.is_improvement === false}

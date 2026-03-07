@@ -2,11 +2,23 @@
   import { commandPalette } from '$lib/stores/commandPalette.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { workbench } from '$lib/stores/workbench.svelte';
+  import { forge } from '$lib/stores/forge.svelte';
   import { onMount } from 'svelte';
 
   let inputEl: HTMLInputElement | undefined = $state();
   let paletteEl: HTMLDivElement | undefined = $state();
   let previouslyFocused: HTMLElement | null = $state(null);
+
+  // Group commands by category (preserves insertion order)
+  let groupedCommands = $derived.by(() => {
+    const groups: Record<string, typeof commandPalette.filteredCommands> = {};
+    for (const cmd of commandPalette.filteredCommands) {
+      const cat = cmd.category || 'Other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(cmd);
+    }
+    return groups;
+  });
 
   // Register default commands
   onMount(() => {
@@ -74,8 +86,13 @@
         shortcut: 'Ctrl+Enter',
         category: 'Forge',
         action: () => {
-          // Trigger forge via the edit tab
-          editor.setSubTab('edit');
+          if (!forge.isForging && editor.activeTab?.promptText?.trim()) {
+            editor.setSubTab('edit');
+            // setTimeout(0) lets Svelte flush DOM updates before the click
+            setTimeout(() => {
+              document.querySelector<HTMLButtonElement>('[data-testid="forge-button"]')?.click();
+            }, 0);
+          }
         }
       }
     ]);
@@ -211,6 +228,7 @@
     role="dialog"
     aria-modal="true"
     aria-label="Command Palette"
+    tabindex="-1"
     onkeydown={handlePaletteTrap}
   >
     <!-- Input -->
@@ -221,6 +239,7 @@
       <input
         bind:this={inputEl}
         type="text"
+        name="command-search"
         placeholder="Type a command..."
         class="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-dim focus:outline-none"
         value={commandPalette.query}
@@ -232,22 +251,25 @@
 
     <!-- Results -->
     <div class="max-h-[300px] overflow-y-auto py-1">
-      {#each commandPalette.filteredCommands as cmd, i (cmd.id)}
-        <button
-          class="w-full flex items-center justify-between px-4 h-[40px] text-[13px] transition-colors
-            {i === commandPalette.selectedIndex
-              ? 'bg-bg-hover text-text-primary'
-              : 'text-text-secondary hover:bg-bg-hover/50'}"
-          onclick={() => { commandPalette.selectedIndex = i; commandPalette.executeSelected(); }}
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-text-dim px-1 py-0.5 rounded bg-bg-secondary">{cmd.category}</span>
+      {#each Object.entries(groupedCommands) as [cat, cmds]}
+        <div class="px-4 py-1 text-[9px] font-display font-bold uppercase tracking-widest text-text-dim/40 bg-bg-secondary/50 sticky top-0 z-10">
+          {cat}
+        </div>
+        {#each cmds as cmd}
+          {@const globalIdx = commandPalette.filteredCommands.indexOf(cmd)}
+          <button
+            class="w-full flex items-center justify-between px-4 h-[40px] text-[13px] transition-colors relative border-l
+              {globalIdx === commandPalette.selectedIndex
+                ? 'border-neon-cyan/50 bg-bg-hover text-text-primary'
+                : 'border-transparent text-text-secondary hover:bg-bg-hover/50'}"
+            onclick={() => { commandPalette.selectedIndex = globalIdx; commandPalette.executeSelected(); }}
+          >
             <span>{cmd.label}</span>
-          </div>
-          {#if cmd.shortcut}
-            <kbd class="text-[10px] font-mono px-1.5 py-0.5 bg-bg-secondary rounded border border-border-subtle text-text-dim">{cmd.shortcut}</kbd>
-          {/if}
-        </button>
+            {#if cmd.shortcut}
+              <kbd>{cmd.shortcut}</kbd>
+            {/if}
+          </button>
+        {/each}
       {/each}
 
       {#if commandPalette.filteredCommands.length === 0}

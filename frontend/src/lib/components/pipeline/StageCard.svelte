@@ -4,7 +4,9 @@
   import { forge } from '$lib/stores/forge.svelte';
   import ModelBadge from '$lib/components/shared/ModelBadge.svelte';
 
-  let { name, icon, status, index, isActive, children, duration, model, tokenCount, stageColor }: {
+  let { name, icon, status, index, isActive, children, duration, model, tokenCount, stageColor,
+    expanded = $bindable(false),
+  }: {
     name: string;
     icon: string;
     status: StageStatus;
@@ -15,9 +17,10 @@
     model?: string;
     tokenCount?: number;
     stageColor?: string;
+    expanded?: boolean;
   } = $props();
 
-  let expanded = $state(false);
+  let errorExpanded = $state(false);
 
   // Left border opacity: 30% at rest, 100% when active/running
   let leftBorderOpacity = $derived(
@@ -37,25 +40,20 @@
     '#7a7a9e'
   );
 
-  // Get inline error text (first 80 chars) for failed stages
+  // Get inline error text for failed stages — respects errorExpanded
   let errorText = $derived.by(() => {
     if (status === 'error' && forge.error) {
-      return forge.error.length > 80 ? forge.error.slice(0, 80) + '…' : forge.error;
+      if (errorExpanded || forge.error.length <= 80) return forge.error;
+      return forge.error.slice(0, 80) + '…';
     }
     return '';
-  });
-
-  $effect(() => {
-    if (isActive || status === 'running') {
-      expanded = true;
-    }
   });
 </script>
 
 <div
   class="bg-bg-card border border-border-subtle rounded-lg overflow-hidden transition-all duration-300
     {status === 'skipped' ? 'opacity-40' : ''}"
-  style="border-left: 2px solid {stageColor ? `color-mix(in srgb, ${stageColor} ${leftBorderOpacity * 100}%, transparent)` : 'transparent'};"
+  style="border-left: 1px solid {stageColor ? `color-mix(in srgb, ${stageColor} ${leftBorderOpacity * 100}%, transparent)` : 'transparent'};"
   data-testid="stage-card-{name.toLowerCase()}"
 >
   <!-- Header (32px per spec) -->
@@ -66,7 +64,7 @@
     <!-- Status indicator (12px circle) -->
     {#if status === 'running'}
       <span
-        class="w-3 h-3 rounded-full shrink-0 border-t-2 animate-spin"
+        class="w-3 h-3 rounded-full shrink-0 border-t animate-spin"
         style="border-color: transparent; border-top-color: {stageColor || '#00e5ff'};"
         aria-label="Status: running"
         role="img"
@@ -109,16 +107,21 @@
     <!-- Stage label: Syne 11px 700 uppercase -->
     <span
       class="font-display text-[11px] font-bold uppercase"
-      style="letter-spacing: 0.08em; color: {labelColor};"
+      style="color: {labelColor};"
     >
       {stageLabel}
     </span>
 
-    <!-- Inline error annotation (first 80 chars) -->
+    <!-- Inline error annotation — clickable to expand -->
     {#if status === 'error' && errorText}
-      <span class="text-neon-red/70 font-mono text-[10px] truncate max-w-[200px]" title={forge.error || ''}>
-        {errorText}
-      </span>
+      <span
+        class="font-mono text-[10px] text-neon-red/70 hover:text-neon-red transition-colors text-left cursor-pointer"
+        role="button"
+        tabindex="0"
+        title={forge.error || ''}
+        onclick={(e) => { e.stopPropagation(); errorExpanded = !errorExpanded; }}
+        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); errorExpanded = !errorExpanded; } }}
+      >{errorText}{!errorExpanded && (forge.error?.length ?? 0) > 80 ? ' [expand]' : ''}</span>
     {/if}
 
     <span class="flex-1"></span>

@@ -12,8 +12,8 @@
     the claude-agent-sdk (zero API cost). If no subscription is detected but an ANTHROPIC_API_KEY
     environment variable is set, it falls back to the Anthropic Python SDK with direct API calls.
     There is no user-facing model selector — the system automatically routes each pipeline stage to the
-    optimal Claude model based on task complexity (Haiku for fast analysis, Sonnet for validation,
-    Opus for deep strategy and rewriting).
+    optimal Claude model based on task complexity (Haiku for fast codebase exploration, Sonnet for
+    analysis and validation, Opus for deep strategy and rewriting).
 
     When a GitHub repository is linked, Stage 0 (Explore) runs as a fully agentic coding assistant
     before the main analysis pipeline. Instead of statically describing a prompt, the explore agent
@@ -77,15 +77,17 @@
         Internal model routing — never exposed as a user-facing picker.
         Each pipeline stage is assigned the optimal Claude model:
 
-          Stage 0 (Codebase Explore): claude-sonnet-4-6
-            Rationale: Agentic exploration requires reasoning. Sonnet balances capability
-            and cost for multi-turn tool calling. Only runs if a GitHub repo is linked.
+          Stage 0 (Codebase Explore): claude-haiku-4-5
+            Rationale: File tree traversal and content reading is I/O-bound. Haiku is the
+            fastest model and routes to the latest Haiku 4.5 snapshot via alias. Only runs
+            if a GitHub repo is linked.
             Latency target: variable (up to 30 seconds, capped at 15 tool-call turns).
 
-          Stage 1 (Analyze): claude-haiku-4-5-20251001
-            Rationale: Fast, cheap, structured JSON extraction.
-            When repo is linked, Haiku receives the Stage 0 CodebaseContext as input.
-            Latency target: &lt;3 seconds.
+          Stage 1 (Analyze): claude-sonnet-4-6
+            Rationale: Prompt classification benefits from stronger reasoning. Sonnet delivers
+            better task_type and intent detection than Haiku at acceptable latency and cost.
+            When repo is linked, Sonnet receives the Stage 0 CodebaseContext as input.
+            Latency target: &lt;5 seconds.
 
           Stage 2 (Strategy): claude-opus-4-6
             Rationale: Deep reasoning for optimal framework selection.
@@ -99,10 +101,10 @@
             Rationale: Quality assessment — needs reasoning but not full Opus depth.
             Latency target: &lt;5 seconds.
 
-        Model IDs (single source of truth — update here when Anthropic releases new versions):
+        Model aliases (single source of truth — aliases always route to the latest snapshot):
           MODEL_ROUTING = {
-            "explore":   "claude-sonnet-4-6",
-            "analyze":   "claude-haiku-4-5-20251001",
+            "explore":   "claude-haiku-4-5",
+            "analyze":   "claude-sonnet-4-6",
             "strategy":  "claude-opus-4-6",
             "optimize":  "claude-opus-4-6",
             "validate":  "claude-sonnet-4-6",
@@ -290,8 +292,8 @@
               tool_calls: list[dict]  # log of { name, input, output } dicts
 
           MODEL_ROUTING = {
-              "explore":   "claude-sonnet-4-6",
-              "analyze":   "claude-haiku-4-5-20251001",
+              "explore":   "claude-haiku-4-5",
+              "analyze":   "claude-sonnet-4-6",
               "strategy":  "claude-opus-4-6",
               "optimize":  "claude-opus-4-6",
               "validate":  "claude-sonnet-4-6",
@@ -593,7 +595,7 @@
           - Surfaced in the UI as an expandable "Codebase Context" panel
 
         The agentic explore stage is bounded:
-          - Model: claude-sonnet-4-6
+          - Model: claude-haiku-4-5
           - Max tool-calling turns: 15
           - Max file reads per run: 20 files
           - Timeout: 30 seconds (if exceeded, continue pipeline with partial context)
@@ -766,7 +768,7 @@
       </stage_0_explore>
 
       <stage_1_analyze>
-        MODEL: claude-haiku-4-5-20251001
+        MODEL: claude-sonnet-4-6
         PURPOSE: Classify the prompt and identify optimization opportunities.
 
         INPUT: Raw prompt + (optionally) CodebaseContext JSON from Stage 0
@@ -1808,7 +1810,7 @@
     │       │   ├── codebase_explorer.py # Stage 0: agentic explore, builds CodebaseContext
     │       │   ├── codebase_tools.py    # ToolDefinition list: list_repo_files, read_file,
     │       │   │                        # search_code, read_multiple_files, get_repo_summary
-    │       │   ├── analyzer.py          # Stage 1: Haiku analysis
+    │       │   ├── analyzer.py          # Stage 1: Sonnet analysis
     │       │   ├── strategy.py          # Stage 2: Opus strategy selection
     │       │   ├── optimizer.py         # Stage 3: Opus optimization (streaming)
     │       │   ├── validator.py         # Stage 4: Sonnet validation + score computation
@@ -1983,7 +1985,7 @@
     <step_6>
       TITLE: Pipeline Stages 1-4
       - Write system prompts: analyzer, strategy, optimizer (per task_type), validator
-      - Implement analyzer.py (Stage 1, Haiku): accepts optional CodebaseContext
+      - Implement analyzer.py (Stage 1, Sonnet): accepts optional CodebaseContext
       - Implement strategy.py (Stage 2, Opus): selects framework + rationale
       - Implement optimizer.py (Stage 3, Opus, streaming): rewrites prompt, yields SSE chunks
       - Implement validator.py (Stage 4, Sonnet): scores with Python-side weighted average

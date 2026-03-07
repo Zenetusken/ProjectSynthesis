@@ -15,8 +15,8 @@ export interface HistoryFilters {
   strategy: string | null;
   sortBy: 'created_at' | 'overall_score';
   sortDir: 'asc' | 'desc';
-  page: number;
-  pageSize: number;
+  offset: number;
+  limit: number;
 }
 
 function loadFilters(): HistoryFilters {
@@ -25,8 +25,8 @@ function loadFilters(): HistoryFilters {
     strategy: null,
     sortBy: 'created_at',
     sortDir: 'desc',
-    page: 1,
-    pageSize: 20
+    offset: 0,
+    limit: 20
   };
   if (typeof window === 'undefined') return defaults;
   try {
@@ -38,7 +38,7 @@ function loadFilters(): HistoryFilters {
         sortBy: parsed.sortBy || defaults.sortBy,
         sortDir: parsed.sortDir || defaults.sortDir,
         strategy: parsed.strategy ?? null,
-        pageSize: parsed.pageSize || defaults.pageSize
+        limit: parsed.limit || defaults.limit
       };
     }
   } catch { /* ignore */ }
@@ -52,7 +52,7 @@ function saveFilters(filters: HistoryFilters) {
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
       strategy: filters.strategy,
-      pageSize: filters.pageSize
+      limit: filters.limit
     }));
   } catch { /* ignore */ }
 }

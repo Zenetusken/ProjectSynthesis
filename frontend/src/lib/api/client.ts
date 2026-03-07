@@ -1,3 +1,5 @@
+import type { HistoryEntry } from '$lib/stores/history.svelte';
+
 const BASE = '';
 
 export interface HealthResponse {
@@ -6,6 +8,8 @@ export interface HealthResponse {
   model_routing: Record<string, string>;
   github_oauth_enabled: boolean;
   db_connected: boolean;
+  mcp_connected: boolean;
+  mcp_url: string;
   version: string;
 }
 
@@ -20,8 +24,8 @@ export interface OptimizeRequest {
 }
 
 export interface HistoryParams {
-  page?: number;
-  per_page?: number;
+  offset?: number;
+  limit?: number;
   search?: string;
   sort?: string;
   order?: string;
@@ -35,11 +39,12 @@ export interface HistoryParams {
 }
 
 export interface HistoryResponse {
-  items: Array<Record<string, unknown>>;
+  items: HistoryEntry[];
   total: number;
-  page: number;
-  per_page: number;
-  pages: number;
+  count: number;
+  offset: number;
+  has_more: boolean;
+  next_offset: number | null;
 }
 
 export interface OptimizationRecord {
@@ -250,8 +255,8 @@ export async function retryOptimization(
 
 export async function fetchHistory(params: HistoryParams = {}): Promise<HistoryResponse> {
   const searchParams = new URLSearchParams();
-  if (params.page) searchParams.set('page', String(params.page));
-  if (params.per_page) searchParams.set('per_page', String(params.per_page));
+  if (params.offset !== undefined) searchParams.set('offset', String(params.offset));
+  if (params.limit) searchParams.set('limit', String(params.limit));
   if (params.search) searchParams.set('search', params.search);
   if (params.sort) searchParams.set('sort', params.sort);
   if (params.order) searchParams.set('order', params.order);
@@ -397,6 +402,7 @@ export async function fetchProviderStatus(): Promise<ProviderStatusResponse> {
 
 export interface RepoTreeEntry {
   path: string;
+  type?: 'blob' | 'tree' | 'commit';
   sha: string;
   size_bytes?: number;
 }

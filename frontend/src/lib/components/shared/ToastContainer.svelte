@@ -2,10 +2,17 @@
   import { toast } from '$lib/stores/toast.svelte';
 
   const typeStyles: Record<string, string> = {
-    info: 'border-neon-cyan/30 text-neon-cyan',
-    success: 'border-neon-green/30 text-neon-green',
-    error: 'border-neon-red/30 text-neon-red',
-    warning: 'border-neon-yellow/30 text-neon-yellow'
+    info:    'border-neon-cyan/40 text-neon-cyan',
+    success: 'border-neon-green/40 text-neon-green',
+    error:   'border-neon-red/40 text-neon-red',
+    warning: 'border-neon-yellow/40 text-neon-yellow'
+  };
+
+  const typeRings: Record<string, string> = {
+    info:    'rgba(0, 229, 255, 0.15)',
+    success: 'rgba(34, 255, 136, 0.15)',
+    error:   'rgba(255, 51, 102, 0.15)',
+    warning: 'rgba(251, 191, 36, 0.15)'
   };
 
   const typeIcons: Record<string, string> = {
@@ -20,10 +27,10 @@
   <div class="fixed bottom-10 right-4 z-[500] flex flex-col gap-2" data-testid="toast-container">
     {#each toast.toasts as item (item.id)}
       <div
-        class="flex items-center gap-2 px-4 py-2.5 bg-bg-card border rounded-lg cursor-pointer {typeStyles[item.type]}"
-        style="animation: {item.dismissing ? 'slide-out-right 0.3s ease-in forwards' : 'slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) both'}"
+        class="flex items-center gap-2 px-4 py-2.5 bg-bg-card border rounded-lg {typeStyles[item.type]}"
+        style="box-shadow: inset 0 0 0 1px {typeRings[item.type] ?? 'transparent'}; animation: {item.dismissing ? 'slide-out-right 0.3s ease-in forwards' : 'slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) both'}"
         role="alert"
-        onclick={() => toast.dismiss(item.id)}
+        aria-live="assertive"
       >
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d={typeIcons[item.type]}></path>

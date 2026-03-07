@@ -4,16 +4,16 @@ Runs the full optimization pipeline (up to 5 stages) and yields SSE events.
 """
 
 import json
-import time
 import logging
+import time
 from typing import AsyncGenerator, Optional
 
-from app.providers.base import LLMProvider, MODEL_ROUTING
+from app.providers.base import MODEL_ROUTING, LLMProvider
 from app.services.analyzer import run_analyze
-from app.services.strategy import run_strategy
-from app.services.optimizer import run_optimize
-from app.services.validator import run_validate
 from app.services.codebase_explorer import run_explore
+from app.services.optimizer import run_optimize
+from app.services.strategy import run_strategy
+from app.services.validator import run_validate
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ async def run_pipeline(
     repo_full_name: Optional[str] = None,
     repo_branch: Optional[str] = None,
     session_id: Optional[str] = None,
+    github_token: Optional[str] = None,
 ) -> AsyncGenerator[tuple, None]:
     """Run the full optimization pipeline, yielding (event_type, event_data) tuples.
 
@@ -59,7 +60,9 @@ async def run_pipeline(
     codebase_context = None
 
     # ---- Stage 0: Explore (conditional) ----
-    if repo_full_name and session_id:
+    # Runs whenever a repo is linked AND a token is available (session_id or
+    # explicit github_token). Skipped silently when neither is provided.
+    if repo_full_name and (session_id or github_token):
         try:
             yield ("stage", {
                 "stage": "explore",
@@ -74,21 +77,44 @@ async def run_pipeline(
                 repo_full_name=repo_full_name,
                 repo_branch=repo_branch or "main",
                 session_id=session_id,
+                github_token=github_token,
             ):
                 if event_type == "explore_result":
                     codebase_context = event_data
-                    # Also yield so optimize.py can persist the snapshot
-                    yield ("codebase_context", event_data)
+                    # Buffer — duration_ms and model not yet known; yield after loop
                 else:
                     yield (event_type, event_data)
 
             duration_ms = int((time.time() - start) * 1000)
-            yield ("stage", {
-                "stage": "explore",
-                "status": "complete",
-                "files_read": codebase_context.get("files_read_count", 0) if codebase_context else 0,
-                "duration_ms": duration_ms,
-            })
+            explore_failed = bool(codebase_context and codebase_context.get("explore_failed"))
+            if explore_failed:
+                explore_error = (codebase_context or {}).get("explore_error", "Exploration failed")
+                # Strip internal flags so downstream stages get clean context
+                codebase_context = {
+                    k: v for k, v in codebase_context.items()
+                    if k not in ("explore_failed", "explore_error")
+                } if codebase_context else None
+                if codebase_context:
+                    codebase_context["duration_ms"] = duration_ms
+                    codebase_context["model"] = MODEL_ROUTING["explore"]
+                    yield ("codebase_context", codebase_context)
+                yield ("stage", {
+                    "stage": "explore",
+                    "status": "failed",
+                    "error": explore_error,
+                    "duration_ms": duration_ms,
+                })
+            else:
+                if codebase_context:
+                    codebase_context["duration_ms"] = duration_ms
+                    codebase_context["model"] = MODEL_ROUTING["explore"]
+                    yield ("codebase_context", codebase_context)
+                yield ("stage", {
+                    "stage": "explore",
+                    "status": "complete",
+                    "files_read": codebase_context.get("files_read_count", 0) if codebase_context else 0,
+                    "duration_ms": duration_ms,
+                })
         except Exception as e:
             logger.warning(f"Stage 0 (Explore) failed: {e}. Continuing without codebase context.")
             yield ("error", {
@@ -128,8 +154,8 @@ async def run_pipeline(
             "error": str(e),
             "recoverable": False,
         })
-        for ev in _skip_remaining(["strategy", "optimize", "validate"]):
-            yield ev
+        for item in _skip_remaining(["strategy", "optimize", "validate"]):
+            yield item
         return
 
     # ---- Stage 2: Strategy ----
@@ -171,8 +197,8 @@ async def run_pipeline(
             "error": str(e),
             "recoverable": False,
         })
-        for ev in _skip_remaining(["optimize", "validate"]):
-            yield ev
+        for item in _skip_remaining(["optimize", "validate"]):
+            yield item
         return
 
     # ---- Stage 3: Optimize (streaming) ----
@@ -194,7 +220,10 @@ async def run_pipeline(
             yield (event_type, event_data)
 
         opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
-        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis)) + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
+        stage_tokens = (
+            _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
+            + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
+        )
         total_tokens += stage_tokens
 
         yield ("stage", {
@@ -210,8 +239,8 @@ async def run_pipeline(
             "error": str(e),
             "recoverable": False,
         })
-        for ev in _skip_remaining(["validate"]):
-            yield ev
+        for item in _skip_remaining(["validate"]):
+            yield item
         return
 
     # ---- Stage 4: Validate ----
@@ -230,7 +259,10 @@ async def run_pipeline(
         )
         validation["model"] = MODEL_ROUTING["validate"]
 
-        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt) + _estimate_tokens(json.dumps(validation))
+        stage_tokens = (
+            _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt)
+            + _estimate_tokens(json.dumps(validation))
+        )
         total_tokens += stage_tokens
 
         yield ("validation", validation)
@@ -251,8 +283,12 @@ async def run_pipeline(
 
     # ---- Retry on low score ----
     overall_score = validation.get("scores", validation).get("overall_score", 10)
-    if overall_score is not None and overall_score < LOW_SCORE_THRESHOLD:
-        logger.info(f"Overall score {overall_score} < {LOW_SCORE_THRESHOLD}: retrying optimize+validate with adjusted constraints")
+    is_improvement = validation.get("is_improvement", True)
+    if overall_score is not None and overall_score < LOW_SCORE_THRESHOLD and not is_improvement:
+        logger.info(
+            f"Overall score {overall_score} < {LOW_SCORE_THRESHOLD}: "
+            "retrying optimize+validate with adjusted constraints"
+        )
         yield ("rate_limit_warning", {
             "message": f"Score {overall_score}/10 below threshold — retrying with stricter constraints",
             "stage": "validate",
@@ -310,7 +346,10 @@ async def run_pipeline(
             )
             validation["model"] = MODEL_ROUTING["validate"]
 
-            stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt) + _estimate_tokens(json.dumps(validation))
+            stage_tokens = (
+                _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt)
+                + _estimate_tokens(json.dumps(validation))
+            )
             total_tokens += stage_tokens
 
             yield ("validation", validation)

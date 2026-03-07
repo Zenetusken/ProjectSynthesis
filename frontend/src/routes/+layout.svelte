@@ -3,8 +3,10 @@
   import { onMount } from 'svelte';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { editor } from '$lib/stores/editor.svelte';
+  import { forge } from '$lib/stores/forge.svelte';
   import { github } from '$lib/stores/github.svelte';
-  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo } from '$lib/api/client';
+  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization } from '$lib/api/client';
+  import type { RepoInfo } from '$lib/api/client';
   import ActivityBar from '$lib/components/layout/ActivityBar.svelte';
   import Navigator from '$lib/components/layout/Navigator.svelte';
   import EditorGroups from '$lib/components/layout/EditorGroups.svelte';
@@ -15,6 +17,43 @@
 
   import type { Snippet } from 'svelte';
   let { children }: { children: Snippet } = $props();
+
+  // Tab-switch forge state restoration
+  $effect(() => {
+    const tab = editor.activeTab;
+    if (forge.isForging) return;
+
+    if (tab?.optimizationId) {
+      // Skip if forge already shows this optimization's data (avoids double-load
+      // when navigators pre-call loadFromRecord before openTab triggers this effect)
+      if (forge.optimizationId === tab.optimizationId) return;
+
+      const cached = forge.getRecord(tab.optimizationId);
+      if (cached) {
+        forge.loadFromRecord(cached);
+      } else {
+        // Capture the requested ID so the async callback can detect stale results
+        // (user may switch tabs before the fetch resolves)
+        const requestedId = tab.optimizationId;
+        fetchOptimization(requestedId)
+          .then(record => {
+            forge.cacheRecord(record.id, record);
+            // Only apply if the active tab still wants this record
+            if (editor.activeTab?.optimizationId === record.id) {
+              forge.loadFromRecord(record);
+            }
+          })
+          .catch(() => {
+            // Only reset if still on the same tab that triggered the fetch
+            if (editor.activeTab?.optimizationId === requestedId) {
+              forge.resetPipeline();
+            }
+          });
+      }
+    } else {
+      forge.resetPipeline();
+    }
+  });
 
   // Resize handle logic
   let resizing = $state<'nav' | 'inspector' | null>(null);
@@ -52,21 +91,14 @@
     resizing = null;
   }
 
-  // Responsive auto-collapse per spec:
-  // >=1280px: all panels visible
-  // 768-1279px: Inspector auto-collapses
-  // <768px: Both Navigator and Inspector auto-collapse
+  // Responsive auto-collapse:
+  // <768px: mobile — both panels collapse
+  // >=768px: desktop — panels stay at user-set state
   function handleResize() {
     const w = window.innerWidth;
     if (w < 768) {
-      workbench.navigatorCollapsed = true;
-      workbench.inspectorCollapsed = true;
-    } else if (w < 1280) {
-      workbench.inspectorCollapsed = true;
-      // Navigator stays open
-    } else {
-      // >=1280px: restore both if they were auto-collapsed
-      // Don't force-open if user manually collapsed
+      workbench.setNavigatorCollapsed(true);
+      workbench.setInspectorCollapsed(true);
     }
   }
 
@@ -79,6 +111,53 @@
     'footer[aria-label="Status Bar"]'
   ];
   let currentZoneIndex = $state(-1);
+
+  // Global keyboard shortcuts:
+  //   Ctrl+Tab / Ctrl+Shift+Tab  — cycle through open tabs
+  //   Ctrl+Shift+E/H/L/T/G       — switch Activity Bar panel
+  //   Ctrl+,                     — open Settings panel
+  //   Ctrl+W                     — close active tab
+  //   Ctrl+S                     — save active tab
+  //   Ctrl+1–8                   — switch to Nth open tab
+  //   Escape                     — cancel active forge
+  function handleKeyboard(e: KeyboardEvent) {
+    if (e.ctrlKey && e.key === 'Tab') {
+      e.preventDefault();
+      const tabs = editor.openTabs;
+      if (tabs.length > 1) {
+        const idx = tabs.findIndex(t => t.id === editor.activeTabId);
+        editor.activeTabId = tabs[e.shiftKey ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length].id;
+      }
+    } else if (e.key === 'Escape' && forge.isForging) {
+      forge.cancel();
+    } else if (e.ctrlKey && e.shiftKey) {
+      // Activity Bar shortcuts (Ctrl+Shift+*)
+      if (e.key === 'E') { e.preventDefault(); workbench.setActivity('files'); }
+      else if (e.key === 'H') { e.preventDefault(); workbench.setActivity('history'); }
+      else if (e.key === 'L') { e.preventDefault(); workbench.setActivity('chains'); }
+      else if (e.key === 'T') { e.preventDefault(); workbench.setActivity('templates'); }
+      else if (e.key === 'G') { e.preventDefault(); workbench.setActivity('github'); }
+    } else if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+      if (e.key === ',') {
+        e.preventDefault();
+        workbench.setActivity('settings');
+      } else if (e.key === 'w') {
+        e.preventDefault();
+        if (editor.activeTabId) editor.closeTab(editor.activeTabId);
+      } else if (e.key === 's') {
+        e.preventDefault();
+        editor.saveActiveTab();
+      } else {
+        // Ctrl+1–8: switch to Nth open tab (1-indexed)
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 8) {
+          e.preventDefault();
+          const tab = editor.openTabs[num - 1];
+          if (tab) editor.activeTabId = tab.id;
+        }
+      }
+    }
+  }
 
   function handleF6(e: KeyboardEvent) {
     if (e.key === 'F6') {
@@ -110,18 +189,28 @@
     handleResize();
     window.addEventListener('resize', handleResize);
     document.addEventListener('keydown', handleF6);
+    document.addEventListener('keydown', handleKeyboard);
 
-    // Detect provider on mount
-    fetchHealth()
-      .then((data) => {
+    // Health polling — runs immediately, then every 15 s.
+    // Updates backend connection, MCP status, provider, and OAuth flag in one shot.
+    let healthTimer: ReturnType<typeof setInterval>;
+
+    async function pollHealth() {
+      try {
+        const data = await fetchHealth();
         workbench.isConnected = true;
+        workbench.mcpConnected = !!data.mcp_connected;
         workbench.provider = (data.provider as 'anthropic' | 'openai' | 'claude_cli' | 'anthropic_api') || 'unknown';
         workbench.providerModel = data.model_routing?.optimize || '';
         workbench.githubOAuthEnabled = !!data.github_oauth_enabled;
-      })
-      .catch(() => {
+      } catch {
         workbench.isConnected = false;
-      });
+        workbench.mcpConnected = false;
+      }
+    }
+
+    pollHealth();
+    healthTimer = setInterval(pollHealth, 15_000);
 
     // Hydrate GitHub connection state (persists across page refresh)
     fetchGitHubAuthStatus()
@@ -131,7 +220,7 @@
             const repos = await fetchGitHubRepos();
             github.setConnected(
               auth.login,
-              repos.map((r: Record<string, unknown>) => ({
+              repos.map((r: RepoInfo) => ({
                 full_name: r.full_name as string,
                 description: (r.description || '') as string,
                 default_branch: (r.default_branch || 'main') as string,
@@ -159,8 +248,10 @@
     editor.ensureWelcomeTab();
 
     return () => {
+      clearInterval(healthTimer);
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('keydown', handleF6);
+      document.removeEventListener('keydown', handleKeyboard);
     };
   });
 </script>

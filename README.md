@@ -6,7 +6,7 @@ PromptForge is a self-adaptive prompt optimization webapp that transforms raw, u
 
 - **Frontend**: SvelteKit 2 (Svelte 5) + Tailwind CSS 4 — port 5199
 - **Backend**: Python FastAPI — port 8000
-- **MCP Server**: FastMCP WebSocket — port 8001
+- **MCP Server**: FastMCP (streamable HTTP) — port 8001 | WebSocket backward-compat on port 8000
 - **Database**: SQLite via aiosqlite + SQLAlchemy async
 
 ## Quick Start
@@ -45,7 +45,7 @@ At least ONE LLM provider:
 - **Model Routing**: Each stage uses the optimal Claude model (Haiku/Sonnet/Opus)
 - **GitHub Integration**: Link repos for codebase-aware optimization
 - **Real-time Streaming**: SSE-powered pipeline progress
-- **MCP Server**: 14 tools accessible from Claude Code
+- **MCP Server**: 13 tools accessible from Claude Code (see [docs/MCP.md](docs/MCP.md))
 - **Developer Workbench UI**: VS Code-inspired 5-zone layout
 - **Industrial Cyberpunk Theme**: Flat neon contour aesthetic
 

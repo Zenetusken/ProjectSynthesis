@@ -13,7 +13,7 @@
 
 <div class="p-2 space-y-2">
   <div class="flex items-center justify-between px-1">
-    <span class="text-[10px] uppercase tracking-wider text-text-dim font-semibold">Chains</span>
+    <span class="font-display text-[11px] font-bold uppercase text-text-dim">Chains</span>
     <button
       class="w-5 h-5 flex items-center justify-center rounded text-text-dim hover:text-text-secondary hover:bg-bg-hover"
       aria-label="New chain"

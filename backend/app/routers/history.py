@@ -1,10 +1,9 @@
-import json
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete, case, literal_column
 
 from app.database import get_session
 from app.models.optimization import Optimization
@@ -16,8 +15,8 @@ router = APIRouter(tags=["history"])
 
 @router.get("/api/history")
 async def list_history(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
     sort: str = Query("created_at"),
     order: str = Query("desc"),
@@ -64,26 +63,32 @@ async def list_history(
     total_result = await session.execute(count_query)
     total = total_result.scalar() or 0
 
-    # Sorting
-    sort_column = getattr(Optimization, sort, Optimization.created_at)
+    # Sorting — whitelist prevents getattr on arbitrary user input
+    _VALID_SORT_COLUMNS = {"created_at", "overall_score", "task_type", "updated_at",
+                           "duration_ms", "primary_framework", "status"}
+    if sort not in _VALID_SORT_COLUMNS:
+        sort = "created_at"
+    sort_column = getattr(Optimization, sort)
     if order == "asc":
         query = query.order_by(sort_column.asc())
     else:
         query = query.order_by(sort_column.desc())
 
     # Pagination
-    offset = (page - 1) * per_page
-    query = query.offset(offset).limit(per_page)
+    query = query.offset(offset).limit(limit)
 
     result = await session.execute(query)
     optimizations = result.scalars().all()
 
+    fetched = len(optimizations)
+    has_more = (offset + fetched) < total
     return {
-        "items": [opt.to_dict() for opt in optimizations],
         "total": total,
-        "page": page,
-        "per_page": per_page,
-        "pages": (total + per_page - 1) // per_page if per_page else 0,
+        "count": fetched,
+        "offset": offset,
+        "items": [opt.to_dict() for opt in optimizations],
+        "has_more": has_more,
+        "next_offset": offset + fetched if has_more else None,
     }
 
 
@@ -126,25 +131,28 @@ async def get_stats(
     avg_score = sum(scores) / len(scores) if scores else None
 
     # Task type breakdown
-    task_types = {}
+    task_types: dict[str, int] = {}
     for o in optimizations:
         if o.task_type:
-            task_types[o.task_type] = task_types.get(o.task_type, 0) + 1
+            k = str(o.task_type)
+            task_types[k] = task_types.get(k, 0) + 1
 
     # Framework breakdown
-    frameworks = {}
+    frameworks: dict[str, int] = {}
     for o in optimizations:
         if o.primary_framework:
-            frameworks[o.primary_framework] = frameworks.get(o.primary_framework, 0) + 1
+            k = str(o.primary_framework)
+            frameworks[k] = frameworks.get(k, 0) + 1
 
     # Provider breakdown
-    providers = {}
+    providers: dict[str, int] = {}
     for o in optimizations:
         if o.provider_used:
-            providers[o.provider_used] = providers.get(o.provider_used, 0) + 1
+            k = str(o.provider_used)
+            providers[k] = providers.get(k, 0) + 1
 
     # Model usage (count all model fields)
-    model_usage = {}
+    model_usage: dict[str, int] = {}
     for o in optimizations:
         for model_field in ("model_explore", "model_analyze", "model_strategy",
                             "model_optimize", "model_validate"):

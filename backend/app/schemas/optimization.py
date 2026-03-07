@@ -1,8 +1,9 @@
 import warnings
-warnings.filterwarnings("ignore", message="Field name.*shadows an attribute")
+from typing import Optional
 
 from pydantic import BaseModel, Field
-from typing import Optional
+
+warnings.filterwarnings("ignore", message="Field name.*shadows an attribute")
 
 
 class OptimizeRequest(BaseModel):

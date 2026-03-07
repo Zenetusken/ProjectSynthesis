@@ -1,44 +1,34 @@
-import os
-import uuid
 import logging
+import uuid
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
-from cryptography.fernet import Fernet
 
-from app.database import get_session
 from app.config import settings
+from app.database import get_session
 from app.models.github import GitHubToken
-from app.schemas.github import PATRequest, GitHubUserInfo
+from app.schemas.github import GitHubUserInfo, PATRequest
+from app.services.github_service import _get_fernet, decrypt_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["github-auth"])
+
+# CSRF state is time-bound: expires after 10 minutes (per spec)
+_CSRF_MAX_AGE = 600
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USER_URL = "https://api.github.com/user"
 
 
-def _get_fernet() -> Fernet:
-    """Get Fernet instance for token encryption."""
-    key = settings.GITHUB_TOKEN_ENCRYPTION_KEY
-    if not key:
-        # Auto-generate and persist encryption key
-        key_path = os.path.join("data", ".github_encryption_key")
-        os.makedirs("data", exist_ok=True)
-        if os.path.exists(key_path):
-            with open(key_path, "r") as f:
-                key = f.read().strip()
-        else:
-            key = Fernet.generate_key().decode()
-            with open(key_path, "w") as f:
-                f.write(key)
-            logger.info("Generated new GitHub token encryption key")
-    return Fernet(key.encode() if isinstance(key, str) else key)
+def _csrf_signer() -> TimestampSigner:
+    """Return a TimestampSigner keyed on the app SECRET_KEY."""
+    return TimestampSigner(settings.SECRET_KEY)
 
 
 def _get_session_id(request: Request) -> str:
@@ -58,8 +48,9 @@ async def github_login(request: Request):
             detail="GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.",
         )
 
-    # Generate CSRF state
-    state = str(uuid.uuid4())
+    # Generate time-bound CSRF state via TimestampSigner
+    raw_token = uuid.uuid4().hex
+    state = _csrf_signer().sign(raw_token).decode()
     request.session["oauth_state"] = state
 
     params = {
@@ -83,10 +74,23 @@ async def github_callback(
     if not code or not state:
         raise HTTPException(status_code=400, detail="Missing code or state parameter")
 
-    # Verify CSRF state
-    stored_state = request.session.get("oauth_state")
-    if state != stored_state:
+    # Verify CSRF state — exact match + signature + expiry check.
+    # Always consume (pop) the stored state so it cannot be replayed.
+    stored_state = request.session.pop("oauth_state", None)
+    if not stored_state or state != stored_state:
         raise HTTPException(status_code=400, detail="State mismatch (CSRF protection)")
+    try:
+        _csrf_signer().unsign(state, max_age=_CSRF_MAX_AGE)
+    except SignatureExpired:
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth state expired — please restart the login flow",
+        )
+    except BadSignature:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OAuth state signature (CSRF protection)",
+        )
 
     # Exchange code for token
     async with httpx.AsyncClient() as client:
@@ -173,8 +177,7 @@ async def github_me(
     # Optionally fetch fresh avatar URL
     avatar_url = None
     try:
-        fernet = _get_fernet()
-        decrypted = fernet.decrypt(token_record.token_encrypted).decode()
+        decrypted = decrypt_token(bytes(token_record.token_encrypted))
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 GITHUB_USER_URL,
@@ -209,6 +212,8 @@ async def github_logout(
             delete(GitHubToken).where(GitHubToken.session_id == session_id)
         )
         await session.commit()
+        from app.routers.github_repos import evict_repo_cache
+        evict_repo_cache(session_id)
 
     # Clear session GitHub data
     request.session.pop("github_user_id", None)

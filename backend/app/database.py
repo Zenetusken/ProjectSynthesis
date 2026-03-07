@@ -1,8 +1,10 @@
-import os
 import logging
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+import os
+from collections.abc import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import event
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,7 +31,7 @@ engine = create_async_engine(
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def get_session() -> AsyncSession:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Dependency that yields an async database session."""
     async with async_session() as session:
         try:
@@ -43,8 +45,8 @@ async def get_session() -> AsyncSession:
 async def create_tables():
     """Create all tables on startup. Acts as simple migration."""
     # Import all models so they register with Base.metadata
-    import app.models.optimization  # noqa: F401
     import app.models.github  # noqa: F401
+    import app.models.optimization  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

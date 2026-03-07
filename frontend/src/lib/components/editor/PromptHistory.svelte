@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
-  import { forge } from '$lib/stores/forge.svelte';
-  import { fetchHistory, retryOptimization } from '$lib/api/client';
+  import { fetchHistory } from '$lib/api/client';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
+  import StrategyBadge from '$lib/components/shared/StrategyBadge.svelte';
   import { formatRelativeTime } from '$lib/utils/format';
 
   let isLoading = $state(false);
@@ -13,18 +14,17 @@
   async function handleReforge(entry: typeof history.entries[0]) {
     reforgingId = entry.id;
     try {
-      // Populate the edit tab with the original prompt
-      if (editor.activeTab) {
-        editor.activeTab.promptText = entry.raw_prompt;
+      const tab = editor.activeTab;
+      if (tab) {
+        // Load the raw prompt and clear the stale optimizationId so the forge
+        // result from this re-run replaces the old association on this tab
+        tab.optimizationId = undefined;
+        editor.updateTabPrompt(tab.id, entry.raw_prompt);
       }
-      // Switch to edit sub-tab to show the prompt
+      // Switch to edit sub-tab so the forge button is visible, then await DOM update
       editor.setSubTab('edit');
-      // Trigger the re-forge via API
-      await retryOptimization(entry.id, entry.strategy);
-      // Reload history after re-forge
-      await loadHistory();
-    } catch {
-      // Re-forge failed silently
+      await tick();
+      document.querySelector<HTMLButtonElement>('[data-testid="forge-button"]')?.click();
     } finally {
       reforgingId = null;
     }
@@ -38,7 +38,7 @@
   async function loadHistory() {
     isLoading = true;
     try {
-      const resp = await fetchHistory({ page: 1, page_size: 100, sort_by: 'created_at', sort_dir: 'desc' });
+      const resp = await fetchHistory({ offset: 0, limit: 100, sort: 'created_at', order: 'desc' });
       history.setEntries(resp.items, resp.total);
     } catch {
       // silently handle
@@ -83,7 +83,7 @@
 
 <div class="p-4 space-y-3 animate-fade-in">
   <div class="flex items-center justify-between">
-    <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">Prompt History</h3>
+    <h3 class="section-heading">Prompt History</h3>
     <button
       class="text-[10px] text-text-dim hover:text-neon-cyan transition-colors"
       onclick={loadHistory}
@@ -94,8 +94,13 @@
   </div>
 
   {#if isLoading}
-    <div class="text-center py-8">
-      <p class="text-sm text-text-dim animate-status-pulse">Loading history...</p>
+    <div class="space-y-2">
+      {#each [1, 2, 3, 4] as _, i}
+        <div
+          class="h-8 rounded border border-border-subtle animate-shimmer"
+          style="background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%; animation-delay: {i * 60}ms;"
+        ></div>
+      {/each}
     </div>
   {:else if promptRuns.length === 0}
     <div class="flex flex-col items-center justify-center text-center py-12">
@@ -127,13 +132,7 @@
             >
               <td class="py-2 px-2 text-text-secondary font-mono">#{promptRuns.length - i}</td>
               <td class="py-2 px-2">
-                {#if entry.strategy}
-                  <span class="px-1.5 py-0.5 rounded bg-neon-purple/10 text-neon-purple border border-neon-purple/20 text-[10px]">
-                    {entry.strategy}
-                  </span>
-                {:else}
-                  <span class="text-text-dim">auto</span>
-                {/if}
+                <StrategyBadge strategy={entry.strategy ?? 'auto'} />
               </td>
               <td class="py-2 px-2">
                 {#if entry.overall_score != null}
@@ -141,7 +140,7 @@
                     <ScoreCircle score={entry.overall_score} size={20} />
                     <span class="text-text-primary">{entry.overall_score}/10</span>
                     {#if getScoreDelta(i)}
-                      <span class="text-[10px] {getDeltaColor(i)}">{getScoreDelta(i)}</span>
+                      <span class="text-[11px] font-mono font-bold {getDeltaColor(i)}">{getScoreDelta(i)}</span>
                     {/if}
                   </div>
                 {:else}
@@ -165,31 +164,36 @@
                 <td colspan="5" class="px-4 py-3">
                   <div class="space-y-2">
                     <h4 class="text-[10px] font-semibold text-text-secondary uppercase tracking-wider">Stage Trace</h4>
-                    <div class="space-y-1 font-mono text-[10px]">
-                      <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-neon-green"></span>
-                        <span class="text-text-secondary">Analyze</span>
-                        <span class="text-text-dim">→ Task classification complete</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-neon-green"></span>
-                        <span class="text-text-secondary">Strategy</span>
-                        <span class="text-text-dim">→ {entry.strategy || 'auto'} selected</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-neon-green"></span>
-                        <span class="text-text-secondary">Optimize</span>
-                        <span class="text-text-dim">→ Prompt optimized</span>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-neon-green"></span>
-                        <span class="text-text-secondary">Validate</span>
-                        <span class="text-text-dim">→ Score: {entry.overall_score ?? '–'}/10</span>
-                      </div>
+                    <div class="space-y-0.5 font-mono text-[10px] py-1">
+                      {#if entry.strategy}
+                        <div class="flex items-center gap-2 py-0.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-neon-purple/60 shrink-0"></span>
+                          <span class="text-text-dim w-16 shrink-0">Strategy</span>
+                          <span class="text-neon-purple/70">{entry.strategy}</span>
+                        </div>
+                      {/if}
+                      {#if entry.model}
+                        <div class="flex items-center gap-2 py-0.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-neon-blue/60 shrink-0"></span>
+                          <span class="text-text-dim w-16 shrink-0">Model</span>
+                          <span class="text-text-secondary">{entry.model}</span>
+                        </div>
+                      {/if}
+                      {#if entry.overall_score != null}
+                        <div class="flex items-center gap-2 py-0.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-neon-green/60 shrink-0"></span>
+                          <span class="text-text-dim w-16 shrink-0">Score</span>
+                          <span class="text-neon-green">{entry.overall_score}/10</span>
+                        </div>
+                      {/if}
+                      {#if entry.duration_ms}
+                        <div class="flex items-center gap-2 py-0.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-neon-cyan/40 shrink-0"></span>
+                          <span class="text-text-dim w-16 shrink-0">Duration</span>
+                          <span class="text-text-secondary">{(entry.duration_ms/1000).toFixed(1)}s</span>
+                        </div>
+                      {/if}
                     </div>
-                    {#if entry.duration_ms}
-                      <p class="text-[10px] text-text-dim mt-1">Total duration: {(entry.duration_ms / 1000).toFixed(1)}s</p>
-                    {/if}
                     <div class="mt-2 pt-2 border-t border-border-subtle/50">
                       <button
                         class="text-[10px] px-2 py-1 rounded bg-neon-cyan/10 border border-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/20 transition-colors disabled:opacity-50"

@@ -1,18 +1,14 @@
-import uuid
 import logging
-from typing import Optional
+import time
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
-from cryptography.fernet import Fernet
 
 from app.database import get_session
-from app.config import settings
-from app.models.github import GitHubToken, LinkedRepo
-from app.schemas.github import LinkRepoRequest, RepoInfo, LinkedRepoResponse
-from app.routers.github_auth import _get_fernet
+from app.models.github import LinkedRepo
+from app.schemas.github import LinkRepoRequest
+from app.services import github_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["github-repos"])
@@ -22,21 +18,20 @@ _repo_cache: dict[str, tuple[float, list]] = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
+def evict_repo_cache(session_id: str) -> None:
+    """Remove cached repo list for a session (call on logout/disconnect)."""
+    _repo_cache.pop(session_id, None)
+
+
 async def _get_github_token(request: Request, session: AsyncSession) -> str:
     """Retrieve and decrypt the GitHub token for the current session."""
     session_id = request.session.get("session_id")
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated with GitHub")
-
-    result = await session.execute(
-        select(GitHubToken).where(GitHubToken.session_id == session_id)
-    )
-    token_record = result.scalar_one_or_none()
-    if not token_record:
+    token = await github_service.get_token_for_session(session, session_id)
+    if not token:
         raise HTTPException(status_code=401, detail="No GitHub token found. Connect GitHub first.")
-
-    fernet = _get_fernet()
-    return fernet.decrypt(token_record.token_encrypted).decode()
+    return token
 
 
 @router.get("/api/github/repos")
@@ -45,8 +40,6 @@ async def list_repos(
     session: AsyncSession = Depends(get_session),
 ):
     """List repositories accessible with the user's GitHub token."""
-    import time
-
     token = await _get_github_token(request, session)
 
     # Check cache
@@ -56,54 +49,13 @@ async def list_repos(
         if time.time() - cached_time < CACHE_TTL_SECONDS:
             return cached_repos
 
-    # Fetch from GitHub
-    repos = []
-    page = 1
-    async with httpx.AsyncClient() as client:
-        while True:
-            resp = await client.get(
-                "https://api.github.com/user/repos",
-                params={
-                    "per_page": 100,
-                    "page": page,
-                    "sort": "updated",
-                    "direction": "desc",
-                },
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/json",
-                },
-            )
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=resp.status_code,
-                    detail="Failed to fetch repos from GitHub",
-                )
+    # Fetch from GitHub via service layer
+    try:
+        repos = await github_service.get_user_repos(token)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch repos: {e}")
 
-            data = resp.json()
-            if not data:
-                break
-
-            for repo in data:
-                repos.append({
-                    "full_name": repo["full_name"],
-                    "name": repo["name"],
-                    "private": repo.get("private", False),
-                    "default_branch": repo.get("default_branch", "main"),
-                    "description": repo.get("description"),
-                    "language": repo.get("language"),
-                    "size_kb": repo.get("size", 0),
-                })
-
-            # Only fetch up to 5 pages (500 repos max)
-            if page >= 5 or len(data) < 100:
-                break
-            page += 1
-
-    # Update cache
-    import time as time_mod
-    _repo_cache[cache_key] = (time_mod.time(), repos)
-
+    _repo_cache[cache_key] = (time.time(), repos)
     return repos
 
 
@@ -117,18 +69,10 @@ async def link_repo(
     token = await _get_github_token(request, session)
     session_id = request.session.get("session_id", "")
 
-    # Validate repo access
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"https://api.github.com/repos/{body.full_name}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json",
-            },
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=404, detail="Repository not found or not accessible")
-        repo_data = resp.json()
+    # Validate repo access via service layer
+    repo_data = await github_service.get_repo_info(token, body.full_name)
+    if repo_data is None:
+        raise HTTPException(status_code=404, detail="Repository not found or not accessible")
 
     branch = body.branch or repo_data.get("default_branch", "main")
 
@@ -193,7 +137,7 @@ async def unlink_repo(
     if not session_id:
         return {"unlinked": False, "reason": "No session"}
 
-    result = await session.execute(
+    await session.execute(
         delete(LinkedRepo).where(LinkedRepo.session_id == session_id)
     )
     await session.commit()

@@ -2,12 +2,14 @@
   import { github } from '$lib/stores/github.svelte';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { connectGitHub, disconnectGitHub, linkRepo, unlinkRepo, fetchLinkedRepo, getGitHubLoginUrl } from '$lib/api/client';
+  import type { RepoInfo } from '$lib/api/client';
   import GitHubStatus from '$lib/components/github/GitHubStatus.svelte';
   import RepoPickerModal from '$lib/components/github/RepoPickerModal.svelte';
 
   let patInput = $state('');
   let connecting = $state(false);
   let showRepoPicker = $state(false);
+  let showPat = $state(false);
 
   async function handleConnect() {
     if (!patInput.trim()) return;
@@ -16,7 +18,7 @@
       const res = await connectGitHub(patInput);
       github.setConnected(
         res.username,
-        res.repos.map((r: Record<string, unknown>) => ({
+        res.repos.map((r: RepoInfo) => ({
           full_name: r.full_name as string,
           description: (r.description || '') as string,
           default_branch: (r.default_branch || 'main') as string,
@@ -70,14 +72,34 @@
       <label class="text-xs text-text-secondary block" for="github-pat-input">
         Personal Access Token
       </label>
-      <input
-        id="github-pat-input"
-        type="password"
-        placeholder="ghp_..."
-        class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1.5 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30 font-mono"
-        bind:value={patInput}
-        onkeydown={(e) => { if (e.key === 'Enter') handleConnect(); }}
-      />
+      <div class="relative">
+        <input
+          id="github-pat-input"
+          type={showPat ? 'text' : 'password'}
+          placeholder="ghp_..."
+          class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1.5 pr-8 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30 font-mono"
+          bind:value={patInput}
+          onkeydown={(e) => { if (e.key === 'Enter') handleConnect(); }}
+        />
+        <button
+          type="button"
+          class="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-dim hover:text-text-secondary transition-colors"
+          onclick={() => { showPat = !showPat; }}
+          aria-label={showPat ? 'Hide token' : 'Show token'}
+          tabindex={-1}
+        >
+          {#if showPat}
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"></path>
+            </svg>
+          {:else}
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+          {/if}
+        </button>
+      </div>
       <button
         class="w-full py-1.5 rounded text-xs font-medium transition-all
           {connecting
@@ -107,7 +129,7 @@
   {:else}
     <div class="space-y-2">
       <div class="flex items-center justify-between">
-        <span class="text-xs text-text-secondary">Repositories</span>
+        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Repositories</span>
         <div class="flex items-center gap-2">
           <button
             class="text-[10px] text-neon-cyan hover:text-neon-cyan/80"
@@ -126,20 +148,23 @@
 
       {#each github.repos as repo}
         <button
-          class="w-full text-left px-2 py-1.5 rounded text-xs transition-colors
+          class="w-full text-left px-2 py-1.5 rounded text-xs transition-colors relative
             {github.selectedRepo === repo.full_name
-              ? 'bg-bg-hover border border-border-accent text-text-primary'
+              ? 'bg-neon-cyan/5 border border-neon-cyan/25 text-text-primary pl-3'
               : 'hover:bg-bg-hover text-text-secondary border border-transparent'}"
           onclick={() => handleSelectRepo(repo.full_name)}
         >
+          {#if github.selectedRepo === repo.full_name}
+            <span class="absolute left-0 top-1.5 bottom-1.5 w-[1px] bg-neon-cyan/50"></span>
+          {/if}
           <div class="flex items-center gap-1.5 min-w-0">
             {#if repo.private}
-              <svg class="w-3 h-3 text-neon-yellow shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 1C8.676 1 6 3.676 6 7v2H4v14h16V9h-2V7c0-3.324-2.676-6-6-6zm0 2c2.276 0 4 1.724 4 4v2H8V7c0-2.276 1.724-4 4-4z"></path>
+              <svg class="w-3 h-3 text-neon-yellow shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path>
               </svg>
             {:else}
-              <svg class="w-3 h-3 text-text-dim shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M3 3h18v18H3V3zm2 2v14h14V5H5z"></path>
+              <svg class="w-3 h-3 text-text-dim shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
               </svg>
             {/if}
             <span class="truncate">{repo.full_name}</span>

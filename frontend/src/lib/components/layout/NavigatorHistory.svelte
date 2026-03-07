@@ -3,6 +3,7 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, type HistoryStats } from '$lib/api/client';
+  import { getStrategyHex } from '$lib/utils/strategy';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import { onMount } from 'svelte';
 
@@ -40,7 +41,8 @@
   }
 
   function debouncedSearch(value: string) {
-    history.filters.search = value;
+    // Reset offset when search changes — avoid empty results at a stale page
+    history.updateFilters({ search: value, offset: 0 });
     if (searchTimer) clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { loadHistory(); }, 200);
   }
@@ -50,27 +52,14 @@
     const startTime = Date.now();
     try {
       const res = await fetchHistory({
-        page: history.filters.page,
-        per_page: history.filters.pageSize,
+        offset: history.filters.offset,
+        limit: history.filters.limit,
         search: history.filters.search || undefined,
         framework: history.filters.strategy || undefined,
         sort: history.filters.sortBy,
         order: history.filters.sortDir
       });
-      history.setEntries(
-        res.items.map((item: Record<string, unknown>) => ({
-          id: item.id as string,
-          raw_prompt: (item.raw_prompt || '') as string,
-          optimized_prompt: item.optimized_prompt as string | undefined,
-          overall_score: item.overall_score as number | undefined,
-          strategy: (item.primary_framework || item.strategy) as string | undefined,
-          model: (item.provider_used || item.model) as string | undefined,
-          created_at: item.created_at as string,
-          duration_ms: item.duration_ms as number | undefined,
-          tags: item.tags as string[] | undefined
-        })),
-        res.total
-      );
+      history.setEntries(res.items, res.total);
     } catch {
       // API not available yet
     } finally {
@@ -108,6 +97,7 @@
     // Load full record and populate forge store for artifact view
     try {
       const record = await fetchOptimization(entry.id);
+      forge.cacheRecord(record.id, record);
       forge.loadFromRecord(record);
     } catch {
       // If fetch fails, still open the tab
@@ -118,7 +108,8 @@
       label: entry.raw_prompt.slice(0, 30) + (entry.raw_prompt.length > 30 ? '...' : ''),
       type: 'prompt',
       promptText: entry.raw_prompt,
-      dirty: false
+      dirty: false,
+      optimizationId: entry.id
     });
     // Switch to pipeline view to show the forge artifact with sub-tabs
     editor.setSubTab('pipeline');
@@ -143,12 +134,11 @@
       {#if Object.keys(stats.framework_breakdown || {}).length > 0}
         <div class="flex flex-wrap gap-1 mt-1">
           {#each Object.entries(stats.framework_breakdown).slice(0, 4) as [fw, count]}
+            {@const hex = getStrategyHex(fw)}
             <button
-              class="text-[9px] px-1 py-0.5 rounded border transition-colors cursor-pointer
-                {history.filters.strategy === fw
-                  ? 'bg-neon-purple/20 border-neon-purple/40 text-neon-purple'
-                  : 'bg-bg-card border-border-subtle text-neon-purple hover:border-neon-purple/30'}"
-              onclick={() => { history.filters.strategy = history.filters.strategy === fw ? null : fw; loadHistory(); }}
+              class="text-[9px] px-1 py-0.5 rounded border transition-colors cursor-pointer bg-bg-card"
+              style="color: {hex}; border-color: {history.filters.strategy === fw ? hex + '80' : 'rgba(74,74,106,0.15)'}; {history.filters.strategy === fw ? `background: ${hex}20;` : ''}"
+              onclick={() => { history.updateFilters({ strategy: history.filters.strategy === fw ? null : fw, offset: 0 }); loadHistory(); }}
             >
               {fw} <span class="text-text-dim">({count})</span>
             </button>
@@ -156,7 +146,7 @@
           {#if history.filters.strategy}
             <button
               class="text-[9px] px-1 py-0.5 rounded bg-neon-red/10 border border-neon-red/20 text-neon-red hover:bg-neon-red/20 transition-colors"
-              onclick={() => { history.filters.strategy = null; loadHistory(); }}
+              onclick={() => { history.updateFilters({ strategy: null, offset: 0 }); loadHistory(); }}
             >
               ✕ Clear
             </button>
@@ -170,6 +160,7 @@
   <div class="p-2 border-b border-border-subtle space-y-1.5">
     <input
       type="text"
+      name="history-search"
       placeholder="Search history..."
       class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
       oninput={(e) => debouncedSearch((e.target as HTMLInputElement).value)}
@@ -177,20 +168,16 @@
     <div class="flex items-center gap-1">
       <span class="text-[10px] text-text-dim mr-1">Sort:</span>
       <button
-        class="text-[10px] px-1.5 py-0.5 rounded border transition-colors
-          {history.filters.sortBy === 'created_at'
-            ? 'text-neon-cyan border-neon-cyan/30 bg-neon-cyan/10'
-            : 'text-text-dim border-border-subtle hover:border-neon-cyan/20 hover:text-text-secondary'}"
-        onclick={() => { if (history.filters.sortBy === 'created_at') { history.filters.sortDir = history.filters.sortDir === 'desc' ? 'asc' : 'desc'; } else { history.filters.sortBy = 'created_at'; history.filters.sortDir = 'desc'; } loadHistory(); }}
+        class="text-[10px] px-1.5 py-0.5 rounded
+          {history.filters.sortBy === 'created_at' ? 'btn-outline-cyan' : 'btn-outline-subtle'}"
+        onclick={() => { history.updateFilters(history.filters.sortBy === 'created_at' ? { sortDir: history.filters.sortDir === 'desc' ? 'asc' : 'desc', offset: 0 } : { sortBy: 'created_at', sortDir: 'desc', offset: 0 }); loadHistory(); }}
       >
         Date {history.filters.sortBy === 'created_at' ? (history.filters.sortDir === 'desc' ? '↓' : '↑') : ''}
       </button>
       <button
-        class="text-[10px] px-1.5 py-0.5 rounded border transition-colors
-          {history.filters.sortBy === 'overall_score'
-            ? 'text-neon-cyan border-neon-cyan/30 bg-neon-cyan/10'
-            : 'text-text-dim border-border-subtle hover:border-neon-cyan/20 hover:text-text-secondary'}"
-        onclick={() => { if (history.filters.sortBy === 'overall_score') { history.filters.sortDir = history.filters.sortDir === 'desc' ? 'asc' : 'desc'; } else { history.filters.sortBy = 'overall_score'; history.filters.sortDir = 'desc'; } loadHistory(); }}
+        class="text-[10px] px-1.5 py-0.5 rounded
+          {history.filters.sortBy === 'overall_score' ? 'btn-outline-cyan' : 'btn-outline-subtle'}"
+        onclick={() => { history.updateFilters(history.filters.sortBy === 'overall_score' ? { sortDir: history.filters.sortDir === 'desc' ? 'asc' : 'desc', offset: 0 } : { sortBy: 'overall_score', sortDir: 'desc', offset: 0 }); loadHistory(); }}
       >
         Score {history.filters.sortBy === 'overall_score' ? (history.filters.sortDir === 'desc' ? '↓' : '↑') : ''}
       </button>
@@ -226,12 +213,12 @@
   {/if}
 
   <!-- List -->
-  <div class="flex-1 overflow-y-auto p-1">
+  <div class="flex-1 overflow-y-auto p-1" style="overscroll-behavior: contain;" role="listbox" aria-multiselectable="true" aria-label="Optimization history">
     {#if loading}
       <!-- Skeleton loading rows with shimmer animation -->
       <div class="space-y-1 p-1" data-testid="history-skeleton">
         {#each Array(5) as _, i}
-          <div class="h-[32px] flex items-center gap-2 px-2 rounded" style="animation-delay: {i * 50}ms;">
+          <div class="h-[32px] flex items-center gap-2 px-2 rounded" style="animation: shimmer 2s linear infinite; animation-delay: {i * 50}ms;">
             <div class="w-5 h-5 rounded-full bg-bg-hover animate-shimmer" style="background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
             <div class="flex-1 space-y-1">
               <div class="h-2.5 rounded bg-bg-hover animate-shimmer" style="width: {70 + i * 5}%; background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
@@ -257,7 +244,9 @@
               : history.selectedId === entry.id
                 ? 'bg-bg-hover border border-border-accent'
                 : 'hover:bg-bg-hover border border-transparent'}"
-          role="row"
+          style="animation: list-item-in 0.2s cubic-bezier(0.16,1,0.3,1) {i*25}ms both;"
+          role="option"
+          aria-selected={selectedIds.has(entry.id) || history.selectedId === entry.id}
           tabindex={i === 0 ? 0 : -1}
           data-history-row
           onclick={() => openHistoryEntry(entry)}
@@ -267,17 +256,18 @@
             else if (e.key === 'ArrowUp') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i - 1]?.focus(); }
           }}
         >
-          <div class="flex items-start gap-2">
+          <div class="flex items-start gap-2 flex-1 min-w-0">
             <!-- Checkbox: visible on hover or when selected -->
             <label
               class="flex items-center justify-center w-4 h-4 shrink-0 mt-0.5 cursor-pointer
                 {selectedIds.has(entry.id) ? 'opacity-100' : 'opacity-0 group-hover/entry:opacity-100'} transition-opacity"
-              onclick={(e: MouseEvent) => e.stopPropagation()}
             >
               <input
                 type="checkbox"
+                name="history-entry-select"
                 checked={selectedIds.has(entry.id)}
                 onchange={(e: Event) => toggleSelect(e as unknown as MouseEvent, entry.id)}
+                onclick={(e: MouseEvent) => e.stopPropagation()}
                 class="w-3 h-3 rounded border-border-subtle accent-neon-cyan cursor-pointer"
               />
             </label>
@@ -285,12 +275,12 @@
               <ScoreCircle score={entry.overall_score} size={20} />
             {/if}
             <div class="flex-1 min-w-0">
-              <p class="text-text-primary truncate">{entry.raw_prompt.slice(0, 50)}</p>
-              <div class="flex items-center gap-2 mt-0.5">
+              <p class="text-text-primary truncate">{entry.raw_prompt}</p>
+              <div class="flex items-center gap-2 mt-0.5 min-w-0">
                 {#if entry.strategy}
-                  <span class="text-[10px] text-neon-purple">{entry.strategy}</span>
+                  <span class="text-[10px] truncate" style="color: {getStrategyHex(entry.strategy)}">{entry.strategy}</span>
                 {/if}
-                <span class="text-[10px] text-text-dim">{new Date(entry.created_at).toLocaleDateString()}</span>
+                <span class="text-[10px] text-text-dim shrink-0">{new Date(entry.created_at).toLocaleDateString()}</span>
               </div>
             </div>
             <button

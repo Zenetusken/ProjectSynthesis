@@ -15,9 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.services.github_service import (
-    get_token_for_session,
     get_repo_tree,
-    read_file_content,
+    get_token_for_session,
+    read_file_by_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,8 @@ def _get_session_id(request: Request) -> str | None:
 async def get_repo_tree_endpoint(
     owner: str,
     repo: str,
+    request: Request,
     branch: str = Query("main"),
-    request: Request = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Get the file tree of a repository.
@@ -65,13 +65,11 @@ async def read_file(
     owner: str,
     repo: str,
     path: str,
+    request: Request,
     branch: str = Query("main"),
-    request: Request = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """Read a file from a repository.
-
-    Fetches the file tree to find the blob SHA, then reads the content.
+    """Read a file from a repository by path.
 
     Args:
         owner: Repository owner.
@@ -89,18 +87,13 @@ async def read_file(
 
     full_name = f"{owner}/{repo}"
 
-    tree = await get_repo_tree(token, full_name, branch)
-    file_entry = next((e for e in tree if e["path"] == path), None)
-    if not file_entry:
-        raise HTTPException(status_code=404, detail=f"File not found: {path}")
-
-    content = await read_file_content(token, full_name, file_entry["sha"])
+    content = await read_file_by_path(token, full_name, path, branch)
     if content is None:
-        raise HTTPException(status_code=500, detail="Failed to read file content")
+        raise HTTPException(status_code=404, detail=f"File not found or unreadable: {path}")
 
     return {
         "path": path,
         "content": content,
-        "size_bytes": file_entry.get("size_bytes", 0),
-        "sha": file_entry["sha"],
+        "size_bytes": len(content.encode("utf-8")),
+        "sha": "",
     }

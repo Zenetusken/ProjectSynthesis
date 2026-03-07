@@ -1,5 +1,71 @@
 @import "tailwindcss";
 
+/* Geist Sans — self-hosted (static/fonts/) to avoid CDN CORS issues */
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Geist Mono — self-hosted */
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/GeistMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/GeistMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/GeistMono-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-neon-cyan: #00e5ff;
   --color-neon-purple: #a855f7;
@@ -30,7 +96,7 @@
   --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
   --font-display: 'Syne', Geist, ui-sans-serif, system-ui, sans-serif;
 
-  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-fade-in: fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-stagger-fade-in: stagger-fade-in 0.4s ease-out both;
   --animate-slide-in-right: slide-in-right 0.25s ease-out both;
   --animate-slide-out-right: slide-out-right 0.2s ease-in both;
@@ -46,7 +112,9 @@
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-gradient-flow: gradient-flow 3s ease infinite;
   --animate-status-pulse: status-pulse 2s ease-in-out infinite;
-  --animate-forge-spark: forge-spark 1.5s ease-in-out infinite;
+  --animate-forge-spark: forge-spark-anim 1.5s ease-in-out infinite;
+  --animate-progress-fill: progress-fill 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-list-item-in: list-item-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 :root {
@@ -57,91 +125,217 @@
 
 /* Keyframe Animations */
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes stagger-fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes slide-in-right {
-  from { opacity: 0; transform: translateX(16px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes slide-out-right {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(16px); }
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
 }
 
 @keyframes slide-up-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes dialog-in {
-  from { opacity: 0; transform: scale(0.96) translateY(-8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 @keyframes dropdown-enter {
-  from { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
-  to { opacity: 1; transform: translateY(0) scaleY(1); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
 }
 
 @keyframes dropdown-enter-up {
-  from { opacity: 0; transform: translateY(4px) scaleY(0.98); }
-  to { opacity: 1; transform: translateY(0) scaleY(1); }
+  from {
+    opacity: 0;
+    transform: translateY(4px) scaleY(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
 }
 
 @keyframes dropdown-exit {
-  from { opacity: 1; transform: translateY(0) scaleY(1); }
-  to { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
+  from {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.98);
+  }
 }
 
 @keyframes dropdown-exit-up {
-  from { opacity: 1; transform: translateY(0) scaleY(1); }
-  to { opacity: 0; transform: translateY(4px) scaleY(0.98); }
+  from {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(4px) scaleY(0.98);
+  }
 }
 
 @keyframes section-expand {
-  from { opacity: 0; max-height: 0; }
-  to { opacity: 1; max-height: 500px; }
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
 }
 
 @keyframes copy-flash {
-  0% { background-color: transparent; }
-  30% { background-color: rgba(34, 255, 136, 0.15); }
-  100% { background-color: transparent; }
+  0% {
+    background-color: transparent;
+  }
+
+  30% {
+    background-color: rgba(34, 255, 136, 0.15);
+  }
+
+  100% {
+    background-color: transparent;
+  }
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 @keyframes gradient-flow {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 @keyframes status-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
-@keyframes forge-spark {
-  0% { transform: scale(1) rotate(0deg); background-color: transparent; }
-  20% { transform: scale(1.02) rotate(10deg); background-color: rgba(251, 191, 36, 0.15); }
-  50% { transform: scale(1.01) rotate(-5deg); background-color: rgba(251, 191, 36, 0.08); }
-  100% { transform: scale(1) rotate(0deg); background-color: transparent; }
+@keyframes progress-fill {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes list-item-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 /* Scrollbar styling */
@@ -155,17 +349,42 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(74, 74, 106, 0.3);
+  background: rgba(0, 229, 255, 0.2);
   border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(74, 74, 106, 0.5);
+  background: rgba(0, 229, 255, 0.5);
 }
 
 /* Selection styling */
 ::selection {
   background: rgba(0, 229, 255, 0.3);
+  color: white;
+}
+
+/* Focus ring — brand cyan, overrides browser default blue */
+:focus-visible {
+  outline: 1px solid rgba(0, 229, 255, 0.3);
+  outline-offset: -1px;
+}
+
+/* Full-viewport lock — prevents document-level scroll in all directions */
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Contain scroll within every scrollable panel — prevents scroll-chaining to root */
+[class*="overflow-y-auto"],
+[class*="overflow-x-auto"],
+[class*="overflow-auto"] {
+  overscroll-behavior: contain;
 }
 
 /* Body base styles */
@@ -183,40 +402,176 @@ body {
   border: 1px solid rgba(0, 229, 255, 0.6);
   color: #00e5ff;
 }
+
 .btn-forge:hover:not(:disabled) {
   background-color: rgba(0, 229, 255, 0.15);
   border-color: #00e5ff;
 }
+
 .btn-forge:active:not(:disabled) {
   border-color: rgba(0, 229, 255, 0.5);
 }
+
 .btn-forge:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
+/* ─── Button variant system ─── */
+.btn-outline-cyan {
+  background: transparent;
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  color: #00e5ff;
+  transition: background 200ms, border-color 200ms;
+}
+
+.btn-outline-cyan:hover:not(:disabled) {
+  background: rgba(0, 229, 255, 0.08);
+  border-color: rgba(0, 229, 255, 0.5);
+}
+
+.btn-outline-subtle {
+  background: transparent;
+  border: 1px solid rgba(74, 74, 106, 0.25);
+  color: #8b8ba8;
+  transition: background 200ms, border-color 200ms, color 200ms;
+}
+
+.btn-outline-subtle:hover:not(:disabled) {
+  border-color: rgba(74, 74, 106, 0.5);
+  color: #e4e4f0;
+  background: rgba(22, 22, 42, 0.6);
+}
+
+.btn-outline-danger {
+  background: transparent;
+  border: 1px solid rgba(255, 51, 102, 0.25);
+  color: #ff3366;
+  transition: background 200ms, border-color 200ms;
+}
+
+.btn-outline-danger:hover:not(:disabled) {
+  background: rgba(255, 51, 102, 0.08);
+  border-color: rgba(255, 51, 102, 0.5);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #8b8ba8;
+  transition: background 200ms, color 200ms;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: #16162a;
+  color: #e4e4f0;
+}
+
+.btn-icon {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #7a7a9e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 200ms, color 200ms;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: #16162a;
+  color: #e4e4f0;
+}
+
+.btn-icon-danger {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #7a7a9e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 200ms, color 200ms;
+}
+
+.btn-icon-danger:hover:not(:disabled) {
+  background: rgba(255, 51, 102, 0.1);
+  color: #ff3366;
+}
+
+/* ─── Section heading utility ─── */
+.section-heading {
+  font-family: 'Syne', Geist, ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-dim);
+}
+
+/* ─── Premium 3-layer bar glass ─── */
+.bar-glass {
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.2),
+    inset 0 0 0 1px var(--bar-accent, rgba(0, 229, 255, 0.2));
+}
+
+/* ─── Keyboard shortcut hints ─── */
+kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
 /* Forge spark animation — fires on click */
 @keyframes forge-spark-anim {
-  0%   { transform: scale(1) rotate(0deg); background-color: rgba(0, 229, 255, 0.08); }
-  15%  { transform: scale(1.02) rotate(10deg); background-color: rgba(251, 191, 36, 0.15); }
-  40%  { transform: scale(1.01) rotate(-5deg); background-color: rgba(251, 191, 36, 0.08); }
-  100% { transform: scale(1) rotate(0deg); background-color: rgba(0, 229, 255, 0.08); }
+  0% {
+    transform: scale(1) rotate(0deg);
+    background-color: rgba(0, 229, 255, 0.08);
+  }
+
+  15% {
+    transform: scale(1.02) rotate(10deg);
+    background-color: rgba(251, 191, 36, 0.15);
+  }
+
+  40% {
+    transform: scale(1.01) rotate(-5deg);
+    background-color: rgba(251, 191, 36, 0.08);
+  }
+
+  100% {
+    transform: scale(1) rotate(0deg);
+    background-color: rgba(0, 229, 255, 0.08);
+  }
 }
+
 .forge-sparking {
   animation: forge-spark-anim 0.5s ease 3 !important;
 }
 
 /* ─── Score Circle (contour, not glow) ─── */
 .score-circle {
-  box-shadow: inset 0 0 0 1.5px currentColor;
+  box-shadow: inset 0 0 0 1px currentColor;
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
 
 /* ─── Streaming Cursor (2px neon-cyan, blink) ─── */
 @keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
+
 .streaming-cursor {
   display: inline-block;
   width: 2px;
@@ -230,12 +585,28 @@ body {
 /* ─── Font utility: display (Syne) ─── */
 .font-display {
   font-family: 'Syne', Geist, ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
+}
+
+/* ─── Brand gradient text ─── */
+.text-gradient-forge {
+  background: var(--gradient-forge);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* ─── Prompt textarea focus — inset contour ring (not glow) ─── */
+#prompt-textarea:focus {
+  box-shadow: inset 0 0 0 1px rgba(0, 229, 255, 0.1);
 }
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

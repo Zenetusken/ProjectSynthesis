@@ -6,50 +6,16 @@ Each tool fetches data from the linked GitHub repository.
 
 import json
 import logging
-from typing import Optional
 
 from app.providers.base import ToolDefinition
-from app.services.github_client import get_repo_tree, get_file_content
+from app.services.github_service import get_repo_tree as _svc_get_repo_tree
+from app.services.github_service import read_file_content as _svc_read_file_content
 
 logger = logging.getLogger(__name__)
 
-# File extensions to exclude (binary, images, etc.)
-EXCLUDED_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg",
-    ".woff", ".woff2", ".ttf", ".eot", ".pdf",
-    ".zip", ".gz", ".tar", ".mp4", ".mp3",
-    ".pyc", ".pyo", ".so", ".dll", ".exe", ".bin",
-}
-
-# Directories to exclude
-EXCLUDED_DIRS = {
-    "node_modules", ".git", "__pycache__", ".venv", "venv",
-    "dist", "build", ".next", ".nuxt", "vendor",
-}
-
-MAX_FILE_SIZE = 100_000  # 100KB per file
-
-
-def _should_include_file(path: str, size: Optional[int] = None) -> bool:
-    """Check if a file should be included based on extension, directory, and size."""
-    import os
-    ext = os.path.splitext(path)[1].lower()
-    if ext in EXCLUDED_EXTENSIONS:
-        return False
-
-    parts = path.split("/")
-    for part in parts:
-        if part in EXCLUDED_DIRS:
-            return False
-
-    if size is not None and size > MAX_FILE_SIZE:
-        return False
-
-    return True
-
 
 def build_codebase_tools(
-    session_id: str,
+    token: str,
     repo_full_name: str,
     repo_branch: str,
 ) -> list[ToolDefinition]:
@@ -64,11 +30,8 @@ def build_codebase_tools(
     async def _get_tree() -> list[dict]:
         if "tree" not in _tree_cache:
             try:
-                tree = await get_repo_tree(session_id, repo_full_name, repo_branch)
-                _tree_cache["tree"] = [
-                    entry for entry in tree
-                    if _should_include_file(entry.get("path", ""), entry.get("size"))
-                ]
+                # github_service already filters excluded files and applies size limits
+                _tree_cache["tree"] = await _svc_get_repo_tree(token, repo_full_name, repo_branch)
             except Exception as e:
                 logger.error(f"Failed to get repo tree: {e}")
                 _tree_cache["tree"] = []
@@ -85,7 +48,7 @@ def build_codebase_tools(
             filtered = [e for e in tree if e["path"].startswith(path_prefix)]
 
         entries = filtered[:max_results]
-        output = [{"path": e["path"], "size_bytes": e.get("size", 0)} for e in entries]
+        output = [{"path": e["path"], "size_bytes": e.get("size_bytes", 0)} for e in entries]
         return json.dumps(output, indent=2)
 
     list_repo_files = ToolDefinition(
@@ -131,7 +94,9 @@ def build_codebase_tools(
             return f"Error: No SHA found for '{path}'."
 
         try:
-            content = await get_file_content(session_id, repo_full_name, sha)
+            content = await _svc_read_file_content(token, repo_full_name, sha)
+            if content is None:
+                return f"Error: File '{path}' could not be read from repository."
             lines = content.split("\n")
             if len(lines) > max_lines:
                 content = "\n".join(lines[:max_lines])
@@ -186,7 +151,9 @@ def build_codebase_tools(
                 continue
 
             try:
-                content = await get_file_content(session_id, repo_full_name, sha)
+                content = await _svc_read_file_content(token, repo_full_name, sha)
+                if content is None:
+                    continue
                 files_checked += 1
                 for i, line in enumerate(content.split("\n"), 1):
                     if pattern.lower() in line.lower():
@@ -251,12 +218,18 @@ def build_codebase_tools(
                 continue
 
             sha = entry.get("sha", "")
+            if not sha:
+                output_parts.append(f"=== {path} ===\nError: No SHA for file.\n")
+                continue
             try:
-                content = await get_file_content(session_id, repo_full_name, sha)
+                content = await _svc_read_file_content(token, repo_full_name, sha)
+                if content is None:
+                    output_parts.append(f"=== {path} ===\nError: File could not be read.\n")
+                    continue
                 lines = content.split("\n")
                 if len(lines) > 150:
                     content = "\n".join(lines[:150])
-                    content += f"\n... (truncated at 150 lines)"
+                    content += "\n... (truncated at 150 lines)"
                 output_parts.append(f"=== {path} ===\n{content}\n")
             except Exception as e:
                 output_parts.append(f"=== {path} ===\nError: {e}\n")
@@ -302,7 +275,7 @@ def build_codebase_tools(
         ))
         parts.append(f"Repository: {repo_full_name} (branch: {repo_branch})")
         parts.append(f"Total files: {len(tree)}")
-        parts.append(f"\nRoot directory:\n" + "\n".join(f"  {e}" for e in root_entries[:30]))
+        parts.append("\nRoot directory:\n" + "\n".join(f"  {e}" for e in root_entries[:30]))
 
         # Fetch key files
         tree_map = {e["path"]: e for e in tree}
@@ -316,8 +289,12 @@ def build_codebase_tools(
                 continue
 
             sha = entry.get("sha", "")
+            if not sha:
+                continue
             try:
-                content = await get_file_content(session_id, repo_full_name, sha)
+                content = await _svc_read_file_content(token, repo_full_name, sha)
+                if content is None:
+                    continue
                 lines = content.split("\n")
                 max_lines = min(100, 300 - total_lines)
                 if len(lines) > max_lines:

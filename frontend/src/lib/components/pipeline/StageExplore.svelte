@@ -3,58 +3,77 @@
 
   let result = $derived(forge.stageResults['explore']);
   let data = $derived((result?.data || {}) as Record<string, unknown>);
-  let toolCalls = $derived(((data.tool_calls || data.files || []) as Array<Record<string, unknown>>));
+  let techStack = $derived((data.tech_stack || []) as string[]);
+  let keyFiles = $derived((data.key_files_read || []) as string[]);
+  let observations = $derived((data.observations || []) as string[]);
+  let groundingNotes = $derived((data.grounding_notes || []) as string[]);
+  let filesReadCount = $derived((data.files_read_count as number) || keyFiles.length);
 </script>
 
 <div class="space-y-2 text-xs">
   {#if forge.stageStatuses['explore'] === 'running'}
     <div class="flex items-center gap-2 text-neon-purple">
-      <span class="w-3 h-3 rounded-full animate-spin" style="border: 2px solid transparent; border-top-color: #a855f7;"></span>
+      <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #a855f7;"></span>
       <span>Exploring prompt context...</span>
     </div>
+  {:else if forge.stageStatuses['explore'] === 'error'}
+    <div class="space-y-1">
+      <div class="flex items-center gap-2 text-neon-red text-[11px]">
+        <span>Exploration failed — pipeline continues without codebase context.</span>
+      </div>
+      {#if observations.length > 0}
+        {#each observations as obs}
+          <p class="text-text-dim font-mono text-[10px] truncate" title={obs}>· {obs}</p>
+        {/each}
+      {:else if forge.error}
+        <p class="text-text-dim font-mono text-[10px] truncate" title={forge.error}>· {forge.error}</p>
+      {/if}
+    </div>
   {:else if result}
-    <!-- Terminal-style tool call feed per spec: Geist Mono 11px, bg-input, stagger-fade-in -->
-    {#if toolCalls.length > 0}
+    <!-- Terminal-style key files feed -->
+    {#if keyFiles.length > 0}
       <div class="bg-bg-input rounded-md p-2 space-y-1">
-        {#each toolCalls as call, i}
+        {#each keyFiles as file, i}
           <div
-            class="font-mono text-[11px] text-text-secondary animate-stagger-fade-in"
-            style="animation-delay: {i * 50}ms;"
+            class="font-mono text-[11px] text-text-secondary"
+            style="animation: list-item-in 0.15s cubic-bezier(0.16,1,0.3,1) {i*30}ms both;"
           >
-            <span class="text-neon-purple/80">▸</span> {call.name || call.file || call.path || JSON.stringify(call)}
+            <span class="text-neon-purple/80">▸</span> {file}
           </div>
         {/each}
       </div>
     {/if}
 
-    <div class="space-y-1.5 font-mono text-[10px]">
-      {#if data.domain}
-        <div class="flex justify-between border-b border-border-subtle py-0.5">
-          <span class="text-text-dim">Domain</span>
-          <span class="text-text-secondary">{data.domain}</span>
-        </div>
-      {/if}
-      {#if data.intent}
-        <div class="flex justify-between border-b border-border-subtle py-0.5">
-          <span class="text-text-dim">Intent</span>
-          <span class="text-text-secondary">{data.intent}</span>
-        </div>
-      {/if}
-      {#if data.complexity}
-        <div class="flex justify-between border-b border-border-subtle py-0.5">
-          <span class="text-text-dim">Complexity</span>
-          <span class="text-text-secondary">{data.complexity}</span>
-        </div>
-      {/if}
-    </div>
-
-    {#if data.summary}
-      <p class="text-text-secondary mt-1 italic text-xs">{data.summary}</p>
+    <!-- Tech stack badges -->
+    {#if techStack.length > 0}
+      <div class="flex flex-wrap gap-1">
+        {#each techStack as tech}
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-neon-purple/10 border border-neon-purple/20 text-neon-purple/80">{tech}</span>
+        {/each}
+      </div>
     {/if}
 
-    {#if toolCalls.length > 0}
+    <!-- Observations -->
+    {#if observations.length > 0}
+      <div class="space-y-1">
+        {#each observations as obs}
+          <p class="text-text-secondary text-[11px]">· {obs}</p>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- Grounding notes -->
+    {#if groundingNotes.length > 0}
+      <div class="border-t border-border-subtle pt-1.5 space-y-1">
+        {#each groundingNotes as note}
+          <p class="text-text-dim italic text-[10px]">{note}</p>
+        {/each}
+      </div>
+    {/if}
+
+    {#if filesReadCount > 0}
       <div class="text-neon-purple/80 font-mono text-[10px]">
-        Grounded in {toolCalls.length} file{toolCalls.length !== 1 ? 's' : ''}
+        Grounded in {filesReadCount} file{filesReadCount !== 1 ? 's' : ''}
       </div>
     {/if}
   {:else}

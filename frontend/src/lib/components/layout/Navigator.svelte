@@ -19,7 +19,7 @@
 </script>
 
 <nav
-  class="bg-bg-secondary border-r border-border-subtle flex flex-col overflow-hidden transition-all duration-200"
+  class="h-full bg-bg-secondary border-r border-border-subtle flex flex-col overflow-hidden transition-all duration-200"
   class:w-0={workbench.navigatorCollapsed}
   class:opacity-0={workbench.navigatorCollapsed}
   style="width: {workbench.navCssWidth}"
@@ -27,33 +27,36 @@
 >
   {#if !workbench.navigatorCollapsed}
     <div class="h-9 flex items-center px-3 border-b border-border-subtle shrink-0">
-      <span class="font-display text-[12px] font-bold uppercase text-text-dim" style="letter-spacing: 0.1em;">
+      <span class="font-display text-[12px] font-bold uppercase text-text-dim">
         {titles[workbench.activeActivity] || workbench.activeActivity}
       </span>
     </div>
 
-    <div class="flex-1 overflow-y-auto">
-      {#if workbench.activeActivity === 'files'}
-        <NavigatorFiles />
-      {:else if workbench.activeActivity === 'history'}
-        <NavigatorHistory />
-      {:else if workbench.activeActivity === 'chains'}
-        <NavigatorChains />
-      {:else if workbench.activeActivity === 'templates'}
-        <NavigatorTemplates />
-      {:else if workbench.activeActivity === 'github'}
-        <NavigatorGitHub />
-      {:else if workbench.activeActivity === 'search'}
-        <div class="p-3">
-          <input
-            type="text"
-            placeholder="Search prompts..."
-            class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1.5 text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
-          />
-        </div>
-      {:else if workbench.activeActivity === 'settings'}
-        <NavigatorSettings />
-      {/if}
-    </div>
+    {#key workbench.activeActivity}
+      <div class="flex-1 overflow-y-auto animate-fade-in" style="overscroll-behavior: contain;">
+        {#if workbench.activeActivity === 'files'}
+          <NavigatorFiles />
+        {:else if workbench.activeActivity === 'history'}
+          <NavigatorHistory />
+        {:else if workbench.activeActivity === 'chains'}
+          <NavigatorChains />
+        {:else if workbench.activeActivity === 'templates'}
+          <NavigatorTemplates />
+        {:else if workbench.activeActivity === 'github'}
+          <NavigatorGitHub />
+        {:else if workbench.activeActivity === 'search'}
+          <div class="p-3">
+            <input
+              type="text"
+              name="nav-search"
+              placeholder="Search prompts..."
+              class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1.5 text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
+            />
+          </div>
+        {:else if workbench.activeActivity === 'settings'}
+          <NavigatorSettings />
+        {/if}
+      </div>
+    {/key}
   {/if}
 </nav>

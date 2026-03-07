@@ -2,10 +2,13 @@
   let { name, isPrivate = false }: { name: string; isPrivate?: boolean } = $props();
 </script>
 
-<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-bg-card border border-border-subtle text-text-secondary">
+<span
+  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-bg-card border border-border-subtle text-text-secondary"
+  title="{name}{isPrivate ? ' (private)' : ''}"
+>
   {#if isPrivate}
-    <svg class="w-2.5 h-2.5 text-neon-yellow" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 1C8.676 1 6 3.676 6 7v2H4v14h16V9h-2V7c0-3.324-2.676-6-6-6zm0 2c2.276 0 4 1.724 4 4v2H8V7c0-2.276 1.724-4 4-4z"></path>
+    <svg class="w-2.5 h-2.5 text-neon-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path>
     </svg>
   {:else}
     <svg class="w-2.5 h-2.5 text-text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">

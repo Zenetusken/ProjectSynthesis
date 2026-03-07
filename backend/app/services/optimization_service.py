@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Optional
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.optimization import Optimization
@@ -102,8 +102,12 @@ async def list_optimizations(
         query = query.where(search_filter)
         count_query = count_query.where(search_filter)
 
-    # Sorting
-    sort_column = getattr(Optimization, sort, Optimization.created_at)
+    # Sorting — whitelist prevents getattr on arbitrary user input
+    _VALID_SORT_COLUMNS = {"created_at", "overall_score", "task_type", "updated_at",
+                           "duration_ms", "primary_framework", "status"}
+    if sort not in _VALID_SORT_COLUMNS:
+        sort = "created_at"
+    sort_column = getattr(Optimization, sort)
     if order == "asc":
         query = query.order_by(sort_column.asc())
     else:

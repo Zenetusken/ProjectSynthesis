@@ -1,13 +1,21 @@
 from __future__ import annotations
 
-import json
-import re
 import logging
 from typing import AsyncGenerator, Callable
 
-from app.providers.base import LLMProvider, ToolDefinition, AgenticResult
+from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, parse_json_robust
 
 logger = logging.getLogger(__name__)
+
+# Models that support adaptive thinking via thinking: {type: "adaptive"}.
+# budget_tokens is deprecated on these models — adaptive thinking replaces it.
+# Haiku 4.5 is NOT in this set (no thinking support).
+_THINKING_MODELS: frozenset[str] = frozenset({"claude-opus-4-6", "claude-sonnet-4-6"})
+
+# max_tokens for turns that may include thinking blocks (thinking + output must fit).
+# Haiku / non-thinking models keep the standard 8192.
+_MAX_TOKENS_THINKING = 16000
+_MAX_TOKENS_DEFAULT = 8192
 
 
 class AnthropicAPIProvider(LLMProvider):
@@ -22,27 +30,40 @@ class AnthropicAPIProvider(LLMProvider):
         return "anthropic_api"
 
     async def complete(self, system: str, user: str, model: str) -> str:
-        response = await self._client.messages.create(
-            model=model,
-            max_tokens=8192,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return response.content[0].text if response.content else ""
-
-    async def stream(self, system: str, user: str, model: str) -> AsyncGenerator[str, None]:
+        use_thinking = model in _THINKING_MODELS
+        max_tokens = _MAX_TOKENS_THINKING if use_thinking else _MAX_TOKENS_DEFAULT
+        extra: dict = {"thinking": {"type": "adaptive"}} if use_thinking else {}
+        # Stream even for single-shot calls: prevents HTTP timeouts on large thinking outputs
+        # and is required by the SDK for Opus 4.6 with high max_tokens.
         async with self._client.messages.stream(
             model=model,
-            max_tokens=8192,
+            max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
+            **extra,
         ) as stream:
+            response = await stream.get_final_message()
+        # Use next() — thinking blocks may precede the text block.
+        return next((b.text for b in response.content if hasattr(b, "text")), "")
+
+    async def stream(self, system: str, user: str, model: str) -> AsyncGenerator[str, None]:
+        use_thinking = model in _THINKING_MODELS
+        max_tokens = _MAX_TOKENS_THINKING if use_thinking else _MAX_TOKENS_DEFAULT
+        extra: dict = {"thinking": {"type": "adaptive"}} if use_thinking else {}
+        async with self._client.messages.stream(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            **extra,
+        ) as stream:
+            # text_stream automatically skips thinking deltas — only yields text tokens.
             async for chunk in stream.text_stream:
                 yield chunk
 
     async def complete_json(self, system: str, user: str, model: str, schema: type | None = None) -> dict:
         raw = await self.complete(system, user, model)
-        return _parse_json(raw)
+        return parse_json_robust(raw)
 
     async def complete_agentic(
         self,
@@ -52,6 +73,7 @@ class AnthropicAPIProvider(LLMProvider):
         tools: list[ToolDefinition],
         max_turns: int = 20,
         on_tool_call: Callable[[str, dict], None] | None = None,
+        output_schema: dict | None = None,
     ) -> AgenticResult:
         api_tools = [
             {
@@ -63,32 +85,63 @@ class AnthropicAPIProvider(LLMProvider):
         ]
         tool_map = {t.name: t.handler for t in tools}
 
+        # Anthropic best practice: inject a 'submit_result' tool when structured
+        # output is needed. The model calls it with its findings instead of producing
+        # free-form text — the tool input IS the structured output, already parsed
+        # by the API as a dict. Zero regex, guaranteed schema compliance.
+        if output_schema:
+            api_tools.append({
+                "name": "submit_result",
+                "description": (
+                    "Submit your final structured result. Call this tool exactly once "
+                    "when you have finished all exploration and are ready to return your "
+                    "complete findings. Do not call any other tools after this."
+                ),
+                "input_schema": output_schema,
+            })
+
         messages = [{"role": "user", "content": user}]
-        all_tool_calls = []
+        all_tool_calls: list[dict] = []
         turns = 0
+
+        # Adaptive thinking: enabled for Opus 4.6 and Sonnet 4.6 (both GA, no beta header).
+        # budget_tokens is deprecated on these models — adaptive thinking replaces it.
+        # Streaming (get_final_message) prevents HTTP timeouts on long thinking+tool turns.
+        use_thinking = model in _THINKING_MODELS
+        max_tokens = _MAX_TOKENS_THINKING if use_thinking else _MAX_TOKENS_DEFAULT
+        extra: dict = {"thinking": {"type": "adaptive"}} if use_thinking else {}
 
         while turns < max_turns:
             turns += 1
-            response = await self._client.messages.create(
+            async with self._client.messages.stream(
                 model=model,
-                max_tokens=8192,
+                max_tokens=max_tokens,
+                # Automatic prompt caching: caches the last cacheable block in the request
+                # (the system prompt). Turn 1 pays full price; turns 2+ save ~90% on system
+                # prompt tokens. Particularly impactful in the explore loop (15 turns).
+                cache_control={"type": "ephemeral"},
                 system=system,
-                tools=api_tools,
-                messages=messages,
-            )
-            messages.append({"role": "assistant", "content": response.content})
-
-            if response.stop_reason == "end_turn":
-                text = next(
-                    (b.text for b in response.content if hasattr(b, "text")),
-                    "",
-                )
-                return AgenticResult(text=text, tool_calls=all_tool_calls)
+                tools=api_tools,  # type: ignore[arg-type]
+                messages=messages,  # type: ignore[arg-type]
+                **extra,
+            ) as stream:
+                response = await stream.get_final_message()
+            # Append full content including any thinking blocks — the API requires
+            # thinking blocks to be preserved in conversation history when using thinking.
+            messages.append({"role": "assistant", "content": response.content})  # type: ignore[dict-item]
 
             if response.stop_reason == "tool_use":
                 results = []
                 for block in response.content:
                     if block.type == "tool_use":
+                        if block.name == "submit_result":
+                            # Structured output delivered — return immediately.
+                            # block.input is a dict already validated against output_schema.
+                            return AgenticResult(
+                                text="",
+                                tool_calls=all_tool_calls,
+                                output=block.input,
+                            )
                         if on_tool_call:
                             on_tool_call(block.name, block.input)
                         result_str = await tool_map[block.name](block.input)
@@ -102,31 +155,21 @@ class AnthropicAPIProvider(LLMProvider):
                             "tool_use_id": block.id,
                             "content": result_str,
                         })
-                messages.append({"role": "user", "content": results})
+                messages.append({"role": "user", "content": results})  # type: ignore[dict-item]
+            else:
+                # "end_turn", "max_tokens", "stop_sequence", or any other reason —
+                # extract whatever text the model produced and return it.
+                text = next(
+                    (b.text for b in response.content if hasattr(b, "text")),
+                    "",
+                )
+                if response.stop_reason != "end_turn":
+                    logger.warning(
+                        "Agentic loop ended with stop_reason=%r after %d turn(s)",
+                        response.stop_reason,
+                        turns,
+                    )
+                return AgenticResult(text=text, tool_calls=all_tool_calls)
 
         logger.warning(f"Agentic loop hit max_turns ({max_turns})")
         return AgenticResult(text="", tool_calls=all_tool_calls)
-
-
-def _parse_json(text: str) -> dict:
-    """3-strategy JSON parsing fallback."""
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        pass
-
-    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(0))
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    raise ValueError(f"Could not parse JSON from response: {text[:200]}...")

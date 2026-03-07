@@ -30,7 +30,7 @@
   </div>
 
   <!-- Sub-tab content -->
-  <div class="flex-1 overflow-y-auto">
+  <div class="flex-1 min-h-0 overflow-y-auto" style="overscroll-behavior: contain;">
     {#if editor.activeSubTab === 'edit'}
       <PromptEdit {tab} />
     {:else if editor.activeSubTab === 'pipeline'}

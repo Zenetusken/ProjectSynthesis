@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fetchSettings, updateSettings, fetchProviderStatus, type AppSettings } from '$lib/api/client';
   import { workbench } from '$lib/stores/workbench.svelte';
+  import { toast } from '$lib/stores/toast.svelte';
 
   let settings = $state<AppSettings | null>(null);
   let loading = $state(true);
@@ -29,6 +30,7 @@
     saving = true;
     try {
       settings = await updateSettings({ [key]: value });
+      toast.success('Settings saved');
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -55,7 +57,7 @@
 
 <div class="p-2 space-y-3">
   <div class="flex items-center justify-between px-1">
-    <span class="text-[10px] uppercase tracking-wider text-text-dim font-semibold">Settings</span>
+    <span class="font-display text-[11px] font-bold uppercase text-text-dim">Settings</span>
     {#if saving}
       <span class="text-[10px] text-neon-cyan">Saving...</span>
     {/if}
@@ -71,7 +73,7 @@
     <div class="space-y-2 px-1">
       <!-- Provider Info -->
       <div class="space-y-1 mb-3 p-2 rounded bg-bg-card border border-border-subtle">
-        <div class="text-[10px] uppercase tracking-wider text-text-dim font-semibold mb-1">Provider</div>
+        <div class="font-display text-[11px] font-bold uppercase text-text-dim mb-1">Provider</div>
         <div class="flex items-center gap-2">
           <span class="w-2 h-2 rounded-full {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'bg-neon-green' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'bg-neon-yellow' : 'bg-neon-red'}"></span>
           <span class="text-xs text-text-primary font-medium">
@@ -83,7 +85,11 @@
         {/if}
         <div class="flex items-center gap-1.5 mt-0.5">
           <span class="w-1.5 h-1.5 rounded-full {workbench.isConnected ? 'bg-neon-green' : 'bg-neon-red'}"></span>
-          <span class="text-[10px] text-text-dim">{workbench.isConnected ? 'Connected' : 'Disconnected'}</span>
+          <span class="text-[10px] text-text-dim">{workbench.isConnected ? 'Backend connected' : 'Backend disconnected'}</span>
+        </div>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full {workbench.mcpConnected ? 'bg-neon-cyan' : 'bg-neon-red/70'}"></span>
+          <span class="text-[10px] text-text-dim">MCP {workbench.mcpConnected ? 'online' : 'offline'}</span>
         </div>
       </div>
 
@@ -92,7 +98,9 @@
         <label class="text-[10px] text-text-dim block" for="setting-model">Default Model</label>
         <select
           id="setting-model"
-          class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-neon-cyan/30"
+          class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-xs text-text-primary
+                 focus:outline-none focus:border-neon-cyan/30 cursor-pointer appearance-none"
+          style="background-image: url(data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238b8ba8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;"
           value={settings.default_model}
           onchange={(e) => updateSettings({ default_model: (e.target as HTMLSelectElement).value }).then(s => settings = s)}
         >
@@ -133,23 +141,39 @@
 
       <!-- Auto Validate -->
       <label class="flex items-center gap-2 py-0.5 cursor-pointer">
-        <input
-          type="checkbox"
-          class="accent-neon-cyan"
-          checked={settings.auto_validate}
-          onchange={() => handleToggle('auto_validate', !settings!.auto_validate)}
-        />
+        <div class="relative w-7 h-3.5 shrink-0">
+          <input
+            id="setting-auto-validate"
+            name="auto_validate"
+            type="checkbox"
+            class="sr-only peer"
+            checked={settings.auto_validate}
+            onchange={() => handleToggle('auto_validate', !settings!.auto_validate)}
+          />
+          <div class="absolute inset-0 border border-border-subtle bg-bg-input
+                      peer-checked:border-neon-cyan/40 peer-checked:bg-neon-cyan/[0.08] transition-colors duration-200"></div>
+          <div class="absolute left-0.5 top-0.5 w-2.5 h-2.5 bg-text-dim/40
+                      peer-checked:translate-x-3.5 peer-checked:bg-neon-cyan transition-all duration-200"></div>
+        </div>
         <span class="text-xs text-text-secondary">Auto-validate</span>
       </label>
 
       <!-- Stream Optimize -->
       <label class="flex items-center gap-2 py-0.5 cursor-pointer">
-        <input
-          type="checkbox"
-          class="accent-neon-cyan"
-          checked={settings.stream_optimize}
-          onchange={() => handleToggle('stream_optimize', !settings!.stream_optimize)}
-        />
+        <div class="relative w-7 h-3.5 shrink-0">
+          <input
+            id="setting-stream-optimize"
+            name="stream_optimize"
+            type="checkbox"
+            class="sr-only peer"
+            checked={settings.stream_optimize}
+            onchange={() => handleToggle('stream_optimize', !settings!.stream_optimize)}
+          />
+          <div class="absolute inset-0 border border-border-subtle bg-bg-input
+                      peer-checked:border-neon-cyan/40 peer-checked:bg-neon-cyan/[0.08] transition-colors duration-200"></div>
+          <div class="absolute left-0.5 top-0.5 w-2.5 h-2.5 bg-text-dim/40
+                      peer-checked:translate-x-3.5 peer-checked:bg-neon-cyan transition-all duration-200"></div>
+        </div>
         <span class="text-xs text-text-secondary">Stream optimization</span>
       </label>
     </div>

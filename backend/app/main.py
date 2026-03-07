@@ -16,12 +16,14 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.database import create_tables
-from app.providers.detector import detect_provider, ProviderNotAvailableError
+from app.mcp_server import HAS_MCP, create_mcp_server, make_websocket_asgi
+from app.providers.detector import ProviderNotAvailableError, detect_provider
 
 # Import routers
-from app.routers import health, optimize, history, github_auth, github_repos
-from app.routers.providers import router as providers_router, set_provider as providers_set_provider
+from app.routers import github_auth, github_repos, health, history, optimize
 from app.routers.github import router as github_router
+from app.routers.providers import router as providers_router
+from app.routers.providers import set_provider as providers_set_provider
 from app.routers.settings import router as settings_router
 
 logging.basicConfig(
@@ -29,6 +31,63 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# ── Lazy MCP ASGI wrappers ─────────────────────────────────────────────────
+# Registered at module level (app.mount / app.add_websocket_route require the
+# app to exist first), populated in lifespan after provider detection.
+
+_mcp_http_app = None
+_mcp_ws_asgi = None
+
+
+class _LazyMCPHttpApp:
+    """Defers to the real streamable-HTTP ASGI app once it is ready.
+
+    Returns 503 for requests that arrive before MCP is initialized or when
+    the mcp package is not installed, rather than silently hanging the client.
+    """
+
+    async def __call__(self, scope, receive, send):
+        if _mcp_http_app is not None:
+            await _mcp_http_app(scope, receive, send)
+            return
+        if scope["type"] == "http":
+            await receive()  # consume http.request
+            body = b'{"error":"MCP server not available"}'
+            await send({
+                "type": "http.response.start",
+                "status": 503,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            })
+            await send({"type": "http.response.body", "body": body})
+
+
+class _LazyMCPWSApp:
+    """Defers to the real WebSocket ASGI callable once it is ready.
+
+    Closes the WebSocket with code 1013 (try again later) when MCP is not yet
+    initialized, rather than silently hanging the client.
+
+    NOTE: This is NOT registered via app.add_websocket_route() because that
+    routes through CORSMiddleware, which rejects WebSocket upgrades from
+    Claude Code's Electron origin with HTTP 403. Instead it is wired in
+    _PromptForgeASGI below, which sits outside the middleware stack entirely.
+    """
+
+    async def __call__(self, scope, receive, send):
+        if _mcp_ws_asgi is not None and scope["type"] == "websocket":
+            await _mcp_ws_asgi(scope, receive, send)
+            return
+        if scope["type"] == "websocket":
+            await receive()  # consume websocket.connect
+            await send({"type": "websocket.close", "code": 1013})  # try again later
+
+
+# Module-level instance used by _PromptForgeASGI before the FastAPI app is built.
+_lazy_mcp_ws_app = _LazyMCPWSApp()
 
 
 @asynccontextmanager
@@ -39,10 +98,13 @@ async def lifespan(app: FastAPI):
     - Creates all database tables (acts as simple migration).
     - Detects the best available LLM provider.
     - Injects the provider into routers that need it.
+    - Mounts MCP server (streamable-HTTP + WebSocket) if mcp is installed.
 
     On shutdown:
     - Performs any necessary cleanup.
     """
+    global _mcp_http_app, _mcp_ws_asgi
+
     logger.info("PromptForge v2 starting up...")
 
     # Create database tables
@@ -65,8 +127,19 @@ async def lifespan(app: FastAPI):
     # Store provider on app state for access elsewhere
     app.state.provider = provider
 
-    logger.info("PromptForge v2 ready")
-    yield
+    # B2: Mount MCP server — provider injected so tools never call detect_provider()
+    if HAS_MCP:
+        mcp = create_mcp_server(provider)
+        _mcp_http_app = mcp.streamable_http_app()
+        _mcp_ws_asgi = make_websocket_asgi(mcp)
+        app.state.mcp = mcp
+        logger.info("MCP server mounted at /mcp (streamable-HTTP) and /mcp/ws (WebSocket)")
+        async with mcp.session_manager.run():
+            logger.info("PromptForge v2 ready")
+            yield
+    else:
+        logger.info("PromptForge v2 ready (MCP not available)")
+        yield
 
     # Shutdown
     logger.info("PromptForge v2 shutting down...")
@@ -81,6 +154,11 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
     lifespan=lifespan,
 )
+
+# Streamable HTTP MCP — mounted on FastAPI so it shares the session_manager lifespan.
+# HTTP clients (Claude SDK, curl) do not send an Origin header, so CORSMiddleware
+# does not interfere.
+app.mount("/mcp", _LazyMCPHttpApp())
 
 # ── Middleware ─────────────────────────────────────────────────────────
 
@@ -131,7 +209,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "Internal server error",
-            "detail": str(exc) if not isinstance(exc, Exception) else "An unexpected error occurred",
+            "detail": str(exc),
             "path": str(request.url.path),
         },
     )
@@ -145,3 +223,26 @@ async def root():
         "version": "2.0.0",
         "docs": "/api/docs",
     }
+
+
+# ── Outer ASGI wrapper ─────────────────────────────────────────────────────
+# WebSocket MCP connections from Claude Code (Electron) are rejected by
+# CORSMiddleware with HTTP 403 because Electron sends a non-whitelisted Origin.
+# Routing /mcp/ws here — outside the FastAPI middleware stack — bypasses CORS
+# entirely. All other requests fall through to FastAPI as normal.
+
+class _PromptForgeASGI:
+    """Top-level ASGI app: intercepts /mcp/ws WebSocket before FastAPI middleware."""
+
+    def __init__(self, fastapi_app):
+        self._app = fastapi_app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket" and scope.get("path") == "/mcp/ws":
+            await _lazy_mcp_ws_app(scope, receive, send)
+        else:
+            await self._app(scope, receive, send)
+
+
+# uvicorn is pointed at this module-level name in init.sh: app.main:asgi_app
+asgi_app = _PromptForgeASGI(app)

@@ -72,6 +72,8 @@
         <!-- Strategy selector -->
         <div class="mb-2">
           <select
+            id="step-strategy-{i}"
+            name="step-strategy-{i}"
             class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-neon-cyan/30"
             bind:value={step.strategy}
           >
@@ -82,6 +84,8 @@
         </div>
 
         <textarea
+          id="step-prompt-{i}"
+          name="step-prompt-{i}"
           class="w-full bg-bg-input border border-border-subtle rounded px-3 py-2 text-sm text-text-primary font-mono resize-none focus:outline-none focus:border-neon-cyan/30 h-20"
           placeholder="Enter prompt for {step.promptName}..."
           bind:value={step.prompt}

@@ -21,6 +21,7 @@
     'legal':          'bg-neon-red/10 text-neon-red/70 border-neon-red/15',
     'education':      'bg-neon-teal/10 text-neon-teal/70 border-neon-teal/15',
     'general':        'bg-neon-cyan/10 text-neon-cyan/60 border-neon-cyan/15',
+    'other':          'bg-text-dim/10 text-text-dim/60 border-text-dim/20',
   };
 
   // Complexity → color per spec: simple=green, moderate=yellow, complex=red
@@ -39,7 +40,7 @@
 <div class="space-y-2 text-xs">
   {#if forge.stageStatuses['analyze'] === 'running'}
     <div class="flex items-center gap-2 text-neon-cyan">
-      <span class="w-3 h-3 rounded-full border-t-2 border-neon-cyan animate-spin" style="border-color: transparent; border-top-color: #4d8eff;"></span>
+      <span class="w-3 h-3 rounded-full border-t border-neon-cyan animate-spin" style="border-color: transparent; border-top-color: #4d8eff;"></span>
       <span>Analyzing prompt quality...</span>
     </div>
   {:else if result}
@@ -60,12 +61,12 @@
     <!-- Strengths -->
     {#if strengths.length > 0}
       <div class="mt-2">
-        <span class="font-display text-[11px] font-bold uppercase text-text-dim" style="letter-spacing: 0.08em;">Strengths</span>
+        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Strengths</span>
         <ul class="mt-1 space-y-0.5">
           {#each strengths as s}
-            <li class="text-text-secondary flex gap-1.5" style="color: rgba(34, 255, 136, 0.6);">
-              <span class="shrink-0">+</span>
-              <span class="text-text-secondary">{s}</span>
+            <li class="flex gap-1.5 items-start">
+              <span class="text-neon-green/60 shrink-0 font-mono">+</span>
+              <span class="text-text-secondary text-xs">{s}</span>
             </li>
           {/each}
         </ul>
@@ -75,12 +76,12 @@
     <!-- Weaknesses -->
     {#if weaknesses.length > 0}
       <div class="mt-2">
-        <span class="font-display text-[11px] font-bold uppercase text-text-dim" style="letter-spacing: 0.08em;">Weaknesses</span>
+        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Weaknesses</span>
         <ul class="mt-1 space-y-0.5">
           {#each weaknesses as w}
-            <li class="text-text-secondary flex gap-1.5" style="color: rgba(255, 51, 102, 0.6);">
-              <span class="shrink-0">−</span>
-              <span class="text-text-secondary">{w}</span>
+            <li class="flex gap-1.5 items-start">
+              <span class="text-neon-red/60 shrink-0 font-mono">−</span>
+              <span class="text-text-secondary text-xs">{w}</span>
             </li>
           {/each}
         </ul>

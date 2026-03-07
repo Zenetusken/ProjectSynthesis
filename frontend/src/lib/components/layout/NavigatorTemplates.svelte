@@ -20,7 +20,7 @@
 
 <div class="p-2 space-y-2">
   <div class="flex items-center justify-between px-1">
-    <span class="text-[10px] uppercase tracking-wider text-text-dim font-semibold">Templates</span>
+    <span class="font-display text-[11px] font-bold uppercase text-text-dim">Templates</span>
   </div>
 
   {#if builtInTemplates.length > 0}

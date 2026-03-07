@@ -10,6 +10,13 @@ function loadNumber(key: string, fallback: number): number {
   return fallback;
 }
 
+function loadBool(key: string, fallback: boolean): boolean {
+  if (typeof window === 'undefined') return fallback;
+  const v = localStorage.getItem(key);
+  if (v !== null) return v === 'true';
+  return fallback;
+}
+
 function loadActivity(): Activity {
   if (typeof window === 'undefined') return 'files';
   const v = sessionStorage.getItem('pf_activeActivity');
@@ -21,13 +28,14 @@ function loadActivity(): Activity {
 
 class WorkbenchStore {
   activeActivity = $state<Activity>(loadActivity());
-  navigatorCollapsed = $state(false);
-  inspectorCollapsed = $state(false);
-  navigatorWidth = $state(loadNumber('pf_navigatorWidth', 240));
-  inspectorWidth = $state(loadNumber('pf_inspectorWidth', 280));
+  navigatorCollapsed = $state(loadBool('pf_navigatorCollapsed', false));
+  inspectorCollapsed = $state(loadBool('pf_inspectorCollapsed', false));
+  navigatorWidth = $state(Math.max(160, Math.min(480, loadNumber('pf_navigatorWidth', 240))));
+  inspectorWidth = $state(Math.max(180, Math.min(480, loadNumber('pf_inspectorWidth', 280))));
   provider = $state<'anthropic' | 'openai' | 'claude_cli' | 'anthropic_api' | 'unknown'>('unknown');
   providerModel = $state('');
   isConnected = $state(false);
+  mcpConnected = $state(false);
   githubOAuthEnabled = $state(false);
 
   get navCssWidth() {
@@ -38,20 +46,30 @@ class WorkbenchStore {
     return this.inspectorCollapsed ? '0px' : `${this.inspectorWidth}px`;
   }
 
+  setNavigatorCollapsed(v: boolean) {
+    this.navigatorCollapsed = v;
+    if (typeof window !== 'undefined') localStorage.setItem('pf_navigatorCollapsed', String(v));
+  }
+
+  setInspectorCollapsed(v: boolean) {
+    this.inspectorCollapsed = v;
+    if (typeof window !== 'undefined') localStorage.setItem('pf_inspectorCollapsed', String(v));
+  }
+
   toggleNavigator() {
-    this.navigatorCollapsed = !this.navigatorCollapsed;
+    this.setNavigatorCollapsed(!this.navigatorCollapsed);
   }
 
   toggleInspector() {
-    this.inspectorCollapsed = !this.inspectorCollapsed;
+    this.setInspectorCollapsed(!this.inspectorCollapsed);
   }
 
   setActivity(activity: Activity) {
     if (this.activeActivity === activity && !this.navigatorCollapsed) {
-      this.navigatorCollapsed = true;
+      this.setNavigatorCollapsed(true);
     } else {
       this.activeActivity = activity;
-      this.navigatorCollapsed = false;
+      this.setNavigatorCollapsed(false);
     }
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('pf_activeActivity', activity);

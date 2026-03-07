@@ -1,3 +1,5 @@
+import { context } from './context.svelte';
+
 export interface PaletteCommand {
   id: string;
   label: string;
@@ -22,6 +24,19 @@ class CommandPaletteStore {
       return this.commands.filter(
         c => c.label.toLowerCase().includes(term) || c.category.toLowerCase().includes(term)
       );
+    }
+    // Prefix scoping: '@' shows context source commands
+    if (q.startsWith('@')) {
+      const term = q.slice(1).trim().toLowerCase();
+      const contextCommands: PaletteCommand[] = [
+        { id: 'ctx-file', label: 'Add context: File', category: 'context', action: () => context.addChip('file') },
+        { id: 'ctx-repo', label: 'Add context: Repository', category: 'context', action: () => context.addChip('repo') },
+        { id: 'ctx-url', label: 'Add context: URL', category: 'context', action: () => context.addChip('url') },
+        { id: 'ctx-template', label: 'Add context: Template', category: 'context', action: () => context.addChip('template') },
+        { id: 'ctx-instruction', label: 'Add context: Instruction', category: 'context', action: () => context.addChip('instruction') },
+      ];
+      if (!term) return contextCommands;
+      return contextCommands.filter(c => c.label.toLowerCase().includes(term));
     }
     // Prefix scoping: '#' shows history-related items
     if (q.startsWith('#')) {

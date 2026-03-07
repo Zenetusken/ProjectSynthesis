@@ -1,5 +1,7 @@
 <script lang="ts">
   import { forge } from '$lib/stores/forge.svelte';
+  import { getStrategyHex } from '$lib/utils/strategy';
+  import { getScoreColor } from '$lib/utils/colors';
   import StageCard from './StageCard.svelte';
   import StageExplore from './StageExplore.svelte';
   import StageAnalyze from './StageAnalyze.svelte';
@@ -32,36 +34,9 @@
     validate: '#00e5ff'   // will be overridden by score-mapped color
   };
 
-  // Strategy → chromatic color mapping
-  const strategyColors: Record<string, string> = {
-    'auto':                '#00e5ff',
-    'chain-of-thought':    '#00e5ff',
-    'co-star':             '#a855f7',
-    'CO-STAR':             '#a855f7',
-    'risen':               '#22ff88',
-    'RISEN':               '#22ff88',
-    'role-task-format':    '#ff3366',
-    'few-shot-scaffolding':'#fbbf24',
-    'step-by-step':        '#ff8c00',
-    'structured-output':   '#4d8eff',
-    'constraint-injection':'#ff6eb4',
-    'context-enrichment':  '#00d4aa',
-    'persona-assignment':  '#7b61ff',
-  };
-
-  // Score → color mapping
-  function getScoreColor(s: number): string {
-    if (s >= 9) return '#22ff88';
-    if (s >= 7) return '#00e5ff';
-    if (s >= 4) return '#fbbf24';
-    return '#ff3366';
-  }
-
   function getStageColor(stage: string): string {
     if (stage === 'strategy') {
-      const fw = forge.stageResults?.strategy?.data?.primary_framework as string;
-      if (fw) return strategyColors[fw] || strategyColors[fw?.toLowerCase()] || '#00e5ff';
-      return '#00e5ff';
+      return getStrategyHex(forge.stageResults?.strategy?.data?.primary_framework as string | undefined);
     }
     if (stage === 'validate') {
       const score = forge.overallScore;
@@ -71,13 +46,31 @@
     return stageBaseColors[stage] || '#00e5ff';
   }
 
-  // Filter out explore stage when it was never activated (no repo linked)
-  let visibleStages = $derived(
-    forge.stages.filter(s => !(s === 'explore' && forge.stageStatuses[s] === 'idle'))
-  );
+  let visibleStages = $derived(forge.visibleStages);
+
+  let expandedStages = $state<Record<string, boolean>>({});
+
+  $effect(() => {
+    const current = forge.currentStage;
+    const statuses = forge.stageStatuses;
+
+    for (const stage of forge.stages) {
+      const st = statuses[stage];
+      if (stage === current && (st === 'running' || st === 'idle')) {
+        // Auto-expand the active/running stage
+        expandedStages[stage] = true;
+      } else if (st === 'done' && expandedStages[stage] === undefined) {
+        // Collapse completed stages on first encounter (user hasn't touched it yet)
+        expandedStages[stage] = false;
+      } else if (st === 'idle' && stage !== current) {
+        // Collapse idle non-current stages — handles forge reset between runs
+        expandedStages[stage] = false;
+      }
+    }
+  });
 </script>
 
-<div class="space-y-3" aria-live="polite" aria-label="Pipeline stages">
+<div class="space-y-1" aria-live="polite" aria-label="Pipeline stages">
   {#each visibleStages as stage, i (stage)}
     {@const status = forge.stageStatuses[stage]}
     {@const result = forge.stageResults[stage]}
@@ -91,6 +84,7 @@
       model={result?.data?.model as string | undefined}
       tokenCount={result?.tokenCount}
       stageColor={getStageColor(stage)}
+      bind:expanded={expandedStages[stage]}
     >
       {#if stage === 'explore'}
         <StageExplore />

@@ -1,8 +1,10 @@
 """GitHub integration service.
 
-Handles encrypted token storage/retrieval, repository listing, file tree
-traversal, and file content reading. All PyGithub calls are wrapped in
-anyio.to_thread.run_sync() to avoid blocking the async event loop.
+Handles token retrieval/decryption, repository tree traversal, and file
+content reading. All PyGithub calls are wrapped in anyio.to_thread.run_sync()
+to avoid blocking the async event loop.
+
+Token encryption and storage is owned by app.routers.github_auth.
 """
 
 import base64
@@ -16,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.github import GitHubToken, LinkedRepo
+from app.models.github import GitHubToken
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +58,17 @@ def _get_fernet() -> Fernet:
     # Auto-generate and persist a key if not configured
     key_path = os.path.join("data", ".github_encryption_key")
     os.makedirs("data", exist_ok=True)
+    key_bytes: bytes
     if os.path.exists(key_path):
         with open(key_path, "rb") as f:
-            key = f.read().strip()
+            key_bytes = f.read().strip()
     else:
-        key = Fernet.generate_key()
+        key_bytes = Fernet.generate_key()
         with open(key_path, "wb") as f:
-            f.write(key)
+            f.write(key_bytes)
         logger.info("Generated new GitHub token encryption key at %s", key_path)
 
-    _fernet = Fernet(key)
+    _fernet = Fernet(key_bytes)
     return _fernet
 
 
@@ -73,16 +76,16 @@ def encrypt_token(token: str) -> bytes:
     """Encrypt a GitHub token using Fernet symmetric encryption.
 
     Args:
-        token: The plaintext GitHub access token.
+        token: The plaintext token string.
 
     Returns:
-        The encrypted token as bytes.
+        The Fernet-encrypted token bytes.
     """
     return _get_fernet().encrypt(token.encode("utf-8"))
 
 
 def decrypt_token(encrypted: bytes) -> str:
-    """Decrypt a GitHub token.
+    """Decrypt a Fernet-encrypted GitHub token.
 
     Args:
         encrypted: The Fernet-encrypted token bytes.
@@ -94,54 +97,8 @@ def decrypt_token(encrypted: bytes) -> str:
 
 
 # ───────────────────────────────────────────────────────────────────────
-# Token CRUD
+# Token retrieval
 # ───────────────────────────────────────────────────────────────────────
-
-async def store_token(
-    session: AsyncSession,
-    *,
-    session_id: str,
-    github_user_id: int,
-    github_login: str,
-    token: str,
-    token_type: str = "pat",
-    scopes: Optional[str] = None,
-) -> GitHubToken:
-    """Encrypt and store a GitHub token.
-
-    Args:
-        session: Async database session.
-        session_id: Browser session identifier.
-        github_user_id: GitHub numeric user ID.
-        github_login: GitHub username.
-        token: Plaintext access token.
-        token_type: Either 'pat' or 'oauth'.
-        scopes: Comma-separated OAuth scopes (optional).
-
-    Returns:
-        The persisted GitHubToken ORM instance.
-    """
-    # Remove any existing token for this session
-    existing = await session.execute(
-        select(GitHubToken).where(GitHubToken.session_id == session_id)
-    )
-    for row in existing.scalars().all():
-        await session.delete(row)
-
-    encrypted = encrypt_token(token)
-    db_token = GitHubToken(
-        session_id=session_id,
-        github_user_id=github_user_id,
-        github_login=github_login,
-        token_encrypted=encrypted,
-        token_type=token_type,
-        scopes=scopes,
-    )
-    session.add(db_token)
-    await session.flush()
-    logger.info("Stored %s token for GitHub user %s", token_type, github_login)
-    return db_token
-
 
 async def get_token_for_session(
     session: AsyncSession,
@@ -163,63 +120,10 @@ async def get_token_for_session(
     if db_token is None:
         return None
     try:
-        return decrypt_token(db_token.token_encrypted)
+        return decrypt_token(bytes(db_token.token_encrypted))
     except Exception as e:
         logger.error("Failed to decrypt token for session %s: %s", session_id, e)
         return None
-
-
-async def get_token_info(
-    session: AsyncSession,
-    session_id: str,
-) -> Optional[dict]:
-    """Get metadata about the stored token without decrypting it.
-
-    Args:
-        session: Async database session.
-        session_id: Browser session identifier.
-
-    Returns:
-        Dict with token metadata or None.
-    """
-    result = await session.execute(
-        select(GitHubToken).where(GitHubToken.session_id == session_id)
-    )
-    db_token = result.scalar_one_or_none()
-    if db_token is None:
-        return None
-    return {
-        "connected": True,
-        "login": db_token.github_login,
-        "github_user_id": db_token.github_user_id,
-        "token_type": db_token.token_type,
-    }
-
-
-async def delete_token(
-    session: AsyncSession,
-    session_id: str,
-) -> bool:
-    """Remove the stored GitHub token for a session.
-
-    Args:
-        session: Async database session.
-        session_id: Browser session identifier.
-
-    Returns:
-        True if a token was deleted, False otherwise.
-    """
-    result = await session.execute(
-        select(GitHubToken).where(GitHubToken.session_id == session_id)
-    )
-    tokens = result.scalars().all()
-    if not tokens:
-        return False
-    for t in tokens:
-        await session.delete(t)
-    await session.flush()
-    logger.info("Deleted GitHub token(s) for session %s", session_id)
-    return True
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -248,7 +152,7 @@ async def validate_pat(token: str) -> Optional[dict]:
         Dict with user info if valid, None if invalid.
     """
     def _sync():
-        from github import Github, Auth
+        from github import Auth, Github
         g = Github(auth=Auth.Token(token))
         user = g.get_user()
         return {
@@ -274,7 +178,7 @@ async def get_user_repos(token: str) -> list[dict]:
         List of repo info dicts.
     """
     def _sync():
-        from github import Github, Auth
+        from github import Auth, Github
         g = Github(auth=Auth.Token(token))
         repos = []
         for repo in g.get_user().get_repos(sort="updated"):
@@ -314,7 +218,7 @@ async def get_repo_tree(
         List of dicts with path, sha, and size_bytes keys.
     """
     def _sync():
-        from github import Github, Auth
+        from github import Auth, Github
         g = Github(auth=Auth.Token(token))
         repo = g.get_repo(full_name)
         b = repo.get_branch(branch)
@@ -357,7 +261,7 @@ async def read_file_content(
         File content as a string, or None on failure.
     """
     def _sync():
-        from github import Github, Auth
+        from github import Auth, Github
         g = Github(auth=Auth.Token(token))
         repo = g.get_repo(full_name)
         blob = repo.get_git_blob(file_sha)
@@ -372,6 +276,41 @@ async def read_file_content(
         return None
 
 
+async def read_file_by_path(
+    token: str,
+    full_name: str,
+    path: str,
+    branch: str = "main",
+) -> Optional[str]:
+    """Read a file's content directly by path (no tree lookup needed).
+
+    Args:
+        token: Decrypted GitHub access token.
+        full_name: Repository full name (owner/repo).
+        path: File path within the repository.
+        branch: Branch name to read from.
+
+    Returns:
+        File content as a string, or None on failure.
+    """
+    def _sync():
+        from github import Auth, Github
+        g = Github(auth=Auth.Token(token))
+        repo = g.get_repo(full_name)
+        content = repo.get_contents(path, ref=branch)
+        if isinstance(content, list):
+            raise ValueError(f"'{path}' is a directory, not a file")
+        if content.encoding == "base64":
+            return base64.b64decode(content.content).decode("utf-8", errors="replace")
+        return content.decoded_content.decode("utf-8", errors="replace")
+
+    try:
+        return await anyio.to_thread.run_sync(_sync)
+    except Exception as e:
+        logger.error("Failed to read file '%s' from %s: %s", path, full_name, e)
+        return None
+
+
 async def get_repo_info(token: str, full_name: str) -> Optional[dict]:
     """Get metadata about a repository.
 
@@ -383,7 +322,7 @@ async def get_repo_info(token: str, full_name: str) -> Optional[dict]:
         Dict with repo metadata or None on failure.
     """
     def _sync():
-        from github import Github, Auth
+        from github import Auth, Github
         g = Github(auth=Auth.Token(token))
         repo = g.get_repo(full_name)
         return {

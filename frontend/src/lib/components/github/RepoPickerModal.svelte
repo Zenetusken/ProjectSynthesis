@@ -15,6 +15,12 @@
   let search = $state('');
   let expandedRepo = $state<string | null>(null);
   let branchInput = $state('');
+  let branchError = $state<string | null>(null);
+  let branchInputEl = $state<HTMLInputElement | undefined>();
+
+  $effect(() => {
+    if (branchInputEl) branchInputEl.focus();
+  });
 
   let filtered = $derived(
     github.repos.filter(r =>
@@ -39,7 +45,12 @@
   }
 
   function confirmLink() {
-    if (!expandedRepo || !branchInput.trim()) return;
+    if (!expandedRepo) return;
+    if (!branchInput.trim()) {
+      branchError = 'Branch name required';
+      return;
+    }
+    branchError = null;
     if (onselectrepo) {
       onselectrepo(expandedRepo, branchInput.trim());
     } else {
@@ -53,11 +64,17 @@
 {#if open}
   <div class="fixed inset-0 bg-black/50 z-[700]" onclick={() => onclose?.()} role="presentation"></div>
 
-  <div class="fixed top-[20%] left-1/2 -translate-x-1/2 w-[440px] max-w-[90vw] bg-bg-card border border-border-subtle rounded-xl z-[700] overflow-hidden animate-dialog-in">
+  <div
+    class="fixed top-[20%] left-1/2 -translate-x-1/2 w-[440px] max-w-[90vw] bg-bg-card border border-border-subtle rounded-xl z-[700] overflow-hidden animate-dialog-in"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="repo-picker-heading"
+  >
     <div class="px-4 py-3 border-b border-border-subtle">
-      <h2 class="text-sm font-semibold text-text-primary mb-2">Select Repository</h2>
+      <h2 id="repo-picker-heading" class="text-sm font-semibold text-text-primary mb-2">Select Repository</h2>
       <input
         type="text"
+        name="repo-search"
         placeholder="Search repositories..."
         class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1.5 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
         bind:value={search}
@@ -68,9 +85,13 @@
       {#each filtered as repo (repo.full_name)}
         <!-- Main row — click to expand/collapse -->
         <button
-          class="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors"
+          class="w-full text-left px-4 py-2 hover:bg-bg-hover transition-colors relative
+            {github.selectedRepo === repo.full_name ? 'bg-neon-cyan/5 border-l border-neon-cyan/25 pl-3.5' : ''}"
           onclick={() => toggleExpand(repo)}
         >
+          {#if github.selectedRepo === repo.full_name}
+            <span class="absolute left-0 top-2 bottom-2 w-[1px] bg-neon-cyan/50"></span>
+          {/if}
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2 min-w-0">
               <RepoBadge name={repo.full_name} isPrivate={repo.private} />
@@ -107,23 +128,28 @@
 
         <!-- Inline branch expansion -->
         {#if expandedRepo === repo.full_name}
-          <div class="px-4 pt-2 pb-3 flex items-center gap-2 bg-bg-hover/40 border-t border-border-subtle/50">
-            <span class="text-[10px] text-text-dim shrink-0">Branch</span>
-            <input
-              class="flex-1 bg-bg-input border border-border-subtle rounded px-2 py-1
-                     text-xs text-text-primary font-mono focus:outline-none
-                     focus:border-neon-cyan/30"
-              bind:value={branchInput}
-              onkeydown={(e) => { if (e.key === 'Enter') confirmLink(); if (e.key === 'Escape') { expandedRepo = null; } }}
-              autofocus
-            />
-            <button
-              class="px-2 py-1 rounded text-xs font-medium bg-neon-cyan/10 text-neon-cyan
-                     border border-neon-cyan/20 hover:bg-neon-cyan/20 transition-colors shrink-0"
-              onclick={confirmLink}
-            >
-              Link →
-            </button>
+          <div class="px-4 pt-2 pb-3 bg-bg-hover/40 border-t border-border-subtle/50 space-y-1.5">
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-text-dim shrink-0">Branch</span>
+              <input
+                name="branch-input"
+                class="flex-1 bg-bg-input border {branchError ? 'border-neon-red/40' : 'border-border-subtle'} rounded px-2 py-1
+                       text-xs text-text-primary font-mono focus:outline-none
+                       focus:border-neon-cyan/30"
+                bind:this={branchInputEl}
+                bind:value={branchInput}
+                onkeydown={(e) => { if (e.key === 'Enter') confirmLink(); if (e.key === 'Escape') { expandedRepo = null; branchError = null; } }}
+              />
+              <button
+                class="px-2 py-1 rounded text-xs font-medium btn-outline-cyan shrink-0"
+                onclick={confirmLink}
+              >
+                Link →
+              </button>
+            </div>
+            {#if branchError}
+              <p class="text-[10px] text-neon-red">{branchError}</p>
+            {/if}
           </div>
         {/if}
       {/each}

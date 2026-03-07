@@ -7,7 +7,7 @@
   {#if forge.stageStatuses['optimize'] === 'running'}
     <div class="space-y-2">
       <div class="flex items-center gap-2 text-neon-cyan">
-        <span class="w-3 h-3 rounded-full animate-spin" style="border: 2px solid transparent; border-top-color: #00e5ff;"></span>
+        <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #00e5ff;"></span>
         <span>Generating optimized prompt...</span>
       </div>
 
@@ -20,7 +20,7 @@
   {:else if forge.stageStatuses['optimize'] === 'done'}
     <div class="bg-bg-primary border border-neon-green/20 rounded-lg p-3 relative">
       <div class="flex items-center justify-between mb-2">
-        <span class="font-display text-[11px] font-bold uppercase text-text-dim" style="letter-spacing: 0.08em;">Optimized Prompt</span>
+        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Optimized Prompt</span>
         {#if forge.streamingText}
           <CopyButton text={forge.streamingText} />
         {/if}

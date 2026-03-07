@@ -4,19 +4,15 @@ Detects the best available LLM provider at startup:
   1. ClaudeCLIProvider (claude-agent-sdk via Max subscription)
   2. AnthropicAPIProvider (anthropic Python SDK via ANTHROPIC_API_KEY)
   3. Raise ProviderNotAvailableError with setup instructions
-
-Also provides the shared _parse_json_response helper used by providers.
 """
 
 from __future__ import annotations
 
-import json
-import re
-import logging
 import asyncio
+import logging
 
-from app.providers.base import LLMProvider, MODEL_ROUTING
 from app.config import settings
+from app.providers.base import LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -39,38 +35,6 @@ class ProviderNotAvailableError(Exception):
         )
 
 
-def _parse_json_response(text: str) -> dict:
-    """3-strategy JSON parsing fallback.
-
-    1. Parse raw response as JSON directly
-    2. Extract first ```json ... ``` code block, parse it
-    3. Extract first { ... } substring with regex, parse it
-    """
-    # Strategy 1: Direct parse
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        pass
-
-    # Strategy 2: Extract ```json ... ``` code block
-    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    # Strategy 3: Extract first { ... } substring
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(0))
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    raise ValueError(f"Could not parse JSON from response: {text[:200]}...")
-
-
 async def detect_provider() -> LLMProvider:
     """Detect the best available LLM provider.
 
@@ -84,6 +48,47 @@ async def detect_provider() -> LLMProvider:
     Each provider probe completes within 5 seconds or is skipped.
     Total auto-detection does not block startup for more than 10 seconds.
     """
+    try:
+        return await asyncio.wait_for(_detect_provider_inner(), timeout=10.0)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Provider auto-detection exceeded 10-second total timeout; "
+            "no provider available."
+        )
+        raise ProviderNotAvailableError()
+
+
+async def _probe_claude_version(path: str) -> tuple[bytes, int]:
+    """Run ``claude --version`` and return (stdout, returncode).
+
+    Handles proper subprocess cleanup if cancelled (e.g. by the 5-second
+    per-probe timeout): the process is killed and reaped before re-raising
+    CancelledError so it does not become a zombie.
+    """
+    proc: asyncio.subprocess.Process | None = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            path, "--version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+    except asyncio.CancelledError:
+        if proc is not None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                await proc.wait()
+            except Exception:
+                pass
+        raise
+    return stdout, proc.returncode
+
+
+async def _detect_provider_inner() -> LLMProvider:
+    """Run provider probes sequentially. Called inside the 10-second outer timeout."""
     import os
     import shutil
 
@@ -99,16 +104,12 @@ async def detect_provider() -> LLMProvider:
         try:
             claude_path = shutil.which("claude")
             if claude_path:
-                proc = await asyncio.wait_for(
-                    asyncio.create_subprocess_exec(
-                        "claude", "--version",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    ),
+                # Bound both subprocess creation AND communicate() within 5 seconds
+                stdout, returncode = await asyncio.wait_for(
+                    _probe_claude_version(claude_path),
                     timeout=5.0,
                 )
-                stdout, _ = await proc.communicate()
-                if proc.returncode == 0:
+                if returncode == 0:
                     logger.info(
                         "Claude CLI detected at %s: %s",
                         claude_path,
@@ -116,7 +117,7 @@ async def detect_provider() -> LLMProvider:
                     )
                     try:
                         from app.providers.claude_cli import ClaudeCLIProvider
-                        provider = ClaudeCLIProvider()
+                        provider: LLMProvider = ClaudeCLIProvider()
                         logger.info("Using ClaudeCLIProvider (Max subscription, zero cost)")
                         return provider
                     except ImportError as ie:

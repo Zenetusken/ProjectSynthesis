@@ -1,14 +1,14 @@
 import json
-import uuid
-import time
 import logging
 import datetime as dt
+import time
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.models.optimization import Optimization
@@ -19,17 +19,11 @@ router = APIRouter(tags=["optimize"])
 
 # Will be set by main.py lifespan
 _provider = None
-_pipeline = None
 
 
 def set_provider(provider):
     global _provider
     _provider = provider
-
-
-def set_pipeline(pipeline):
-    global _pipeline
-    _pipeline = pipeline
 
 
 def _default_serializer(obj: object) -> str:
@@ -117,6 +111,7 @@ async def optimize_prompt(
                 # Update the optimization record with pipeline results
                 if event_type == "codebase_context":
                     optimization.codebase_context_snapshot = json.dumps(event_data)
+                    optimization.model_explore = event_data.get("model")
                 elif event_type == "analysis":
                     optimization.task_type = event_data.get("task_type")
                     optimization.complexity = event_data.get("complexity")
@@ -149,7 +144,7 @@ async def optimize_prompt(
             # Finalize
             duration_ms = int((time.time() - start_time) * 1000)
             optimization.duration_ms = duration_ms
-            optimization.updated_at = datetime.now(timezone.utc)
+            optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
             optimization.provider_used = _provider.name
 
             if pipeline_failed:
@@ -161,7 +156,7 @@ async def optimize_prompt(
 
             # Persist final state
             async with (await _get_fresh_session()) as s:
-                merged = await s.merge(optimization)
+                await s.merge(optimization)
                 await s.commit()
 
             if not pipeline_failed:
@@ -177,7 +172,7 @@ async def optimize_prompt(
             optimization.status = "failed"
             optimization.error_message = str(e)
             optimization.duration_ms = duration_ms
-            optimization.updated_at = datetime.now(timezone.utc)
+            optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
             try:
                 async with (await _get_fresh_session()) as s:
@@ -239,15 +234,15 @@ async def patch_optimization(
         raise HTTPException(status_code=404, detail="Optimization not found")
 
     if patch.title is not None:
-        optimization.title = patch.title
+        optimization.title = patch.title  # type: ignore[assignment]
     if patch.tags is not None:
-        optimization.tags = json.dumps(patch.tags)
+        optimization.tags = json.dumps(patch.tags)  # type: ignore[assignment]
     if patch.version is not None:
-        optimization.version = patch.version
+        optimization.version = patch.version  # type: ignore[assignment]
     if patch.project is not None:
-        optimization.project = patch.project
+        optimization.project = patch.project  # type: ignore[assignment]
 
-    optimization.updated_at = datetime.now(timezone.utc)
+    optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
     await session.commit()
     return optimization.to_dict()
 
@@ -269,13 +264,13 @@ async def retry_optimization(
 
     # Create a new optimize request based on the original
     retry_request = OptimizeRequest(
-        prompt=original.raw_prompt,
-        project=original.project,
-        tags=json.loads(original.tags) if original.tags else None,
-        title=original.title,
+        prompt=str(original.raw_prompt),
+        project=str(original.project) if original.project else None,
+        tags=json.loads(str(original.tags)) if original.tags else None,
+        title=str(original.title) if original.title else None,
         strategy=body.strategy,
-        repo_full_name=original.linked_repo_full_name,
-        repo_branch=original.linked_repo_branch,
+        repo_full_name=str(original.linked_repo_full_name) if original.linked_repo_full_name else None,
+        repo_branch=str(original.linked_repo_branch) if original.linked_repo_branch else None,
     )
 
     # Reuse the optimize endpoint logic, linking retry to original

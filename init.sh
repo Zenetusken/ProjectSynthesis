@@ -160,7 +160,7 @@ start_backend() {
     # (the backend runs independently and must not inherit nested-session protection)
     unset CLAUDECODE 2>/dev/null || true
 
-    nohup python -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT --reload > ../data/backend.log 2>&1 &
+    nohup python -m uvicorn app.main:asgi_app --host 0.0.0.0 --port $BACKEND_PORT --reload > ../data/backend.log 2>&1 &
     echo $! > "../$PID_DIR/backend.pid"
     cd ..
 }
@@ -213,7 +213,8 @@ do_start() {
     log "═══════════════════════════════════════════"
     ok "Backend:  http://localhost:$BACKEND_PORT"
     ok "Frontend: http://localhost:$FRONTEND_PORT"
-    ok "MCP:      ws://127.0.0.1:$MCP_PORT/ws"
+    ok "MCP:      http://127.0.0.1:$MCP_PORT/mcp  (streamable-HTTP)"
+    ok "MCP-WS:   ws://localhost:$BACKEND_PORT/mcp/ws  (WebSocket, backward-compat)"
     ok "API Docs: http://localhost:$BACKEND_PORT/api/docs"
     log "═══════════════════════════════════════════"
 }

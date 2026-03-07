@@ -34,14 +34,15 @@
 </script>
 
 <nav
-  class="flex flex-col items-center w-[40px] bg-bg-secondary border-r border-border-subtle py-2 gap-1"
+  class="flex flex-col items-center w-[40px] h-full bg-bg-secondary border-r border-border-subtle py-2 gap-1"
   aria-label="Activity Bar"
 >
   {#each activities as act, i}
     <button
-      class="w-8 h-8 flex items-center justify-center rounded-md transition-colors relative
+      class="w-8 h-8 flex items-center justify-center rounded-md transition-colors duration-150 relative
+        focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neon-cyan/30 focus-visible:ring-offset-0
         {workbench.activeActivity === act.id && !workbench.navigatorCollapsed
-          ? 'text-neon-cyan'
+          ? 'bg-neon-cyan/[0.08] text-neon-cyan'
           : 'text-text-dim hover:text-text-secondary hover:bg-bg-hover'}"
       title={act.label}
       aria-label={act.label}
@@ -51,7 +52,7 @@
     >
       <!-- Active left border indicator (1px neon-cyan) -->
       {#if workbench.activeActivity === act.id && !workbench.navigatorCollapsed}
-        <span class="absolute left-0 top-1 bottom-1 w-[1px] bg-neon-cyan rounded-full"></span>
+        <span class="absolute left-0 top-1 bottom-1 w-[1px] bg-neon-cyan"></span>
       {/if}
       <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
         <path stroke-linecap="round" stroke-linejoin="round" d={act.icon}></path>
@@ -63,6 +64,6 @@
 
   <!-- Forge branding at bottom -->
   <div class="w-8 h-8 flex items-center justify-center" title="PromptForge v2">
-    <span class="text-sm font-bold bg-clip-text text-transparent" style="background-image: var(--gradient-forge)">PF</span>
+    <span class="text-sm font-bold text-gradient-forge">PF</span>
   </div>
 </nav>
