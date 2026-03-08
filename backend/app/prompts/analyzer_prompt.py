@@ -39,4 +39,6 @@ Respond with a JSON object:
   "codebase_informed": true | false
 }
 
-Be precise and actionable in your weakness identification. Each weakness should suggest what is missing or unclear."""
+Be precise and actionable in your weakness identification. Each weakness should suggest what is missing or unclear.
+
+Before the JSON, write one or two sentences stating your key finding about this prompt."""

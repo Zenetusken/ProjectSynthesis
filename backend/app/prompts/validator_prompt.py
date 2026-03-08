@@ -46,7 +46,9 @@ Score guidance:
 - 7/10: Good — e.g., clarity_score 7: intent is clear with minor ambiguities; specificity_score 7: most requirements concrete
 - 9/10: Excellent — e.g., clarity_score 9: single unambiguous reading; specificity_score 9: all requirements precise and measurable
 
-Focus on whether the optimization actually addresses the weaknesses of the original."""
+Focus on whether the optimization actually addresses the weaknesses of the original.
+
+Before the JSON, write one or two sentences stating your key finding about the quality of this optimization."""
 
     if has_codebase_context:
         base += """

@@ -14,10 +14,16 @@
 
 <div class="space-y-2 text-xs">
   {#if forge.stageStatuses['strategy'] === 'running'}
-    <div class="flex items-center gap-2 text-neon-cyan">
-      <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: {getStrategyHex(data.primary_framework as string || 'auto')};"></span>
-      <span>Selecting optimization strategy...</span>
-    </div>
+    {#if (forge.liveStageText['strategy'] ?? '').length === 0}
+      <div class="flex items-center gap-2 text-neon-purple">
+        <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #a855f7;"></span>
+        <span>Selecting optimization strategy...</span>
+      </div>
+    {:else}
+      <div class="bg-bg-input p-2 max-h-32 overflow-y-auto">
+        <p class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap leading-relaxed">{forge.liveStageText['strategy']}</p>
+      </div>
+    {/if}
   {:else if result}
     {#if data.primary_framework}
       <div class="flex items-center gap-2">

@@ -39,10 +39,16 @@
 
 <div class="space-y-2 text-xs">
   {#if forge.stageStatuses['analyze'] === 'running'}
-    <div class="flex items-center gap-2 text-neon-cyan">
-      <span class="w-3 h-3 rounded-full border-t border-neon-cyan animate-spin" style="border-color: transparent; border-top-color: #4d8eff;"></span>
-      <span>Analyzing prompt quality...</span>
-    </div>
+    {#if (forge.liveStageText['analyze'] ?? '').length === 0}
+      <div class="flex items-center gap-2 text-neon-cyan">
+        <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #4d8eff;"></span>
+        <span>Analyzing prompt quality...</span>
+      </div>
+    {:else}
+      <div class="bg-bg-input p-2 max-h-32 overflow-y-auto">
+        <p class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap leading-relaxed">{forge.liveStageText['analyze']}</p>
+      </div>
+    {/if}
   {:else if result}
     <!-- Task type and complexity -->
     <div class="flex flex-wrap items-center gap-2">

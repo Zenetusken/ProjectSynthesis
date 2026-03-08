@@ -118,6 +118,7 @@ class ClaudeCLIProvider(LLMProvider):
         tools: list[ToolDefinition],
         max_turns: int = 20,
         on_tool_call: Callable[[str, dict], None] | None = None,
+        on_agent_text: Callable[[str], None] | None = None,
         output_schema: dict | None = None,
     ) -> AgenticResult:
         from claude_agent_sdk import (
@@ -225,6 +226,11 @@ class ClaudeCLIProvider(LLMProvider):
                         block.text for block in msg.content if isinstance(block, TextBlock)
                     )
                     if msg_text:
+                        if on_agent_text:
+                            try:
+                                on_agent_text(msg_text)
+                            except Exception:
+                                pass
                         full_text = msg_text
                 else:
                     # Check for ResultMessage with structured_output (SDK output_format support)

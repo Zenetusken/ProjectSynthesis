@@ -6,10 +6,10 @@ Uses claude-opus for deep reasoning about framework selection.
 
 import asyncio
 import logging
-from typing import Optional
+from typing import AsyncGenerator, Optional
 
 from app.prompts.strategy_prompt import get_strategy_prompt
-from app.providers.base import MODEL_ROUTING, LLMProvider
+from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
 from app.services.context_builders import build_analysis_summary, build_codebase_summary
 from app.services.strategy_selector import heuristic_strategy_fallback
 from app.config import settings
@@ -22,11 +22,13 @@ async def run_strategy(
     raw_prompt: str,
     analysis: dict,
     codebase_context: Optional[dict] = None,
-) -> dict:
+) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 2 strategy selection.
 
-    Returns:
-        dict with keys: primary_framework, secondary_frameworks, rationale, approach_notes
+    Yields:
+        ("step_progress", {"step": "strategy", "content": chunk}) for each streamed chunk
+        ("strategy", dict) with keys: primary_framework, secondary_frameworks,
+                                       rationale, approach_notes
     """
     system_prompt = get_strategy_prompt()
 
@@ -41,19 +43,61 @@ async def run_strategy(
 
     model = MODEL_ROUTING["strategy"]
 
+    # Stream with background task + queue (same pattern as optimizer.py).
+    full_text = ""
+    stream_failed = False
+    chunk_queue: asyncio.Queue = asyncio.Queue()
+
+    async def _stream_worker() -> None:
+        try:
+            async for chunk in provider.stream(system_prompt, user_message, model):
+                await chunk_queue.put(chunk)
+        finally:
+            await chunk_queue.put(None)
+
+    stream_task = asyncio.create_task(_stream_worker())
+    timeout_handle = asyncio.get_running_loop().call_later(
+        settings.STRATEGY_TIMEOUT_SECONDS,
+        lambda: stream_task.cancel() if not stream_task.done() else None,
+    )
+
     try:
-        result = await asyncio.wait_for(
-            provider.complete_json(system_prompt, user_message, model),
-            timeout=settings.STRATEGY_TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Strategy stage timed out after %ds", settings.STRATEGY_TIMEOUT_SECONDS
-        )
-        raise  # Propagate to pipeline.py as a stage failure
+        while True:
+            chunk = await chunk_queue.get()
+            if chunk is None:
+                break
+            full_text += chunk
+            yield ("step_progress", {"step": "strategy", "content": chunk})
+        await stream_task
+    except asyncio.CancelledError:
+        logger.warning("Strategy stage streaming timed out after %ds", settings.STRATEGY_TIMEOUT_SECONDS)
+        stream_failed = True
     except Exception as e:
-        logger.error(f"Stage 2 (Strategy) failed: {e}. Using heuristic fallback.")
-        result = heuristic_strategy_fallback(analysis.get("task_type", "general"))
+        logger.error(f"Stage 2 (Strategy) streaming failed: {e}")
+        stream_failed = True
+    finally:
+        timeout_handle.cancel()
+        if not stream_task.done():
+            stream_task.cancel()
+
+    # JSON extraction from streamed text
+    result = None
+    if not stream_failed and full_text:
+        try:
+            result = parse_json_robust(full_text)
+        except Exception:
+            pass
+
+    # Fallback to complete_json when streaming failed or parse failed
+    if not result:
+        try:
+            result = await asyncio.wait_for(
+                provider.complete_json(system_prompt, user_message, model),
+                timeout=settings.STRATEGY_TIMEOUT_SECONDS,
+            )
+        except Exception as e:
+            logger.error(f"Stage 2 (Strategy) failed: {e}. Using heuristic fallback.")
+            result = heuristic_strategy_fallback(analysis.get("task_type", "general"))
 
     # Ensure required fields
     result.setdefault("primary_framework", "CO-STAR")
@@ -61,4 +105,4 @@ async def run_strategy(
     result.setdefault("rationale", "")
     result.setdefault("approach_notes", "")
 
-    return result
+    yield ("strategy", result)

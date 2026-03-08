@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Claude CLI provider spawns a new subprocess per call; cold-start alone
     # takes ~7–15 seconds on typical hardware. Timeouts are set generously
     # to survive startup + API latency. Override via env vars if needed.
-    EXPLORE_TIMEOUT_SECONDS: int = 120   # Agentic multi-turn repo exploration
+    EXPLORE_TIMEOUT_SECONDS: int = 600   # Agentic multi-turn repo exploration (10 min)
     ANALYZE_TIMEOUT_SECONDS: int = 90    # Simple completion; CLI startup ~7–15s
     STRATEGY_TIMEOUT_SECONDS: int = 90   # Simple completion; same startup cost
     OPTIMIZE_TIMEOUT_SECONDS: int = 120  # Streaming rewrite; longest content

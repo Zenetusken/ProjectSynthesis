@@ -150,11 +150,21 @@ async def run_pipeline(
         yield ("stage", {"stage": "analyze", "status": "started"})
         start = time.time()
 
-        analysis = await run_analyze(
+        analysis = None
+        async for event_type, event_data in run_analyze(
             provider=provider,
             raw_prompt=raw_prompt,
             codebase_context=codebase_context,
-        )
+            file_contexts=file_contexts,
+            url_fetched_contexts=url_fetched_contexts,
+            instructions=instructions,
+        ):
+            if event_type == "analysis":
+                analysis = event_data
+            else:
+                yield (event_type, event_data)
+
+        analysis = analysis or {}
         analysis["model"] = MODEL_ROUTING["analyze"]
 
         stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
@@ -192,12 +202,19 @@ async def run_pipeline(
                 "model": MODEL_ROUTING["strategy"],
             }
         else:
-            strategy_result = await run_strategy(
+            strategy_result = None
+            async for event_type, event_data in run_strategy(
                 provider=provider,
                 raw_prompt=raw_prompt,
                 analysis=analysis,
                 codebase_context=codebase_context,
-            )
+            ):
+                if event_type == "strategy":
+                    strategy_result = event_data
+                else:
+                    yield (event_type, event_data)
+
+            strategy_result = strategy_result or {}
             strategy_result["model"] = MODEL_ROUTING["strategy"]
 
         stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(strategy_result))
@@ -271,13 +288,20 @@ async def run_pipeline(
         optimized_prompt = optimization_result.get("optimized_prompt", "") if optimization_result else ""
         changes_made = optimization_result.get("changes_made", []) if optimization_result else []
 
-        validation = await run_validate(
+        validation = None
+        async for event_type, event_data in run_validate(
             provider=provider,
             original_prompt=raw_prompt,
             optimized_prompt=optimized_prompt,
             changes_made=changes_made,
             codebase_context=codebase_context,
-        )
+        ):
+            if event_type == "validation":
+                validation = event_data
+            else:
+                yield (event_type, event_data)
+
+        validation = validation or {}
         validation["model"] = MODEL_ROUTING["validate"]
 
         stage_tokens = (
@@ -392,13 +416,20 @@ async def run_pipeline(
             optimized_prompt = optimization_result.get("optimized_prompt", "") if optimization_result else ""
             changes_made = optimization_result.get("changes_made", []) if optimization_result else []
 
-            validation = await run_validate(
+            validation = None
+            async for event_type, event_data in run_validate(
                 provider=provider,
                 original_prompt=raw_prompt,
                 optimized_prompt=optimized_prompt,
                 changes_made=changes_made,
                 codebase_context=codebase_context,
-            )
+            ):
+                if event_type == "validation":
+                    validation = event_data
+                else:
+                    yield (event_type, event_data)
+
+            validation = validation or {}
             validation["model"] = MODEL_ROUTING["validate"]
 
             stage_tokens = (

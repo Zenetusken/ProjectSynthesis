@@ -1,16 +1,16 @@
 """Stage 1: Analyze
 
 Classifies the prompt and identifies optimization opportunities.
-Uses claude-haiku for fast, cheap structured JSON extraction.
+Uses claude-sonnet for structured JSON extraction with streaming.
 """
 
 import asyncio
 import logging
-from typing import Optional
+from typing import AsyncGenerator, Optional
 
 from app.config import settings
 from app.prompts.analyzer_prompt import get_analyzer_prompt
-from app.providers.base import MODEL_ROUTING, LLMProvider
+from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
 from app.services.context_builders import build_codebase_summary
 
 logger = logging.getLogger(__name__)
@@ -23,12 +23,13 @@ async def run_analyze(
     file_contexts: list[dict] | None = None,        # N24: attached file content
     url_fetched_contexts: list[dict] | None = None, # N26: pre-fetched URL content
     instructions: list[str] | None = None,          # N37: user output constraints
-) -> dict:
+) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 1 analysis on the raw prompt.
 
-    Returns:
-        dict with keys: task_type, weaknesses, strengths, complexity,
-                        recommended_frameworks, codebase_informed
+    Yields:
+        ("step_progress", {"step": "analyze", "content": chunk}) for each streamed chunk
+        ("analysis", dict) with keys: task_type, weaknesses, strengths, complexity,
+                                       recommended_frameworks, codebase_informed
     """
     system_prompt = get_analyzer_prompt()
 
@@ -67,29 +68,74 @@ async def run_analyze(
 
     model = MODEL_ROUTING["analyze"]
 
+    # Stream with background task + queue (same pattern as optimizer.py).
+    # This lets step_progress events flow to the client in real time while
+    # we accumulate the full text for JSON extraction.
+    full_text = ""
+    stream_failed = False
+    chunk_queue: asyncio.Queue = asyncio.Queue()
+
+    async def _stream_worker() -> None:
+        try:
+            async for chunk in provider.stream(system_prompt, user_message, model):
+                await chunk_queue.put(chunk)
+        finally:
+            await chunk_queue.put(None)  # Sentinel — always sent even on error
+
+    stream_task = asyncio.create_task(_stream_worker())
+    timeout_handle = asyncio.get_running_loop().call_later(
+        settings.ANALYZE_TIMEOUT_SECONDS,
+        lambda: stream_task.cancel() if not stream_task.done() else None,
+    )
+
     try:
-        result = await asyncio.wait_for(
-            provider.complete_json(system_prompt, user_message, model),
-            timeout=settings.ANALYZE_TIMEOUT_SECONDS,
-        )
-        result["analysis_quality"] = "full"
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Analyze stage timed out after %ds", settings.ANALYZE_TIMEOUT_SECONDS
-        )
-        raise  # Propagate to pipeline.py as a stage failure
+        while True:
+            chunk = await chunk_queue.get()
+            if chunk is None:
+                break
+            full_text += chunk
+            yield ("step_progress", {"step": "analyze", "content": chunk})
+        await stream_task
+    except asyncio.CancelledError:
+        logger.warning("Analyze stage streaming timed out after %ds", settings.ANALYZE_TIMEOUT_SECONDS)
+        stream_failed = True
     except Exception as e:
-        logger.error(f"Stage 1 (Analyze) failed: {e}")
-        # Return sensible defaults so downstream stages can still run
-        result = {
-            "task_type": "general",
-            "weaknesses": ["Analysis failed - using defaults"],
-            "strengths": [],
-            "complexity": "moderate",
-            "recommended_frameworks": ["CO-STAR"],
-            "codebase_informed": codebase_context is not None,
-            "analysis_quality": "fallback",
-        }
+        logger.error(f"Stage 1 (Analyze) streaming failed: {e}")
+        stream_failed = True
+    finally:
+        timeout_handle.cancel()
+        if not stream_task.done():
+            stream_task.cancel()
+
+    # JSON extraction from streamed text (parse_json_robust handles text-prefixed JSON)
+    result = None
+    if not stream_failed and full_text:
+        try:
+            result = parse_json_robust(full_text)
+            result["analysis_quality"] = "full"
+        except Exception:
+            pass
+
+    # Fallback to complete_json when streaming failed or parse failed
+    if not result:
+        try:
+            result = await asyncio.wait_for(
+                provider.complete_json(system_prompt, user_message, model),
+                timeout=settings.ANALYZE_TIMEOUT_SECONDS,
+            )
+            result["analysis_quality"] = "full"
+        except Exception as e:
+            logger.error(f"Stage 1 (Analyze) failed: {e}")
+            # Return sensible defaults so downstream stages can still run
+            result = {
+                "task_type": "general",
+                "weaknesses": ["Analysis failed - using defaults"],
+                "strengths": [],
+                "complexity": "moderate",
+                "recommended_frameworks": ["CO-STAR"],
+                "codebase_informed": codebase_context is not None,
+                "analysis_quality": "fallback",
+            }
 
     # Ensure required fields
     result.setdefault("task_type", "general")
@@ -99,4 +145,4 @@ async def run_analyze(
     result.setdefault("recommended_frameworks", [])
     result.setdefault("codebase_informed", codebase_context is not None)
 
-    return result
+    yield ("analysis", result)

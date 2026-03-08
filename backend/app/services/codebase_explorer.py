@@ -216,6 +216,10 @@ async def run_explore(
         if name == "submit_result" and isinstance(args, dict):
             _partial_output.update(args)
 
+    def _on_agent_text(text: str) -> None:
+        """Sync callback; enqueues reasoning text events for immediate SSE yield."""
+        event_queue.put_nowait(("agent_text", {"content": text}))
+
     # Run the agentic call as a background task so we can drain events while it runs.
     agent_task = asyncio.create_task(
         provider.complete_agentic(
@@ -228,6 +232,7 @@ async def run_explore(
             tools=tools,
             max_turns=25,
             on_tool_call=_on_tool_call,
+            on_agent_text=_on_agent_text,
             output_schema=EXPLORE_OUTPUT_SCHEMA,
         )
     )

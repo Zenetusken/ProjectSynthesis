@@ -8,10 +8,11 @@ Server-side weighted average computation (never trust LLM arithmetic).
 import asyncio
 import json
 import logging
+from typing import AsyncGenerator
 
 from app.config import settings
 from app.prompts.validator_prompt import get_validator_prompt
-from app.providers.base import MODEL_ROUTING, LLMProvider
+from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
 from app.services.context_builders import build_codebase_summary
 
 logger = logging.getLogger(__name__)
@@ -50,21 +51,37 @@ def compute_overall_score(scores: dict) -> int:
     return max(1, min(10, round(raw)))
 
 
+def _default_validation() -> dict:
+    """Default validation result used when all providers fail."""
+    return {
+        "is_improvement": True,
+        "clarity_score": 5,
+        "specificity_score": 5,
+        "structure_score": 5,
+        "faithfulness_score": 5,
+        "conciseness_score": 5,
+        "verdict": "Validation failed - default scores applied.",
+        "issues": ["Validation stage encountered an error"],
+    }
+
+
 async def run_validate(
     provider: LLMProvider,
     original_prompt: str,
     optimized_prompt: str,
     changes_made: list[str],
     codebase_context: dict | None = None,
-) -> dict:
+) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 4 validation.
 
-    Returns a dict with the following canonical shape:
-        scores: dict  — all 5 dimension scores + overall_score (authoritative)
-        overall_score: int  — convenience copy for direct pipeline access
-        is_improvement: bool
-        verdict: str
-        issues: list[str]
+    Yields:
+        ("step_progress", {"step": "validate", "content": chunk}) for each streamed chunk
+        ("validation", dict) with canonical shape:
+            scores: dict  — all 5 dimension scores + overall_score (authoritative)
+            overall_score: int  — convenience copy for direct pipeline access
+            is_improvement: bool
+            verdict: str
+            issues: list[str]
 
     Individual dimension scores (clarity_score, etc.) live only in the
     ``scores`` sub-dict to avoid duplication. Callers that previously read
@@ -93,28 +110,61 @@ async def run_validate(
 
     model = MODEL_ROUTING["validate"]
 
+    # Stream with background task + queue (same pattern as optimizer.py).
+    full_text = ""
+    stream_failed = False
+    chunk_queue: asyncio.Queue = asyncio.Queue()
+
+    async def _stream_worker() -> None:
+        try:
+            async for chunk in provider.stream(system_prompt, user_message, model):
+                await chunk_queue.put(chunk)
+        finally:
+            await chunk_queue.put(None)
+
+    stream_task = asyncio.create_task(_stream_worker())
+    timeout_handle = asyncio.get_running_loop().call_later(
+        settings.VALIDATE_TIMEOUT_SECONDS,
+        lambda: stream_task.cancel() if not stream_task.done() else None,
+    )
+
     try:
-        raw = await asyncio.wait_for(
-            provider.complete_json(system_prompt, user_message, model),
-            timeout=settings.VALIDATE_TIMEOUT_SECONDS,
-        )
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Validate stage timed out after %ds", settings.VALIDATE_TIMEOUT_SECONDS
-        )
-        raise  # Propagate to pipeline.py as a stage failure
+        while True:
+            chunk = await chunk_queue.get()
+            if chunk is None:
+                break
+            full_text += chunk
+            yield ("step_progress", {"step": "validate", "content": chunk})
+        await stream_task
+    except asyncio.CancelledError:
+        logger.warning("Validate stage streaming timed out after %ds", settings.VALIDATE_TIMEOUT_SECONDS)
+        stream_failed = True
     except Exception as e:
-        logger.error(f"Stage 4 (Validate) failed: {e}")
-        raw = {
-            "is_improvement": True,
-            "clarity_score": 5,
-            "specificity_score": 5,
-            "structure_score": 5,
-            "faithfulness_score": 5,
-            "conciseness_score": 5,
-            "verdict": "Validation failed - default scores applied.",
-            "issues": ["Validation stage encountered an error"],
-        }
+        logger.error(f"Stage 4 (Validate) streaming failed: {e}")
+        stream_failed = True
+    finally:
+        timeout_handle.cancel()
+        if not stream_task.done():
+            stream_task.cancel()
+
+    # JSON extraction from streamed text
+    raw = None
+    if not stream_failed and full_text:
+        try:
+            raw = parse_json_robust(full_text)
+        except Exception:
+            pass
+
+    # Fallback to complete_json when streaming failed or parse failed
+    if not raw:
+        try:
+            raw = await asyncio.wait_for(
+                provider.complete_json(system_prompt, user_message, model),
+                timeout=settings.VALIDATE_TIMEOUT_SECONDS,
+            )
+        except Exception as e:
+            logger.error(f"Stage 4 (Validate) failed: {e}")
+            raw = _default_validation()
 
     # Ensure all raw score fields exist and are numeric before computing
     for field in SCORE_WEIGHTS:
@@ -134,7 +184,7 @@ async def run_validate(
         "overall_score": overall_score,
     }
 
-    return {
+    yield ("validation", {
         # Scores live exclusively in the sub-dict — no duplication at top level
         "scores": scores,
         # overall_score is mirrored at top-level as a convenience for pipeline
@@ -143,4 +193,4 @@ async def run_validate(
         "is_improvement": raw.get("is_improvement", True),
         "verdict": raw.get("verdict", ""),
         "issues": raw.get("issues", []),
-    }
+    })

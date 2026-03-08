@@ -42,4 +42,6 @@ Respond with a JSON object:
   "secondary_frameworks": ["optional-framework-1", "optional-framework-2"],  // maximum 2 items
   "rationale": "Detailed reasoning for this framework choice",
   "approach_notes": "Specific instructions for the optimizer stage on how to apply these frameworks"
-}"""
+}
+
+Before the JSON, write one or two sentences stating your key finding about the optimal strategy for this prompt."""

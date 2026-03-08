@@ -75,6 +75,14 @@ class ForgeStore {
   totalTokens = $state<number | null>(null);
   error = $state<string | null>(null);
   contextWarning = $state<ContextWarning | null>(null);
+  liveActivity = $state<Array<{
+    type: 'tool' | 'reasoning';
+    tool?: string;
+    input?: Record<string, unknown>;
+    content?: string;
+    ts: number;
+  }>>([]);
+  liveStageText = $state<Record<string, string>>({});
 
   get stages() {
     return ['explore', 'analyze', 'strategy', 'optimize', 'validate'];
@@ -124,6 +132,8 @@ class ForgeStore {
     this.totalTokens = null;
     this.error = null;
     this.contextWarning = null;
+    this.liveActivity = [];
+    this.liveStageText = {};
   }
 
   startForge(rawPrompt?: string) {
@@ -135,6 +145,10 @@ class ForgeStore {
   setStageRunning(stage: string) {
     this.currentStage = stage;
     this.stageStatuses[stage] = 'running';
+    // Clear accumulated streaming text so retries start fresh
+    if (this.liveStageText[stage] !== undefined) {
+      this.liveStageText = { ...this.liveStageText, [stage]: '' };
+    }
     this.addEvent({ type: 'stage_start', stage, timestamp: Date.now() });
   }
 
@@ -170,6 +184,21 @@ class ForgeStore {
 
   appendStreamingText(chunk: string) {
     this.streamingText += chunk;
+  }
+
+  addToolCall(tool: string, input: Record<string, unknown>) {
+    this.liveActivity = [...this.liveActivity, { type: 'tool', tool, input, ts: Date.now() }];
+  }
+
+  addAgentReasoning(content: string) {
+    this.liveActivity = [...this.liveActivity, { type: 'reasoning', content, ts: Date.now() }];
+  }
+
+  appendStageText(stage: string, chunk: string) {
+    this.liveStageText = {
+      ...this.liveStageText,
+      [stage]: (this.liveStageText[stage] ?? '') + chunk,
+    };
   }
 
   finishForge(score?: number, duration?: number, tokens?: number) {

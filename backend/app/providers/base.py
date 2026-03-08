@@ -133,6 +133,7 @@ class LLMProvider(ABC):
         tools: list[ToolDefinition],
         max_turns: int = 20,
         on_tool_call: Callable[[str, dict], None] | None = None,
+        on_agent_text: Callable[[str], None] | None = None,
         output_schema: dict | None = None,
     ) -> AgenticResult:
         """Agentic tool-calling loop.
@@ -141,5 +142,12 @@ class LLMProvider(ABC):
         automatically. When the model calls it, its input (matching the schema) is
         returned as AgenticResult.output — no text parsing required. This is the
         canonical Anthropic pattern for structured output from agentic loops.
+
+        on_tool_call: optional sync callback fired after each tool execution with
+            (tool_name, tool_input). Used to stream tool events to the client.
+
+        on_agent_text: optional sync callback fired for each assistant text block
+            produced during the loop. Surfaces Claude's intermediate reasoning
+            (e.g. "Let me check the main file first") for real-time UI display.
         """
         ...

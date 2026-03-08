@@ -230,9 +230,21 @@
           case 'strategy':
             forge.setStageComplete('strategy', { stage: 'strategy', data, duration: data.duration_ms as number | undefined });
             break;
-          case 'step_progress':
-            forge.appendStreamingText(data.content as string || '');
+          case 'agent_text': {
+            const agentContent = (data.content as string) ?? '';
+            if (agentContent) forge.addAgentReasoning(agentContent);
             break;
+          }
+          case 'step_progress': {
+            const step = data.step as string;
+            const chunk = (data.content as string) || '';
+            if (step === 'optimize') {
+              forge.appendStreamingText(chunk);
+            } else if (step) {
+              forge.appendStageText(step, chunk);
+            }
+            break;
+          }
           case 'optimization':
             forge.setStageComplete('optimize', { stage: 'optimize', data, duration: data.duration_ms as number | undefined });
             // Replace accumulated raw JSON tokens with the parsed optimized prompt text
@@ -315,6 +327,9 @@
           case 'rate_limit_warning':
             // Non-fatal warning — show toast but do NOT stop the pipeline
             toast.warning(data.message as string || 'Rate limit warning — retrying');
+            break;
+          case 'tool_call':
+            forge.addToolCall(data.tool as string, (data.input as Record<string, unknown>) ?? {});
             break;
           default:
             break;

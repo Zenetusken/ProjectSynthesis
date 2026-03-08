@@ -12,14 +12,61 @@
   let branchFallback = $derived((data.branch_fallback as boolean) || false);
   let originalBranch = $derived((data.original_branch as string) || '');
   let usedBranch = $derived((data.used_branch as string) || '');
+
+  const MAX_LIVE = 40;
+  let liveActivity = $derived(forge.liveActivity.slice(-MAX_LIVE));
+  let liveToolCount = $derived(forge.liveActivity.filter(e => e.type === 'tool').length);
+  let liveReasoningCount = $derived(forge.liveActivity.filter(e => e.type === 'reasoning').length);
+
+  function fmtCall(tool: string, input: Record<string, unknown>): string {
+    if (tool === 'read_file')           return `cat ${input.path ?? ''}`;
+    if (tool === 'list_repo_files')     return `ls ${input.path_prefix || '/'}`;
+    if (tool === 'search_code')         return `grep "${input.pattern ?? ''}"`;
+    if (tool === 'read_multiple_files') {
+      const paths = (input.paths as string[] | undefined) ?? [];
+      return `cat ${paths.slice(0, 2).join(' ')}${paths.length > 2 ? ` +${paths.length - 2}` : ''}`;
+    }
+    if (tool === 'get_repo_summary')    return 'summary';
+    if (tool === 'get_file_outline')    return `outline ${input.path ?? ''}`;
+    if (tool === 'submit_result')       return 'submit result';
+    return tool;
+  }
 </script>
 
 <div class="space-y-2 text-xs">
   {#if forge.stageStatuses['explore'] === 'running'}
-    <div class="flex items-center gap-2 text-neon-purple">
-      <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #a855f7;"></span>
-      <span>Exploring prompt context...</span>
-    </div>
+    {#if liveActivity.length === 0}
+      <div class="flex items-center gap-2 text-neon-purple">
+        <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #a855f7;"></span>
+        <span>Initializing explorer...</span>
+      </div>
+    {:else}
+      <div class="bg-bg-input p-2 space-y-0.5 max-h-48 overflow-y-auto">
+        {#each liveActivity as entry (entry.ts)}
+          {#if entry.type === 'reasoning'}
+            <div class="font-mono text-[10px] text-neon-purple/50 italic leading-snug pl-1">
+              ·· {entry.content}
+            </div>
+          {:else}
+            <div class="font-mono text-[10px] flex gap-1.5 items-baseline">
+              <span class="text-neon-purple/60 shrink-0">▸</span>
+              <span class="text-text-secondary truncate">{fmtCall(entry.tool!, entry.input!)}</span>
+            </div>
+          {/if}
+        {/each}
+        <div class="flex items-center gap-x-3 pt-0.5">
+          <span class="w-2 h-2 rounded-full animate-spin shrink-0" style="border: 1px solid transparent; border-top-color: #a855f7;"></span>
+          <span class="text-neon-purple/50 font-mono text-[10px]">
+            {liveToolCount} call{liveToolCount !== 1 ? 's' : ''}
+          </span>
+          {#if liveReasoningCount > 0}
+            <span class="text-neon-purple/35 font-mono text-[10px]">
+              · {liveReasoningCount} reasoning block{liveReasoningCount !== 1 ? 's' : ''}
+            </span>
+          {/if}
+        </div>
+      </div>
+    {/if}
   {:else if forge.stageStatuses['explore'] === 'error'}
     <div class="space-y-1">
       <div class="flex items-center gap-2 text-neon-red text-[11px]">

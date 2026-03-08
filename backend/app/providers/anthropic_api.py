@@ -125,6 +125,7 @@ class AnthropicAPIProvider(LLMProvider):
         tools: list[ToolDefinition],
         max_turns: int = 20,
         on_tool_call: Callable[[str, dict], None] | None = None,
+        on_agent_text: Callable[[str], None] | None = None,
         output_schema: dict | None = None,
     ) -> AgenticResult:
         api_tools = [
@@ -181,6 +182,16 @@ class AnthropicAPIProvider(LLMProvider):
             messages.append({"role": "assistant", "content": response.content})  # type: ignore[dict-item]
 
             if response.stop_reason == "tool_use":
+                # Emit any text blocks (reasoning text before tool calls) as agent_text events.
+                # Claude often narrates its intent before calling a tool — surfaces this to the UI.
+                if on_agent_text:
+                    for block in response.content:
+                        if hasattr(block, "text") and block.type == "text" and block.text:
+                            try:
+                                on_agent_text(block.text)
+                            except Exception:
+                                pass
+
                 results = []
                 for block in response.content:
                     if block.type == "tool_use":
@@ -235,6 +246,11 @@ class AnthropicAPIProvider(LLMProvider):
                     (b.text for b in response.content if hasattr(b, "text")),
                     "",
                 )
+                if on_agent_text and text:
+                    try:
+                        on_agent_text(text)
+                    except Exception:
+                        pass
                 if response.stop_reason != "end_turn":
                     logger.warning(
                         "Agentic loop ended with stop_reason=%r after %d turn(s)",
