@@ -20,13 +20,13 @@ from app.services.url_fetcher import fetch_url_contexts
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["optimize"])
 
-# Will be set by main.py lifespan
+# Deprecated: use req.app.state.provider. Kept for backward compat with main.py lifespan.
 _provider = None
 
 
 def set_provider(provider):
-    global _provider
-    _provider = provider
+    """Deprecated: provider is now read from app.state. Kept for main.py compat."""
+    pass  # no-op — provider injected via app.state at startup
 
 
 def _default_serializer(obj: object) -> str:
@@ -60,7 +60,7 @@ async def optimize_prompt(
     retry_of: str | None = None,
 ):
     """Run the optimization pipeline with SSE streaming."""
-    if not _provider:
+    if not req.app.state.provider:
         raise HTTPException(status_code=503, detail="LLM provider not initialized")
 
     opt_id = str(uuid.uuid4())
@@ -96,7 +96,7 @@ async def optimize_prompt(
 
             async with asyncio.timeout(settings.PIPELINE_TIMEOUT_SECONDS):
                 async for event_type, event_data in run_pipeline(
-                    provider=_provider,
+                    provider=req.app.state.provider,
                     raw_prompt=request.prompt,
                     optimization_id=opt_id,
                     strategy_override=request.strategy,
@@ -166,7 +166,7 @@ async def optimize_prompt(
                 duration_ms = int((time.time() - start_time) * 1000)
                 optimization.duration_ms = duration_ms
                 optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-                optimization.provider_used = _provider.name
+                optimization.provider_used = req.app.state.provider.name
 
                 if pipeline_failed:
                     # A stage failed and subsequent stages were skipped
