@@ -255,7 +255,8 @@ async function pollOptimizationStatus(
 ): Promise<void> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
     if (signal.aborted) return;
-    await new Promise(res => setTimeout(res, POLL_INTERVAL_MS));
+    // Poll immediately on first attempt; sleep between subsequent retries
+    if (i > 0) await new Promise(res => setTimeout(res, POLL_INTERVAL_MS));
     if (signal.aborted) return;
     try {
       const record = await fetchOptimization(id);

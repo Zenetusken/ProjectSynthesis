@@ -191,7 +191,9 @@ async def run_validate(
         # overall_score is mirrored at top-level as a convenience for pipeline
         # retry logic and direct DB writes without requiring sub-dict access
         "overall_score": overall_score,
-        "is_improvement": raw.get("is_improvement", True),
+        "is_improvement": raw.get("is_improvement", False),
         "verdict": raw.get("verdict", ""),
         "issues": raw.get("issues", []),
+        # Pass through validation_quality if set (e.g. "failed" from _default_validation)
+        **({"validation_quality": raw["validation_quality"]} if "validation_quality" in raw else {}),
     })
