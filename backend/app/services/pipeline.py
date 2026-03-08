@@ -286,6 +286,7 @@ async def run_pipeline(
             "duration_ms": int((time.time() - start) * 1000),
             "token_count": stage_tokens,
         })
+        _opt_failed = bool((optimization_result or {}).get("optimization_failed", False))
     except Exception as e:
         logger.error(f"Stage 3 (Optimize) failed fatally: {e}")
         yield ("error", {
@@ -295,6 +296,14 @@ async def run_pipeline(
         })
         for item in _skip_remaining(["validate"]):
             yield item
+        return
+
+    if _opt_failed:
+        logger.error("Skipping Stage 4: optimizer signalled failure")
+        yield ("stage", {"stage": "validate", "status": "skipped"})
+        yield ("error", {"stage": "optimize",
+                         "error": "All optimizer provider calls failed; no prompt to validate.",
+                         "recoverable": False})
         return
 
     # ---- Stage 4: Validate ----
