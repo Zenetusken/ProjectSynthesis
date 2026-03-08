@@ -129,20 +129,28 @@ async def run_pipeline(
 
     total_tokens = 0
 
-    # ---- Context truncation warning ----
-    # Injection caps: 5 files, 3 URLs, 10 instructions. Excess is silently
-    # dropped at injection time; warn the caller before Stage 1 starts.
-    _dropped_files = max(0, len(file_contexts or []) - 5)
-    _dropped_urls = max(0, len(url_fetched_contexts or []) - 3)
-    _dropped_instructions = max(0, len(instructions or []) - 10)
-    if _dropped_files or _dropped_urls or _dropped_instructions:
+    # ---- Context truncation ----
+    # Enforce injection caps BEFORE stages run. Slices happen here so every
+    # downstream stage receives already-truncated lists — no silent over-injection.
+    _orig_files = len(file_contexts or [])
+    _orig_urls  = len(url_fetched_contexts or [])
+    _orig_instr = len(instructions or [])
+
+    file_contexts        = list(file_contexts or [])[:5]
+    url_fetched_contexts = list(url_fetched_contexts or [])[:3]
+    instructions         = list(instructions or [])[:10]
+
+    _dropped_files = max(0, _orig_files - 5)
+    _dropped_urls  = max(0, _orig_urls  - 3)
+    _dropped_instr = max(0, _orig_instr - 10)
+    if _dropped_files or _dropped_urls or _dropped_instr:
         yield ("context_warning", {
             "dropped_files": _dropped_files,
             "dropped_urls": _dropped_urls,
-            "dropped_instructions": _dropped_instructions,
-            "total_files_sent": len(file_contexts or []),
-            "total_urls_sent": len(url_fetched_contexts or []),
-            "total_instructions_sent": len(instructions or []),
+            "dropped_instructions": _dropped_instr,
+            "total_files_sent": _orig_files,
+            "total_urls_sent": _orig_urls,
+            "total_instructions_sent": _orig_instr,
         })
 
     # ---- Stage 1: Analyze ----
