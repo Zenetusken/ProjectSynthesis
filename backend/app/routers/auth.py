@@ -18,6 +18,8 @@ from app.schemas.auth import (
     ERR_TOKEN_REVOKED,
     TokenResponse,
 )
+from app.dependencies.auth import get_current_user
+from app.schemas.auth import AuthenticatedUser
 from app.services.auth_service import issue_jwt_pair
 from app.utils.jwt import (
     decode_refresh_token,
@@ -43,6 +45,31 @@ async def get_auth_token(request: Request, response: Response) -> dict:
             detail={"code": ERR_TOKEN_MISSING, "message": "No pending auth token — please log in again"},
         )
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.delete("/auth/sessions")
+async def logout_all_devices(
+    response: Response,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Revoke all refresh tokens for the authenticated user (logout all devices).
+
+    Use this endpoint when the user wants to invalidate all active sessions,
+    e.g. after a suspected credential compromise.
+    """
+    rt_result = await session.execute(
+        select(RefreshToken)
+        .where(RefreshToken.user_id == current_user.id, RefreshToken.revoked.is_(False))
+    )
+    active_rts = rt_result.scalars().all()
+    for rt in active_rts:
+        rt.revoked = True
+
+    # Clear the refresh cookie on this device
+    response.delete_cookie(key="jwt_refresh_token", path="/auth/jwt/refresh")
+
+    return {"revoked_sessions": len(active_rts)}
 
 
 @router.post("/auth/jwt/refresh", response_model=TokenResponse)

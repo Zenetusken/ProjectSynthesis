@@ -17,6 +17,7 @@ from app.models.github import GitHubToken
 from app.schemas.github import GitHubUserInfo
 from app.services.auth_service import issue_jwt_pair
 from app.services.github_service import encrypt_token
+from app.routers.github_repos import evict_repo_cache
 from app.utils.jwt import decode_token
 
 logger = logging.getLogger(__name__)
@@ -286,7 +287,6 @@ async def github_logout(
         await session.execute(
             delete(GitHubToken).where(GitHubToken.session_id == session_id)
         )
-        from app.routers.github_repos import evict_repo_cache
         evict_repo_cache(session_id)
 
     # Revoke the user's most recent JWT refresh token so get_current_user
@@ -301,12 +301,9 @@ async def github_logout(
             rt_result = await session.execute(
                 select(RefreshToken)
                 .where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))
-                .order_by(RefreshToken.created_at.desc())
-                .limit(1)
             )
-            active_rt = rt_result.scalar_one_or_none()
-            if active_rt:
-                active_rt.revoked = True
+            for rt in rt_result.scalars().all():
+                rt.revoked = True
 
     # Clear browser refresh cookie so it cannot be used to obtain new tokens.
     response.delete_cookie(key="jwt_refresh_token", path="/auth/jwt/refresh")

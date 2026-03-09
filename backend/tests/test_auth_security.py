@@ -199,3 +199,71 @@ async def test_sign_access_token_without_device_id_still_works():
 
     assert payload["sub"] == "user-123"
     assert "device_id" not in payload or payload["device_id"] is None
+
+
+# ── Cycle 3: Multi-Device Logout (Gap 3) ──────────────────────────────────
+
+
+async def test_logout_revokes_all_active_refresh_tokens_not_just_most_recent():
+    """DELETE /auth/github/logout must revoke ALL active RTs for the user (multi-device)."""
+    from app.routers.github_auth import github_logout
+
+    mock_user = MagicMock()
+    mock_user.id = "user-uuid"
+
+    rt1 = MagicMock(); rt1.revoked = False
+    rt2 = MagicMock(); rt2.revoked = False  # second device — currently NOT revoked by logout
+
+    user_result = MagicMock()
+    user_result.scalar_one_or_none.return_value = mock_user
+
+    # GREEN uses scalars().all() returning both RTs
+    rt_result = MagicMock()
+    rt_result.scalars.return_value.all.return_value = [rt1, rt2]
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(side_effect=[
+        MagicMock(),   # DELETE github tokens
+        user_result,   # SELECT user by github_user_id
+        rt_result,     # SELECT all active RTs (no .limit(1))
+    ])
+    mock_session.add = MagicMock()
+
+    mock_request = MagicMock()
+    mock_request.session = {"session_id": "s1", "github_user_id": 12345}
+    mock_response = MagicMock()
+
+    with patch("app.routers.github_auth.evict_repo_cache"):
+        await github_logout(request=mock_request, response=mock_response, session=mock_session)
+
+    assert rt1.revoked is True, "RT for current device must be revoked"
+    assert rt2.revoked is True, "RT for second device must ALSO be revoked on logout"
+
+
+async def test_logout_all_devices_endpoint_exists_and_revokes_all_tokens():
+    """DELETE /auth/sessions (logout-all) revokes every active RT for the authenticated user."""
+    from app.routers.auth import logout_all_devices  # does not exist yet → ImportError
+
+    from app.schemas.auth import AuthenticatedUser
+    current_user = AuthenticatedUser(id="user-uuid", github_login="octocat", roles=["user"])
+
+    rt1 = MagicMock(); rt1.revoked = False
+    rt2 = MagicMock(); rt2.revoked = False
+    rt3 = MagicMock(); rt3.revoked = False
+
+    rt_result = MagicMock()
+    rt_result.scalars.return_value.all.return_value = [rt1, rt2, rt3]
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=rt_result)
+
+    mock_response = MagicMock()
+
+    result = await logout_all_devices(
+        response=mock_response, current_user=current_user, session=mock_session
+    )
+
+    assert rt1.revoked is True
+    assert rt2.revoked is True
+    assert rt3.revoked is True
+    assert result["revoked_sessions"] == 3
