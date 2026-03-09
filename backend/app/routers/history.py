@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.models.optimization import Optimization
 from app.schemas.optimization import HistoryStatsResponse
+from app.services.optimization_service import VALID_SORT_COLUMNS, compute_stats
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["history"])
@@ -30,7 +31,7 @@ async def list_history(
     session: AsyncSession = Depends(get_session),
 ):
     """List optimization history with pagination, search, sort, and filter."""
-    query = select(Optimization)
+    query = select(Optimization).where(Optimization.deleted_at.is_(None))
 
     # Filters
     if search:
@@ -64,9 +65,7 @@ async def list_history(
     total = total_result.scalar() or 0
 
     # Sorting — whitelist prevents getattr on arbitrary user input
-    _VALID_SORT_COLUMNS = {"created_at", "overall_score", "task_type", "updated_at",
-                           "duration_ms", "primary_framework", "status"}
-    if sort not in _VALID_SORT_COLUMNS:
+    if sort not in VALID_SORT_COLUMNS:
         sort = "created_at"
     sort_column = getattr(Optimization, sort)
     if order == "asc":
@@ -116,69 +115,4 @@ async def get_stats(
     session: AsyncSession = Depends(get_session),
 ):
     """Get aggregated statistics about optimization history."""
-    base_query = select(Optimization)
-    if project:
-        base_query = base_query.where(Optimization.project == project)
-
-    result = await session.execute(base_query)
-    optimizations = result.scalars().all()
-
-    if not optimizations:
-        return HistoryStatsResponse().model_dump()
-
-    total = len(optimizations)
-    scores = [o.overall_score for o in optimizations if o.overall_score is not None]
-    avg_score = sum(scores) / len(scores) if scores else None
-
-    # Task type breakdown
-    task_types: dict[str, int] = {}
-    for o in optimizations:
-        if o.task_type:
-            k = str(o.task_type)
-            task_types[k] = task_types.get(k, 0) + 1
-
-    # Framework breakdown
-    frameworks: dict[str, int] = {}
-    for o in optimizations:
-        if o.primary_framework:
-            k = str(o.primary_framework)
-            frameworks[k] = frameworks.get(k, 0) + 1
-
-    # Provider breakdown
-    providers: dict[str, int] = {}
-    for o in optimizations:
-        if o.provider_used:
-            k = str(o.provider_used)
-            providers[k] = providers.get(k, 0) + 1
-
-    # Model usage (count all model fields)
-    model_usage: dict[str, int] = {}
-    for o in optimizations:
-        for model_field in ("model_explore", "model_analyze", "model_strategy",
-                            "model_optimize", "model_validate"):
-            model = getattr(o, model_field)
-            if model:
-                model_usage[model] = model_usage.get(model, 0) + 1
-
-    # Codebase-aware count
-    codebase_aware = sum(
-        1 for o in optimizations if o.linked_repo_full_name is not None
-    )
-
-    # Improvement rate
-    validated = [o for o in optimizations if o.is_improvement is not None]
-    improvement_rate = None
-    if validated:
-        improvements = sum(1 for o in validated if o.is_improvement)
-        improvement_rate = improvements / len(validated)
-
-    return {
-        "total_optimizations": total,
-        "average_score": round(avg_score, 2) if avg_score is not None else None,
-        "task_type_breakdown": dict(sorted(task_types.items(), key=lambda x: -x[1])),
-        "framework_breakdown": dict(sorted(frameworks.items(), key=lambda x: -x[1])),
-        "provider_breakdown": dict(sorted(providers.items(), key=lambda x: -x[1])),
-        "model_usage": model_usage,
-        "codebase_aware_count": codebase_aware,
-        "improvement_rate": round(improvement_rate, 3) if improvement_rate is not None else None,
-    }
+    return await compute_stats(session, project=project)
