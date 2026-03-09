@@ -462,7 +462,7 @@
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div
                     class="absolute right-0 top-full mt-0.5 w-28 bg-bg-card border border-border-subtle z-[300] font-mono"
-                    onmousedown={(e) => e.stopPropagation()}
+                    onclick={(e) => e.stopPropagation()}
                   >
                     <button
                       class="w-full text-left px-3 py-1.5 text-[11px] text-neon-cyan/80 hover:bg-bg-hover hover:text-neon-cyan transition-colors"

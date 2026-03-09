@@ -3,6 +3,7 @@
   import { forge } from '$lib/stores/forge.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { patchOptimization } from '$lib/api/client';
+  import { STRATEGY_HEX } from '$lib/utils/strategy';
   import CopyButton from '$lib/components/shared/CopyButton.svelte';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import ScoreBar from '$lib/components/shared/ScoreBar.svelte';
@@ -73,14 +74,10 @@
     (validationData.scores || {}) as Record<string, number>
   );
 
-  // Retry UI state
+  // Retry UI state — derived from STRATEGY_HEX so new frameworks appear automatically
   const retryStrategies = [
     { value: 'auto', label: 'Auto (keep current)' },
-    { value: 'chain-of-thought', label: 'chain-of-thought' },
-    { value: 'few-shot', label: 'few-shot' },
-    { value: 'role-play', label: 'role-play' },
-    { value: 'structured-output', label: 'structured-output' },
-    { value: 'step-by-step', label: 'step-by-step' },
+    ...Object.keys(STRATEGY_HEX).map(k => ({ value: k, label: k.replace(/-/g, ' ') }))
   ];
   let showRetryMenu = $state(false);
   let selectedRetryStrategy = $state('auto');
@@ -164,7 +161,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="absolute right-0 top-full mt-1 w-52 bg-bg-card border border-neon-cyan/30 z-[200] font-mono"
-              onmousedown={(e) => e.stopPropagation()}
+              onclick={(e) => e.stopPropagation()}
             >
               <div class="px-3 py-1.5 border-b border-border-subtle text-[10px] text-neon-cyan/70 uppercase tracking-wider">
                 Retry with strategy
