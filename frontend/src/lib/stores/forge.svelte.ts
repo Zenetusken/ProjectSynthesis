@@ -1,4 +1,5 @@
 import { retryOptimization, fetchOptimization, type SSEEvent } from '$lib/api/client';
+import { toast } from '$lib/stores/toast.svelte';
 
 export type StageStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped' | 'timed_out' | 'cancelled';
 
@@ -557,6 +558,10 @@ class ForgeStore {
       }
       case 'context_warning':
         this.contextWarning = data as unknown as ContextWarning;
+        break;
+      case 'rate_limit_warning':
+        // Non-fatal warning — show toast but do NOT stop the pipeline
+        toast.warning((data.message as string) || 'Rate limit warning — retrying');
         break;
       case 'tool_call':
         this.addToolCall(data.tool as string, (data.input as Record<string, unknown>) ?? {});

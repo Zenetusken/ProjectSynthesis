@@ -128,16 +128,19 @@
 
   async function handleDelete(e: MouseEvent, id: string) {
     e.stopPropagation();
+    // Optimistic removal
+    history.removeEntry(id);
     try {
       await deleteOptimization(id);
-      history.removeEntry(id);
       await loadStats();
       toast.info('Deleted — Undo', 5000, {
         label: 'Undo',
         onClick: () => history.restoreItem(id)
       });
     } catch {
-      // Delete failed
+      // Revert optimistic removal and surface error
+      await history.loadHistory();
+      toast.error('Failed to delete optimization');
     }
   }
 
@@ -364,14 +367,14 @@
       <div class="flex items-center gap-1">
         <span class="text-[10px] text-text-dim mr-1">Sort:</span>
         <button
-          class="text-[10px] px-1.5 py-0.5 rounded
+          class="text-[10px] px-1.5 py-0.5
             {history.filters.sortBy === 'created_at' ? 'btn-outline-cyan' : 'btn-outline-subtle'}"
           onclick={() => { history.updateFilters(history.filters.sortBy === 'created_at' ? { sortDir: history.filters.sortDir === 'desc' ? 'asc' : 'desc', offset: 0 } : { sortBy: 'created_at', sortDir: 'desc', offset: 0 }); loadHistory(); }}
         >
           Date {history.filters.sortBy === 'created_at' ? (history.filters.sortDir === 'desc' ? '↓' : '↑') : ''}
         </button>
         <button
-          class="text-[10px] px-1.5 py-0.5 rounded
+          class="text-[10px] px-1.5 py-0.5
             {history.filters.sortBy === 'overall_score' ? 'btn-outline-cyan' : 'btn-outline-subtle'}"
           onclick={() => { history.updateFilters(history.filters.sortBy === 'overall_score' ? { sortDir: history.filters.sortDir === 'desc' ? 'asc' : 'desc', offset: 0 } : { sortBy: 'overall_score', sortDir: 'desc', offset: 0 }); loadHistory(); }}
         >
