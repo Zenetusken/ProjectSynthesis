@@ -367,6 +367,23 @@ export async function deleteOptimization(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Delete optimization failed: ${res.status}`);
 }
 
+export interface TrashResponse {
+  items: HistoryEntry[];
+  count: number;
+  offset: number;
+}
+
+export async function fetchHistoryTrash(offset = 0, limit = 20): Promise<TrashResponse> {
+  const res = await apiFetch(`${BASE}/api/history/trash?offset=${offset}&limit=${limit}`);
+  if (!res.ok) throw new Error(`Trash fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function restoreOptimization(id: string): Promise<void> {
+  const res = await apiFetch(`${BASE}/api/history/${id}/restore`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Restore failed: ${res.status}`);
+}
+
 export async function fetchHistoryStats(project?: string): Promise<HistoryStats> {
   const params = project ? `?project=${encodeURIComponent(project)}` : '';
   const res = await apiFetch(`${BASE}/api/history/stats${params}`);

@@ -133,6 +133,28 @@ async def list_trash(
     return {"items": items, "count": len(items), "offset": offset}
 
 
+@router.post("/api/history/{optimization_id}/restore")
+async def restore_optimization(
+    optimization_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Restore a soft-deleted optimization (clears deleted_at)."""
+    result = await session.execute(
+        select(Optimization).where(
+            Optimization.id == optimization_id,
+            Optimization.user_id == current_user.id,
+            Optimization.deleted_at.isnot(None),
+        )
+    )
+    opt = result.scalar_one_or_none()
+    if not opt:
+        raise HTTPException(status_code=404, detail="Not found in trash")
+    opt.deleted_at = None
+    await session.commit()
+    return {"restored": True, "id": optimization_id}
+
+
 @router.get("/api/history/stats")
 async def get_stats(
     project: Optional[str] = Query(None),

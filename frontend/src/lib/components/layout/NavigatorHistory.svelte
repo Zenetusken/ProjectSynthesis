@@ -2,7 +2,7 @@
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
-  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, type HistoryStats } from '$lib/api/client';
+  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, fetchHistoryTrash, restoreOptimization, type HistoryStats, type TrashResponse } from '$lib/api/client';
   import { getStrategyHex } from '$lib/utils/strategy';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import { onMount } from 'svelte';
@@ -11,6 +11,9 @@
   let stats = $state<HistoryStats | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedIds = $state<Set<string>>(new Set());
+  let showTrash = $state(false);
+  let trashItems = $state<TrashResponse['items']>([]);
+  let trashLoading = $state(false);
 
   function toggleSelect(e: MouseEvent, id: string) {
     e.stopPropagation();
@@ -89,6 +92,25 @@
     } catch {
       // Delete failed
     }
+  }
+
+  async function loadTrash() {
+    trashLoading = true;
+    try {
+      const res = await fetchHistoryTrash();
+      trashItems = res.items;
+    } catch { /* silent */ }
+    finally { trashLoading = false; }
+  }
+
+  async function handleRestore(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    try {
+      await restoreOptimization(id);
+      await loadTrash();
+      await loadHistory();
+      await loadStats();
+    } catch { /* silent */ }
   }
 
   async function openHistoryEntry(entry: typeof history.entries[0]) {
@@ -181,6 +203,12 @@
       >
         Score {history.filters.sortBy === 'overall_score' ? (history.filters.sortDir === 'desc' ? '↓' : '↑') : ''}
       </button>
+      <button
+        class="text-[10px] px-1.5 py-0.5 border {showTrash ? 'border-neon-red/50 text-neon-red' : 'border-border-subtle text-text-dim hover:border-neon-red/30 hover:text-neon-red/70'} transition-colors"
+        onclick={() => { showTrash = !showTrash; if (showTrash) loadTrash(); }}
+      >
+        TRASH
+      </button>
     </div>
     <div class="text-[10px] text-text-dim">
       {#if history.filters.search || history.filters.strategy}
@@ -191,113 +219,142 @@
     </div>
   </div>
 
-  <!-- Compare toolbar -->
-  {#if selectedIds.size >= 2}
-    <div class="px-2 py-1.5 border-b border-neon-cyan/20 bg-neon-cyan/5 flex items-center justify-between">
-      <span class="text-[10px] text-neon-cyan">{selectedIds.size} selected</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="text-[10px] px-2 py-0.5 rounded bg-neon-cyan/20 border border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/30 transition-colors"
-          onclick={handleCompare}
-        >
-          Compare
-        </button>
-        <button
-          class="text-[10px] px-1.5 py-0.5 rounded text-text-dim hover:text-text-secondary transition-colors"
-          onclick={clearSelection}
-        >
-          Cancel
-        </button>
+  {#if showTrash}
+    <!-- Trash view -->
+    <div class="flex-1 overflow-y-auto p-1">
+      <div class="px-2 py-1 mb-1 text-[9px] text-neon-red/60 border-b border-neon-red/10 font-mono uppercase tracking-wider">
+        Trash — items deleted within 7 days
       </div>
+      {#if trashLoading}
+        <div class="text-[10px] text-text-dim px-2 py-4 text-center">Loading...</div>
+      {:else if trashItems.length === 0}
+        <div class="text-[10px] text-text-dim/50 px-2 py-4 text-center">Trash is empty</div>
+      {:else}
+        {#each trashItems as entry (entry.id)}
+          <div class="flex items-center justify-between px-2 py-1 mb-0.5 border border-transparent hover:border-border-subtle hover:bg-bg-hover transition-colors">
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] text-text-dim truncate">{entry.raw_prompt}</p>
+              <p class="text-[9px] text-text-dim/50">{new Date(entry.created_at).toLocaleDateString()}</p>
+            </div>
+            <button
+              class="text-[9px] font-mono text-neon-cyan/60 hover:text-neon-cyan shrink-0 ml-2 border border-neon-cyan/20 hover:border-neon-cyan/50 px-1.5 py-0.5 transition-colors"
+              onclick={(e: MouseEvent) => handleRestore(e, entry.id)}
+            >
+              RESTORE
+            </button>
+          </div>
+        {/each}
+      {/if}
     </div>
-  {/if}
+  {:else}
+    <!-- Compare toolbar -->
+    {#if selectedIds.size >= 2}
+      <div class="px-2 py-1.5 border-b border-neon-cyan/20 bg-neon-cyan/5 flex items-center justify-between">
+        <span class="text-[10px] text-neon-cyan">{selectedIds.size} selected</span>
+        <div class="flex items-center gap-1">
+          <button
+            class="text-[10px] px-2 py-0.5 rounded bg-neon-cyan/20 border border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/30 transition-colors"
+            onclick={handleCompare}
+          >
+            Compare
+          </button>
+          <button
+            class="text-[10px] px-1.5 py-0.5 rounded text-text-dim hover:text-text-secondary transition-colors"
+            onclick={clearSelection}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    {/if}
 
-  <!-- List -->
-  <div class="flex-1 overflow-y-auto p-1" style="overscroll-behavior: contain;" role="listbox" aria-multiselectable="true" aria-label="Optimization history">
-    {#if loading}
-      <!-- Skeleton loading rows with shimmer animation -->
-      <div class="space-y-1 p-1" data-testid="history-skeleton">
-        {#each Array(5) as _, i}
-          <div class="h-[32px] flex items-center gap-2 px-2 rounded" style="animation: shimmer 2s linear infinite; animation-delay: {i * 50}ms;">
-            <div class="w-5 h-5 rounded-full bg-bg-hover animate-shimmer" style="background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
-            <div class="flex-1 space-y-1">
-              <div class="h-2.5 rounded bg-bg-hover animate-shimmer" style="width: {70 + i * 5}%; background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
-              <div class="h-2 rounded bg-bg-hover animate-shimmer" style="width: {40 + i * 8}%; background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
+    <!-- List -->
+    <div class="flex-1 overflow-y-auto p-1" style="overscroll-behavior: contain;" role="listbox" aria-multiselectable="true" aria-label="Optimization history">
+      {#if loading}
+        <!-- Skeleton loading rows with shimmer animation -->
+        <div class="space-y-1 p-1" data-testid="history-skeleton">
+          {#each Array(5) as _, i}
+            <div class="h-[32px] flex items-center gap-2 px-2 rounded" style="animation: shimmer 2s linear infinite; animation-delay: {i * 50}ms;">
+              <div class="w-5 h-5 rounded-full bg-bg-hover animate-shimmer" style="background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
+              <div class="flex-1 space-y-1">
+                <div class="h-2.5 rounded bg-bg-hover animate-shimmer" style="width: {70 + i * 5}%; background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
+                <div class="h-2 rounded bg-bg-hover animate-shimmer" style="width: {40 + i * 8}%; background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-card) 50%, var(--color-bg-hover) 75%); background-size: 200% 100%;"></div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else if history.entries.length === 0}
+        <div class="flex flex-col items-center justify-center text-center px-2 py-8">
+          <svg class="w-8 h-8 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <p class="text-xs text-text-secondary">No runs yet</p>
+          <p class="text-[10px] text-text-dim/50 mt-0.5">Synthesize a prompt to get started.</p>
+        </div>
+      {:else}
+        {#each history.entries as entry, i (entry.id)}
+          <div
+            class="w-full text-left px-2 rounded text-xs transition-colors duration-200 mb-0.5 cursor-pointer group/entry h-[32px] flex items-center
+              {selectedIds.has(entry.id)
+                ? 'bg-neon-cyan/5 border border-neon-cyan/20'
+                : history.selectedId === entry.id
+                  ? 'bg-bg-hover border border-border-accent'
+                  : 'hover:bg-bg-hover border border-transparent'}"
+            style="animation: list-item-in 0.2s cubic-bezier(0.16,1,0.3,1) {i*25}ms both;"
+            role="option"
+            aria-selected={selectedIds.has(entry.id) || history.selectedId === entry.id}
+            tabindex={i === 0 ? 0 : -1}
+            data-history-row
+            onclick={() => openHistoryEntry(entry)}
+            onkeydown={(e: KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHistoryEntry(entry); }
+              else if (e.key === 'ArrowDown') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i + 1]?.focus(); }
+              else if (e.key === 'ArrowUp') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i - 1]?.focus(); }
+            }}
+          >
+            <div class="flex items-start gap-2 flex-1 min-w-0">
+              <!-- Checkbox: visible on hover or when selected -->
+              <label
+                class="flex items-center justify-center w-4 h-4 shrink-0 mt-0.5 cursor-pointer
+                  {selectedIds.has(entry.id) ? 'opacity-100' : 'opacity-0 group-hover/entry:opacity-100'} transition-opacity"
+              >
+                <input
+                  type="checkbox"
+                  name="history-entry-select"
+                  checked={selectedIds.has(entry.id)}
+                  onchange={(e: Event) => toggleSelect(e as unknown as MouseEvent, entry.id)}
+                  onclick={(e: MouseEvent) => e.stopPropagation()}
+                  class="w-3 h-3 rounded border-border-subtle accent-neon-cyan cursor-pointer"
+                />
+              </label>
+              {#if entry.overall_score != null}
+                <ScoreCircle score={entry.overall_score} size={20} />
+              {/if}
+              <div class="flex-1 min-w-0">
+                <p class="text-text-primary truncate">{entry.raw_prompt}</p>
+                <div class="flex items-center gap-2 mt-0.5 min-w-0">
+                  {#if entry.primary_framework}
+                    <span class="text-[10px] truncate" style="color: {getStrategyHex(entry.primary_framework)}">{entry.primary_framework}</span>
+                  {/if}
+                  <span class="text-[10px] text-text-dim shrink-0">{new Date(entry.created_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <button
+                class="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover/entry:opacity-100 text-text-dim hover:text-neon-red hover:bg-neon-red/10 transition-all shrink-0"
+                onclick={(e: MouseEvent) => handleDelete(e, entry.id)}
+                aria-label="Delete optimization"
+                title="Delete"
+              >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+              </button>
             </div>
           </div>
         {/each}
-      </div>
-    {:else if history.entries.length === 0}
-      <div class="flex flex-col items-center justify-center text-center px-2 py-8">
-        <svg class="w-8 h-8 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        <p class="text-xs text-text-secondary">No runs yet</p>
-        <p class="text-[10px] text-text-dim/50 mt-0.5">Synthesize a prompt to get started.</p>
-      </div>
-    {:else}
-      {#each history.entries as entry, i (entry.id)}
-        <div
-          class="w-full text-left px-2 rounded text-xs transition-colors duration-200 mb-0.5 cursor-pointer group/entry h-[32px] flex items-center
-            {selectedIds.has(entry.id)
-              ? 'bg-neon-cyan/5 border border-neon-cyan/20'
-              : history.selectedId === entry.id
-                ? 'bg-bg-hover border border-border-accent'
-                : 'hover:bg-bg-hover border border-transparent'}"
-          style="animation: list-item-in 0.2s cubic-bezier(0.16,1,0.3,1) {i*25}ms both;"
-          role="option"
-          aria-selected={selectedIds.has(entry.id) || history.selectedId === entry.id}
-          tabindex={i === 0 ? 0 : -1}
-          data-history-row
-          onclick={() => openHistoryEntry(entry)}
-          onkeydown={(e: KeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHistoryEntry(entry); }
-            else if (e.key === 'ArrowDown') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i + 1]?.focus(); }
-            else if (e.key === 'ArrowUp') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i - 1]?.focus(); }
-          }}
-        >
-          <div class="flex items-start gap-2 flex-1 min-w-0">
-            <!-- Checkbox: visible on hover or when selected -->
-            <label
-              class="flex items-center justify-center w-4 h-4 shrink-0 mt-0.5 cursor-pointer
-                {selectedIds.has(entry.id) ? 'opacity-100' : 'opacity-0 group-hover/entry:opacity-100'} transition-opacity"
-            >
-              <input
-                type="checkbox"
-                name="history-entry-select"
-                checked={selectedIds.has(entry.id)}
-                onchange={(e: Event) => toggleSelect(e as unknown as MouseEvent, entry.id)}
-                onclick={(e: MouseEvent) => e.stopPropagation()}
-                class="w-3 h-3 rounded border-border-subtle accent-neon-cyan cursor-pointer"
-              />
-            </label>
-            {#if entry.overall_score != null}
-              <ScoreCircle score={entry.overall_score} size={20} />
-            {/if}
-            <div class="flex-1 min-w-0">
-              <p class="text-text-primary truncate">{entry.raw_prompt}</p>
-              <div class="flex items-center gap-2 mt-0.5 min-w-0">
-                {#if entry.primary_framework}
-                  <span class="text-[10px] truncate" style="color: {getStrategyHex(entry.primary_framework)}">{entry.primary_framework}</span>
-                {/if}
-                <span class="text-[10px] text-text-dim shrink-0">{new Date(entry.created_at).toLocaleDateString()}</span>
-              </div>
-            </div>
-            <button
-              class="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover/entry:opacity-100 text-text-dim hover:text-neon-red hover:bg-neon-red/10 transition-all shrink-0"
-              onclick={(e: MouseEvent) => handleDelete(e, entry.id)}
-              aria-label="Delete optimization"
-              title="Delete"
-            >
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-              </svg>
-            </button>
-          </div>
-        </div>
-      {/each}
-    {/if}
-  </div>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Footer -->
   <div class="p-2 border-t border-border-subtle">
