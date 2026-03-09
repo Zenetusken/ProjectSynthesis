@@ -597,6 +597,52 @@ async def test_callback_redirect_includes_new_param_for_new_users():
     assert "new=1" in location, f"?new=1 must be in redirect URL for new users, got: {location}"
 
 
+async def test_callback_redirect_excludes_new_param_for_existing_users():
+    """OAuth callback omits ?new=1 in redirect URL when the user already exists."""
+    from fastapi.responses import RedirectResponse
+    from app.routers.github_auth import github_callback
+
+    with patch("app.routers.github_auth._csrf_signer") as mock_signer_fn:
+        mock_signer = MagicMock()
+        mock_signer.unsign.return_value = b"nonce"
+        mock_signer_fn.return_value = mock_signer
+
+        mock_token_resp = MagicMock()
+        mock_token_resp.json.return_value = {"access_token": "ghs_fake", "expires_in": 28800}
+        mock_user_resp = MagicMock()
+        mock_user_resp.status_code = 200
+        mock_user_resp.json.return_value = {"id": 999, "login": "existinguser", "avatar_url": "https://a.com/1"}
+
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=mock_token_resp)
+        mock_http.get = AsyncMock(return_value=mock_user_resp)
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        mock_db = AsyncMock()
+
+        mock_request = MagicMock()
+        mock_request.session = {}
+
+        with patch("app.routers.github_auth.httpx.AsyncClient", return_value=mock_http):
+            with patch("app.routers.github_auth.issue_jwt_pair",
+                       AsyncMock(return_value=("access.jwt.token", "refresh.jwt.token"))):
+                with patch("app.routers.github_auth.encrypt_token", return_value=b"enc"):
+                    existing_user_mock = MagicMock()
+                    existing_user_mock.id = "existing-user-uuid"
+                    existing_user_mock.github_login = "existinguser"
+                    existing_user_mock.role = MagicMock(value="user")
+                    with patch("app.routers.github_auth._upsert_user",
+                               AsyncMock(return_value=(existing_user_mock, False))):
+                        result = await github_callback(
+                            request=mock_request, code="code", state="state", session=mock_db
+                        )
+
+    assert isinstance(result, RedirectResponse)
+    location = result.headers.get("location", "")
+    assert "new=1" not in location, f"?new=1 must NOT be in redirect URL for existing users, got: {location}"
+
+
 # ── Cycle 9: Manual GitHub Token Refresh (Gap 8) ──────────────────────────
 
 
