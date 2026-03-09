@@ -30,25 +30,41 @@ limiter = Limiter(key_func=get_remote_address)
 # ── JWT helpers ────────────────────────────────────────────────────────────
 
 
-async def _upsert_user(session: AsyncSession, github_user_id: int, github_login: str) -> User:
-    """Select-or-create a User row by github_user_id; update login if changed.
+async def _upsert_user(
+    session: AsyncSession,
+    github_user_id: int,
+    github_login: str,
+    avatar_url: str | None = None,
+) -> tuple[User, bool]:
+    """Select-or-create a User row by github_user_id; update login/avatar/last_login if changed.
 
-    Flushes the session when creating a new User so that ``user.id`` is
-    populated by SQLAlchemy before the caller issues JWT tokens.
+    Returns:
+        (user, is_new) — is_new is True when the user was just created.
     """
     result = await session.execute(
         select(User).where(User.github_user_id == github_user_id)
     )
     user = result.scalar_one_or_none()
-    if user is None:
-        user = User(github_user_id=github_user_id, github_login=github_login)
+    is_new = user is None
+    now = datetime.now(timezone.utc)
+
+    if is_new:
+        user = User(
+            github_user_id=github_user_id,
+            github_login=github_login,
+            avatar_url=avatar_url,
+            last_login_at=now,
+        )
         session.add(user)
         await session.flush()  # populate user.id before issuing tokens
     else:
-        # Only write login if it actually changed; onupdate handles updated_at.
         if user.github_login != github_login:
             user.github_login = github_login
-    return user
+        if avatar_url is not None:
+            user.avatar_url = avatar_url
+        user.last_login_at = now
+
+    return user, is_new
 
 
 def _set_refresh_cookie(response: Response | RedirectResponse, raw_refresh: str) -> None:
@@ -241,7 +257,10 @@ async def github_callback(
     # of the same transaction so a constraint violation rolls back everything.
 
     # Issue JWT pair — upsert User then create RefreshToken record (same tx)
-    user = await _upsert_user(session, github_user_id, github_login)
+    user, is_new = await _upsert_user(
+        session, github_user_id, github_login,
+        avatar_url=user_data.get("avatar_url"),
+    )
     jwt_access, raw_refresh = await issue_jwt_pair(session, user)
 
     # Rotate session AFTER all DB work — prevents session fixation (OWASP A07:2021).
@@ -267,8 +286,12 @@ async def github_callback(
     except Exception:
         pass
 
-    # Redirect to frontend; token is retrieved via GET /auth/token (never in URL)
-    redirect = RedirectResponse(url=f"{settings.FRONTEND_URL}/?auth_complete=1")
+    # Redirect to frontend; token is retrieved via GET /auth/token (never in URL).
+    # Append ?new=1 for brand-new users so the frontend can show the onboarding modal.
+    redirect_params = "?auth_complete=1"
+    if is_new:
+        redirect_params += "&new=1"
+    redirect = RedirectResponse(url=f"{settings.FRONTEND_URL}/{redirect_params}")
     _set_refresh_cookie(redirect, raw_refresh)
     return redirect
 

@@ -31,6 +31,13 @@ class User(Base):
         nullable=False,
         default=UserRole.user,
     )
+    # Profile fields (nullable — populated progressively)
+    email = Column(Text, nullable=True)
+    avatar_url = Column(Text, nullable=True)
+    display_name = Column(Text, nullable=True)
+    onboarding_completed_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=_utcnow, nullable=False)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 

@@ -414,3 +414,92 @@ def test_insecure_cookie_allowed_on_localhost(caplog):
     assert len(critical_cookie_records) == 0, (
         "Should NOT warn about JWT_COOKIE_SECURE=False when FRONTEND_URL is localhost"
     )
+
+
+# ── Cycle 7: User Model Enrichment (Gap 2) ────────────────────────────────
+
+
+def test_user_model_has_required_profile_columns():
+    """User model must have email, avatar_url, display_name, onboarding_completed_at, last_login_at."""
+    from app.models.auth import User
+
+    col_names = {c.name for c in User.__table__.columns}
+    required = {"email", "avatar_url", "display_name", "onboarding_completed_at", "last_login_at"}
+    missing = required - col_names
+    assert not missing, f"User model is missing columns: {missing}"
+
+
+async def test_upsert_user_sets_last_login_at():
+    """_upsert_user must update last_login_at on every login (new and existing users)."""
+    from app.routers.github_auth import _upsert_user
+
+    # Simulate existing user
+    mock_user = MagicMock()
+    mock_user.github_login = "octocat"
+    mock_user.last_login_at = None  # never logged in before
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_user
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.flush = AsyncMock()
+    mock_session.add = MagicMock()
+
+    await _upsert_user(mock_session, 999, "octocat")
+
+    # last_login_at should now be set
+    assert mock_user.last_login_at is not None, "last_login_at must be set after upsert"
+
+
+async def test_upsert_user_caches_avatar_url():
+    """_upsert_user must update avatar_url when provided."""
+    from app.routers.github_auth import _upsert_user
+
+    mock_user = MagicMock()
+    mock_user.github_login = "octocat"
+    mock_user.avatar_url = None
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_user
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.add = MagicMock()
+
+    await _upsert_user(mock_session, 999, "octocat", avatar_url="https://avatars.example.com/1")
+
+    assert mock_user.avatar_url == "https://avatars.example.com/1"
+
+
+async def test_get_auth_me_returns_user_profile():
+    """GET /auth/me returns the full user profile for the authenticated user."""
+    from app.routers.auth import get_auth_me  # does not exist yet → ImportError
+    from app.schemas.auth import AuthenticatedUser
+
+    mock_user = MagicMock()
+    mock_user.id = "user-uuid"
+    mock_user.github_login = "octocat"
+    mock_user.github_user_id = 999
+    mock_user.role = MagicMock(value="user")
+    mock_user.email = "octocat@github.com"
+    mock_user.avatar_url = "https://avatars.example.com/1"
+    mock_user.display_name = "The Octocat"
+    mock_user.onboarding_completed_at = None
+    mock_user.last_login_at = datetime(2026, 3, 9, 12, 0, 0, tzinfo=timezone.utc)
+    mock_user.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_user
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    current_user = AuthenticatedUser(id="user-uuid", github_login="octocat", roles=["user"])
+
+    result = await get_auth_me(current_user=current_user, session=mock_session)
+
+    assert result["id"] == "user-uuid"
+    assert result["github_login"] == "octocat"
+    assert result["display_name"] == "The Octocat"
+    assert result["onboarding_completed"] is False

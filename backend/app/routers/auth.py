@@ -51,6 +51,58 @@ async def get_auth_token(request: Request, response: Response) -> dict:
     return {"access_token": token, "token_type": "bearer"}
 
 
+@router.get("/auth/me")
+async def get_auth_me(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Return the authenticated user's full profile."""
+    result = await session.execute(
+        select(User).where(User.id == current_user.id)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {
+        "id": user.id,
+        "github_login": user.github_login,
+        "github_user_id": user.github_user_id,
+        "role": user.role.value,
+        "email": user.email,
+        "avatar_url": user.avatar_url,
+        "display_name": user.display_name,
+        "onboarding_completed": user.onboarding_completed_at is not None,
+        "onboarding_completed_at": user.onboarding_completed_at.isoformat() if user.onboarding_completed_at else None,
+        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+        "created_at": user.created_at.isoformat(),
+    }
+
+
+@router.patch("/auth/me")
+async def patch_auth_me(
+    data: dict,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Update the authenticated user's profile (display_name, email, onboarding_completed_at)."""
+    result = await session.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if "display_name" in data:
+        user.display_name = data["display_name"]
+    if "email" in data:
+        user.email = data["email"]
+    if "onboarding_completed_at" in data:
+        from datetime import datetime as _dt
+        val = data["onboarding_completed_at"]
+        user.onboarding_completed_at = _dt.fromisoformat(val) if val else None
+
+    return {"updated": True}
+
+
 @router.delete("/auth/sessions")
 async def logout_all_devices(
     response: Response,
