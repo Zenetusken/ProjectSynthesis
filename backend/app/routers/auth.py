@@ -28,6 +28,23 @@ from app.utils.jwt import (
 router = APIRouter(tags=["jwt-auth"])
 
 
+@router.get("/auth/token", response_model=TokenResponse)
+async def get_auth_token(request: Request, response: Response) -> dict:
+    """Exchange the one-time session token for the JWT access token.
+
+    Called by the frontend immediately after the OAuth callback redirect.
+    The token is stored in the server-side session (never in URL) and cleared
+    on first read — subsequent calls return 401.
+    """
+    token = request.session.pop("pending_access_token", None)
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": ERR_TOKEN_MISSING, "message": "No pending auth token — please log in again"},
+        )
+    return {"access_token": token, "token_type": "bearer"}
+
+
 @router.post("/auth/jwt/refresh", response_model=TokenResponse)
 async def jwt_refresh(
     request: Request,

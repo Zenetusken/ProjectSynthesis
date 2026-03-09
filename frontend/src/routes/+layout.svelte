@@ -233,16 +233,24 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     // ── JWT token capture ──────────────────────────────────────────────
-    // After GitHub OAuth redirect the backend sends the user to /?access_token=<JWT>.
-    // Capture the token, store it in-memory, and remove it from the URL so it
-    // never sits in browser history or server logs.
+    // After GitHub OAuth redirect the backend sends the user to /?auth_complete=1.
+    // We exchange the one-time server-side session token via GET /auth/token —
+    // the JWT never appears in the redirect URL (ASVS §3.5.2).
     const url = new URL(window.location.href);
-    const oauthToken = url.searchParams.get('access_token');
-    if (oauthToken) {
-      auth.setToken(oauthToken);
-      url.searchParams.delete('access_token');
+    const isAuthCallback = url.searchParams.has('auth_complete');
+    if (isAuthCallback) {
+      try {
+        const res = await fetch('/auth/token', { credentials: 'include' });
+        if (res.ok) {
+          const data: { access_token: string } = await res.json();
+          auth.setToken(data.access_token);
+        }
+      } catch { /* token fetch failed — fall through to silent refresh */ }
+      // Clean up URL after callback
+      url.searchParams.delete('auth_complete');
+      url.searchParams.delete('new');
       window.history.replaceState({}, '', url.toString());
       authChecked = true;
     } else {

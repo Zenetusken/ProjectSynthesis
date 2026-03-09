@@ -240,8 +240,10 @@ async def github_callback(
     except Exception:
         pass
 
-    # Redirect to frontend with access token as query param; refresh token in cookie
-    redirect = RedirectResponse(url=f"{settings.FRONTEND_URL}/?access_token={jwt_access}")
+    # Store access token in session for one-time exchange via GET /auth/token.
+    # Never embed JWTs in redirect URLs — they end up in browser history and logs.
+    request.session["pending_access_token"] = jwt_access
+    redirect = RedirectResponse(url=f"{settings.FRONTEND_URL}/?auth_complete=1")
     _set_refresh_cookie(redirect, raw_refresh)
     return redirect
 
