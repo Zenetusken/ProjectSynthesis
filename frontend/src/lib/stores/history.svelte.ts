@@ -1,3 +1,6 @@
+import { fetchHistory, fetchHistoryTrash, restoreOptimization } from '$lib/api/client';
+import { toast } from '$lib/stores/toast.svelte';
+
 export interface HistoryEntry {
   id: string;
   raw_prompt: string;
@@ -8,6 +11,7 @@ export interface HistoryEntry {
   created_at: string;
   duration_ms?: number;
   tags?: string[];
+  title?: string | null;
   linked_repo_full_name?: string;  // for repo context restore on re-forge
   linked_repo_branch?: string;
 }
@@ -71,6 +75,12 @@ class HistoryStore {
   selectedId = $state<string | null>(null);
   filters = $state<HistoryFilters>(loadFilters());
 
+  // Trash state
+  trashItems = $state<HistoryEntry[]>([]);
+  trashLoading = $state(false);
+  trashTotal = $state(0);
+  showTrash = $state(false);
+
   get selectedEntry(): HistoryEntry | undefined {
     return this.entries.find(e => e.id === this.selectedId);
   }
@@ -104,6 +114,57 @@ class HistoryStore {
   updateFilters(partial: Partial<HistoryFilters>) {
     this.filters = { ...this.filters, ...partial };
     saveFilters(this.filters);
+  }
+
+  updateEntryTitle(id: string, title: string) {
+    this.entries = this.entries.map(e => e.id === id ? { ...e, title } : e);
+  }
+
+  updateEntryTags(id: string, tags: string[]) {
+    this.entries = this.entries.map(e => e.id === id ? { ...e, tags } : e);
+  }
+
+  async loadHistory() {
+    this.isLoading = true;
+    try {
+      const res = await fetchHistory({
+        offset: this.filters.offset,
+        limit: this.filters.limit,
+        search: this.filters.search || undefined,
+        framework: this.filters.strategy || undefined,
+        sort: this.filters.sortBy,
+        order: this.filters.sortDir,
+        has_repo: this.filters.has_repo,
+        min_score: this.filters.min_score,
+        max_score: this.filters.max_score,
+        task_type: this.filters.task_type || undefined,
+        status: this.filters.status || undefined
+      });
+      this.setEntries(res.items, res.total);
+    } catch { /* API not available yet */ }
+    finally { this.isLoading = false; }
+  }
+
+  async loadTrash() {
+    this.trashLoading = true;
+    try {
+      const res = await fetchHistoryTrash();
+      this.trashItems = res.items;
+      this.trashTotal = res.total;
+    } catch { /* silent */ }
+    finally { this.trashLoading = false; }
+  }
+
+  async restoreItem(id: string) {
+    try {
+      await restoreOptimization(id);
+      this.trashItems = this.trashItems.filter(e => e.id !== id);
+      this.trashTotal = Math.max(0, this.trashTotal - 1);
+      await this.loadHistory();
+      toast.success('Optimization restored');
+    } catch (err) {
+      toast.error(`Restore failed: ${(err as Error).message}`);
+    }
   }
 }
 

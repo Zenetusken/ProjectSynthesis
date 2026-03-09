@@ -137,6 +137,7 @@ async def optimize_prompt(
                         optimization.weaknesses = json.dumps(event_data.get("weaknesses", []))
                         optimization.strengths = json.dumps(event_data.get("strengths", []))
                         optimization.model_analyze = event_data.get("model")
+                        optimization.analysis_quality = event_data.get("analysis_quality")
                     elif event_type == "strategy":
                         optimization.primary_framework = event_data.get("primary_framework")
                         optimization.secondary_frameworks = json.dumps(
@@ -169,6 +170,7 @@ async def optimize_prompt(
                         optimization.verdict = event_data.get("verdict")
                         optimization.issues = json.dumps(event_data.get("issues", []))
                         optimization.model_validate = event_data.get("model")
+                        optimization.validation_quality = event_data.get("validation_quality")
 
                 # Finalize
                 duration_ms = int((time.time() - start_time) * 1000)
@@ -256,11 +258,9 @@ async def get_optimization(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get a single optimization by ID."""
-    result = await session.execute(
-        select(Optimization).where(Optimization.id == optimization_id)
-    )
-    optimization = result.scalar_one_or_none()
-    if not optimization:
+    from app.services.optimization_service import get_optimization_orm
+    optimization = await get_optimization_orm(session, optimization_id)
+    if not optimization or optimization.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Optimization not found")
     return optimization.to_dict()
 

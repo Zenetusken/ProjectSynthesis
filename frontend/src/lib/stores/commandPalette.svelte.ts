@@ -4,8 +4,18 @@ export interface PaletteCommand {
   id: string;
   label: string;
   shortcut?: string;
+  description?: string;
   category: string;
   action: () => void;
+}
+
+export interface Command {
+  id: string;
+  label: string;
+  description?: string;
+  shortcut?: string;
+  action: () => void;
+  group: string;
 }
 
 class CommandPaletteStore {
@@ -101,8 +111,25 @@ class CommandPaletteStore {
     }
   }
 
-  registerCommands(cmds: PaletteCommand[]) {
-    this.commands = cmds;
+  registerCommands(cmds: PaletteCommand[]): void {
+    for (const cmd of cmds) {
+      if (!this.commands.find(c => c.id === cmd.id)) {
+        this.commands.push(cmd);
+      }
+    }
+  }
+
+  registerCommand(cmd: Command): void {
+    if (!this.commands.find(c => c.id === cmd.id)) {
+      this.commands.push({
+        id: cmd.id,
+        label: cmd.label,
+        description: cmd.description,
+        shortcut: cmd.shortcut,
+        category: cmd.group,
+        action: cmd.action,
+      });
+    }
   }
 }
 

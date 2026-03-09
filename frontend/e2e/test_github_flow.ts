@@ -1,9 +1,14 @@
 // frontend/e2e/test_github_flow.ts
 import { test, expect } from '@playwright/test';
-import { seedAuth, clearAuth } from './helpers';
+import { seedAuth, clearAuth, reloadWithAuth } from './helpers';
+
+// Store the access token so tests can re-seed auth after page.reload().
+// seedAuth() unroutes the refresh intercept once the page has loaded, so any
+// subsequent reload() would hit the real backend (→ 401 → auth cleared).
+let authToken = '';
 
 test.beforeEach(async ({ page }) => {
-  await seedAuth(page);
+  authToken = await seedAuth(page);
   await expect(page.locator('nav[aria-label="Activity Bar"]')).toBeVisible({ timeout: 15_000 });
 });
 
@@ -28,7 +33,9 @@ test('GitHub section shows Not connected when no token', async ({ page }) => {
     });
   });
 
-  await page.reload();
+  // Re-seed auth before reload so the layout's silent-refresh gets the token
+  // rather than hitting the real backend (which would return 401 and clear auth).
+  await reloadWithAuth(page, authToken);
   await expect(page.locator('nav[aria-label="Activity Bar"]')).toBeVisible({ timeout: 15_000 });
 
   // Open Settings panel via Ctrl+,
@@ -65,7 +72,8 @@ test('simulated GitHub connected state shows username', async ({ page }) => {
     route.fulfill({ status: 404, body: '' });
   });
 
-  await page.reload();
+  // Re-seed auth before reload — see comment in previous test.
+  await reloadWithAuth(page, authToken);
   await expect(page.locator('nav[aria-label="Activity Bar"]')).toBeVisible({ timeout: 15_000 });
 
   // Open settings panel

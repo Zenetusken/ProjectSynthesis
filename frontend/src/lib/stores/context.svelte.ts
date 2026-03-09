@@ -4,12 +4,14 @@ export interface ContextChip {
   type: string;
   size?: number;    // optional byte size (M7)
   content?: string; // N24: actual content for file/instruction/url chips
+  source?: string;  // optional origin tag (e.g. 'github' for repo file chips)
+  filePath?: string; // original file path (used to deselect github file chips)
 }
 
 class ContextStore {
   chips = $state<ContextChip[]>([]);
 
-  addChip(type: string, label?: string, size?: number, content?: string) {
+  addChip(type: string, label?: string, size?: number, content?: string, source?: string, filePath?: string) {
     const chipLabel = label || `@${type}`;
     this.chips = [
       ...this.chips,
@@ -19,6 +21,8 @@ class ContextStore {
         type,
         size,
         content,
+        source,
+        filePath,
       },
     ];
   }

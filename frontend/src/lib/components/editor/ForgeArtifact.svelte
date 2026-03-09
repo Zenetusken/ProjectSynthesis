@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onDestroy, untrack } from 'svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { editor } from '$lib/stores/editor.svelte';
+  import { history } from '$lib/stores/history.svelte';
   import { patchOptimization } from '$lib/api/client';
+  import { STRATEGY_HEX } from '$lib/utils/strategy';
   import CopyButton from '$lib/components/shared/CopyButton.svelte';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import ScoreBar from '$lib/components/shared/ScoreBar.svelte';
@@ -44,6 +46,74 @@
     }
   });
 
+  // ── Tags editing ─────────────────────────────────────────────────────────────
+  const MAX_TAGS = 10;
+  const TAGS_DEBOUNCE_MS = 500;
+  let pendingTags = $state<string[]>([]);
+  let addingTag = $state(false);
+  let newTagValue = $state('');
+  let newTagInputEl = $state<HTMLInputElement | undefined>();
+  let tagsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let prevTagsSnapshot: string[] = [];
+
+  onDestroy(() => {
+    if (tagsDebounceTimer) clearTimeout(tagsDebounceTimer);
+  });
+
+  // Sync pendingTags from forge.tags when optimizationId changes
+  $effect(() => {
+    void forge.optimizationId;  // explicit dependency
+    pendingTags = untrack(() => forge.tags) ?? [];
+    addingTag = false;
+    newTagValue = '';
+  });
+
+  $effect(() => {
+    if (newTagInputEl && addingTag) newTagInputEl.focus();
+  });
+
+  function debouncedPatchTags(tags: string[]) {
+    if (tagsDebounceTimer) clearTimeout(tagsDebounceTimer);
+    const snapshot = [...prevTagsSnapshot];
+    const id = forge.optimizationId;
+    tagsDebounceTimer = setTimeout(async () => {
+      if (!id) return;
+      try {
+        await patchOptimization(id, { tags });
+        // also update history store if this entry exists there
+        history.updateEntryTags(id, tags);
+      } catch {
+        // revert
+        pendingTags = snapshot;
+        forge.tags = snapshot;
+        history.updateEntryTags(id, snapshot);
+        toast.error('Failed to save tags');
+      }
+    }, TAGS_DEBOUNCE_MS);
+  }
+
+  function addTag() {
+    const val = newTagValue.trim();
+    if (!val || pendingTags.includes(val) || pendingTags.length >= MAX_TAGS) {
+      addingTag = false;
+      newTagValue = '';
+      return;
+    }
+    prevTagsSnapshot = [...pendingTags];
+    pendingTags = [...pendingTags, val];
+    forge.tags = [...pendingTags];
+    newTagValue = '';
+    addingTag = false;
+    debouncedPatchTags(pendingTags);
+  }
+
+  function removeTag(tag: string) {
+    prevTagsSnapshot = [...pendingTags];
+    pendingTags = pendingTags.filter(t => t !== tag);
+    forge.tags = [...pendingTags];
+    debouncedPatchTags(pendingTags);
+  }
+
   async function handleReforge() {
     editor.setSubTab('edit');
     await tick();
@@ -72,9 +142,35 @@
   let scores = $derived(
     (validationData.scores || {}) as Record<string, number>
   );
+
+  // Retry UI state — derived from STRATEGY_HEX so new frameworks appear automatically
+  const retryStrategies = [
+    { value: 'auto', label: 'Auto (keep current)' },
+    ...Object.keys(STRATEGY_HEX).map(k => ({ value: k, label: k.replace(/-/g, ' ') }))
+  ];
+  let showRetryMenu = $state(false);
+  let selectedRetryStrategy = $state('auto');
+
+  async function handleRetry() {
+    if (!forge.optimizationId) return;
+    showRetryMenu = false;
+    await forge.retryForge(
+      forge.optimizationId,
+      selectedRetryStrategy === 'auto' ? undefined : selectedRetryStrategy
+    );
+  }
+
+  function handleDocClick() {
+    if (showRetryMenu) showRetryMenu = false;
+  }
 </script>
 
-<div class="flex flex-col h-full animate-fade-in">
+<div
+  class="flex flex-col h-full animate-fade-in"
+  role="presentation"
+  onclick={handleDocClick}
+  onkeydown={(e) => { if (e.key === 'Escape') handleDocClick(); }}
+>
   <!-- Header -->
   <div class="flex items-center justify-between px-4 py-2 border-b border-border-subtle shrink-0 gap-2">
     <div class="flex items-center gap-2 min-w-0">
@@ -119,9 +215,64 @@
       {/if}
     </div>
     <div class="flex items-center gap-2 shrink-0">
+      {#if forge.isForging}
+        <svg class="w-3.5 h-3.5 animate-spin text-neon-cyan/60" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      {:else if forge.optimizationId}
+        <!-- Retry button with inline dropdown -->
+        <div class="relative">
+          <button
+            class="text-[10px] px-2 py-1 border border-border-subtle text-text-secondary hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors font-mono"
+            onclick={() => { showRetryMenu = !showRetryMenu; }}
+            title="Retry with a different strategy"
+          >
+            ↺ Retry
+          </button>
+          {#if showRetryMenu}
+            <div
+              role="menu"
+              tabindex="-1"
+              class="absolute right-0 top-full mt-1 w-52 bg-bg-card border border-neon-cyan/30 z-[200] font-mono"
+              onclick={(e) => e.stopPropagation()}
+              onkeydown={(e) => e.stopPropagation()}
+            >
+              <div class="px-3 py-1.5 border-b border-border-subtle text-[10px] text-neon-cyan/70 uppercase tracking-wider">
+                Retry with strategy
+              </div>
+              <div class="px-3 py-2">
+                <select
+                  name="retry-strategy"
+                  class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-neon-cyan/40 appearance-none cursor-pointer"
+                  bind:value={selectedRetryStrategy}
+                >
+                  {#each retryStrategies as s}
+                    <option value={s.value} class="bg-bg-card">{s.label}</option>
+                  {/each}
+                </select>
+              </div>
+              <div class="px-3 pb-2 flex items-center gap-2">
+                <button
+                  class="flex-1 py-1 text-[11px] border border-neon-cyan/40 text-neon-cyan hover:bg-neon-cyan/10 transition-colors font-mono"
+                  onclick={handleRetry}
+                >
+                  Retry
+                </button>
+                <button
+                  class="text-[11px] text-text-dim hover:text-text-secondary transition-colors px-1"
+                  onclick={() => { showRetryMenu = false; }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if forge.streamingText && !forge.isForging}
         <button
-          class="text-[10px] px-2 py-1 rounded bg-bg-card border border-border-subtle text-text-secondary hover:border-neon-cyan/30 hover:text-text-primary transition-colors"
+          class="text-[10px] px-2 py-1 border border-border-subtle text-text-secondary hover:border-neon-cyan/30 hover:text-text-primary transition-colors"
           onclick={handleReforge}
           title="Re-synthesize this prompt"
         >
@@ -134,11 +285,51 @@
     </div>
   </div>
 
+  <!-- Tags row -->
+  {#if forge.optimizationId}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="flex items-center flex-wrap gap-1 px-4 py-1.5 border-b border-border-subtle bg-bg-secondary/30 min-h-[30px]">
+      {#each pendingTags as tag}
+        <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono border border-neon-cyan/30 text-neon-cyan/80 bg-neon-cyan/5">
+          {tag}
+          <button
+            class="ml-0.5 text-neon-cyan/50 hover:text-neon-red transition-colors leading-none"
+            onclick={() => removeTag(tag)}
+            aria-label="Remove tag {tag}"
+            title="Remove tag"
+          >×</button>
+        </span>
+      {/each}
+      {#if addingTag}
+        <input
+          type="text"
+          bind:this={newTagInputEl}
+          bind:value={newTagValue}
+          placeholder="tag name"
+          class="bg-transparent border border-neon-cyan/50 px-1 py-0.5 text-[10px] font-mono text-text-primary focus:outline-none w-20"
+          onclick={(e: MouseEvent) => e.stopPropagation()}
+          onblur={addTag}
+          onkeydown={(e: KeyboardEvent) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); addTag(); }
+            if (e.key === 'Escape') { e.preventDefault(); addingTag = false; newTagValue = ''; }
+          }}
+        />
+      {:else if pendingTags.length < MAX_TAGS}
+        <button
+          class="text-[10px] font-mono text-text-dim/50 hover:text-neon-cyan/70 transition-colors px-1 border border-transparent hover:border-neon-cyan/20"
+          onclick={(e: MouseEvent) => { e.stopPropagation(); addingTag = true; }}
+          title="Add tag"
+        >{pendingTags.length === 0 ? '+ Add tag' : '+'}</button>
+      {/if}
+    </div>
+  {/if}
+
   <!-- Sub-tab bar -->
   <div class="flex items-center h-8 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
     {#each subTabs as st}
       <button
-        class="px-3 py-1 text-xs rounded-t transition-colors
+        class="px-3 py-1 text-xs transition-colors
           {activeSubTab === st.id
             ? 'text-neon-cyan border-b border-neon-cyan bg-bg-primary'
             : 'text-text-dim hover:text-text-secondary'}"

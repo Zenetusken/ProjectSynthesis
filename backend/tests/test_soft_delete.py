@@ -91,7 +91,15 @@ async def test_restore_endpoint_happy_path():
 
     mock_user = MagicMock()
     mock_user.id = "user-id"
+
+    mock_opt = MagicMock()
+    mock_opt.user_id = "user-id"
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=mock_opt)
+
     mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=execute_result)
     mock_session.commit = AsyncMock()
 
     # The router does a local import of the service function, so patch at the service module.
@@ -117,7 +125,13 @@ async def test_restore_endpoint_not_in_trash_raises_404():
 
     mock_user = MagicMock()
     mock_user.id = "user-id"
+
+    # Simulate record not found at all (execute returns None)
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=None)
+
     mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=execute_result)
 
     # The router does a local import of the service function, so patch at the service module.
     with patch(
@@ -133,3 +147,33 @@ async def test_restore_endpoint_not_in_trash_raises_404():
             assert False, "Expected HTTPException 404"
         except HTTPException as exc:
             assert exc.status_code == 404
+
+
+async def test_restore_endpoint_wrong_user_raises_403():
+    """POST /api/history/{id}/restore returns 403 when the record belongs to a different user."""
+    from fastapi import HTTPException
+
+    from app.routers.history import restore_optimization as endpoint
+
+    mock_user = MagicMock()
+    mock_user.id = "user-id"
+
+    # Record exists in trash but belongs to a DIFFERENT user
+    mock_opt = MagicMock()
+    mock_opt.user_id = "other-user-id"
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=mock_opt)
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=execute_result)
+
+    try:
+        await endpoint(
+            optimization_id="opt-xyz",
+            current_user=mock_user,
+            session=mock_session,
+        )
+        assert False, "Expected HTTPException 403"
+    except HTTPException as exc:
+        assert exc.status_code == 403

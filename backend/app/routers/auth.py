@@ -108,6 +108,7 @@ async def patch_auth_me(
     elif data.onboarding_completed is False:
         user.onboarding_completed_at = None
 
+    await session.commit()
     return {"updated": True}
 
 
