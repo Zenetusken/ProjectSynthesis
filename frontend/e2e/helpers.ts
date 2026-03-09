@@ -76,6 +76,28 @@ export async function seedAuth(page: Page, opts: SeedAuthOptions = {}): Promise<
 }
 
 /**
+ * Reload the page while keeping auth alive.
+ *
+ * `seedAuth()` unroutes the refresh intercept before returning, so any
+ * subsequent `page.reload()` would call the real `/auth/jwt/refresh` endpoint.
+ * Without a cookie, that returns 401 and clears auth — hiding the workbench.
+ *
+ * Call this instead of bare `page.reload()` whenever the test needs the
+ * workbench to remain visible after the reload.
+ */
+export async function reloadWithAuth(page: Page, accessToken: string): Promise<void> {
+  await page.route('**/auth/jwt/refresh', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ access_token: accessToken }),
+    });
+  });
+  await page.reload();
+  await page.unroute('**/auth/jwt/refresh');
+}
+
+/**
  * Clear all auth state by hard-navigating away and back, which discards the
  * in-memory token. Useful in afterEach hooks to isolate tests.
  */

@@ -7,14 +7,31 @@ test.afterEach(async ({ page }) => {
 });
 
 test('auth gate renders when unauthenticated', async ({ page }) => {
+  // Always intercept the refresh endpoint — never rely on the real backend here.
+  // Without the intercept, fetch('/auth/jwt/refresh') is proxied to the backend
+  // which may be busy (pipeline test stages have 90s/120s timeouts running
+  // concurrently) and hangs indefinitely since fetch() has no built-in timeout.
+  await page.route('**/auth/jwt/refresh', (route) => {
+    route.fulfill({ status: 401, body: '' });
+  });
+
   await page.goto('/');
-  // Wait for auth check to complete (loading overlay disappears)
-  await page.waitForFunction(() => {
-    const loadingSpan = document.querySelector(
-      '.h-screen.w-screen.flex.items-center.justify-center span',
-    );
-    return loadingSpan === null;
-  }, { timeout: 10_000 });
+  // Wait for auth check to complete (loading overlay disappears).
+  // Pass `undefined` as the arg so `{ timeout }` is correctly treated as options
+  // and not as the argument forwarded to the page function.
+  await page.waitForFunction(
+    () => {
+      const loadingSpan = document.querySelector(
+        '.h-screen.w-screen.flex.items-center.justify-center span',
+      );
+      return loadingSpan === null;
+    },
+    undefined,
+    { timeout: 10_000 },
+  );
+
+  await page.unroute('**/auth/jwt/refresh');
+
   // AuthGate must be visible — identified by data-testid="auth-gate"
   await expect(page.locator('[data-testid="auth-gate"]')).toBeVisible({ timeout: 5_000 });
   // Workbench must NOT be rendered
@@ -69,13 +86,18 @@ test('onboarding modal can be triggered', async ({ page }) => {
   // Navigate as if returning from GitHub OAuth with ?auth_complete=1&new=1
   await page.goto('/?auth_complete=1&new=1');
 
-  // Wait for auth to resolve (loading overlay gone)
-  await page.waitForFunction(() => {
-    const loading = document.querySelector(
-      '.h-screen.w-screen.flex.items-center.justify-center span',
-    );
-    return loading === null;
-  }, { timeout: 15_000 });
+  // Wait for auth to resolve (loading overlay gone).
+  // Pass `undefined` as the arg so `{ timeout }` is options, not the page function arg.
+  await page.waitForFunction(
+    () => {
+      const loading = document.querySelector(
+        '.h-screen.w-screen.flex.items-center.justify-center span',
+      );
+      return loading === null;
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
 
   await page.unroute('**/auth/token');
 
