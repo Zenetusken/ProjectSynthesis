@@ -3,7 +3,7 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { toast } from '$lib/stores/toast.svelte';
-  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, type HistoryStats } from '$lib/api/client';
+  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, fetchHistoryTrash, restoreOptimization, type HistoryStats, type HistoryResponse } from '$lib/api/client';
   import { getStrategyHex } from '$lib/utils/strategy';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import { onMount } from 'svelte';
@@ -13,6 +13,7 @@
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedIds = $state<Set<string>>(new Set());
   let showFilters = $state(false);
+  let contextMenuId = $state<string | null>(null);
 
   function toggleSelect(e: MouseEvent, id: string) {
     e.stopPropagation();
@@ -132,13 +133,33 @@
     editor.setSubTab('pipeline');
   }
 
+  async function handleHistoryRetry(e: MouseEvent, id: string) {
+    e.stopPropagation();
+    contextMenuId = null;
+    // Open the entry tab so results are visible in the editor panel
+    const entry = history.entries.find(en => en.id === id);
+    if (entry) {
+      editor.openTab({
+        id: `history-${id}`,
+        label: entry.raw_prompt.slice(0, 30) + (entry.raw_prompt.length > 30 ? '...' : ''),
+        type: 'prompt',
+        promptText: entry.raw_prompt,
+        dirty: false,
+        optimizationId: id
+      });
+      editor.setSubTab('pipeline');
+    }
+    await forge.retryForge(id);
+  }
+
   onMount(() => {
     loadHistory();
     loadStats();
   });
 </script>
 
-<div class="flex flex-col h-full">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="flex flex-col h-full" onclick={() => { if (contextMenuId) contextMenuId = null; }}>
   <!-- Stats summary -->
   {#if stats}
     <div class="px-2 py-1.5 border-b border-border-subtle bg-bg-secondary/50">
@@ -411,6 +432,37 @@
                   {/if}
                   <span class="text-[10px] text-text-dim shrink-0">{new Date(entry.created_at).toLocaleDateString()}</span>
                 </div>
+              </div>
+              <!-- Context menu "..." button -->
+              <div class="relative shrink-0">
+                <button
+                  class="w-5 h-5 flex items-center justify-center opacity-0 group-hover/entry:opacity-100 text-text-dim hover:text-text-primary transition-all font-mono text-[11px] leading-none"
+                  onclick={(e: MouseEvent) => { e.stopPropagation(); contextMenuId = contextMenuId === entry.id ? null : entry.id; }}
+                  aria-label="More options"
+                  title="More options"
+                >
+                  ···
+                </button>
+                {#if contextMenuId === entry.id}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="absolute right-0 top-full mt-0.5 w-28 bg-bg-card border border-border-subtle z-[300] font-mono"
+                    onmousedown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      class="w-full text-left px-3 py-1.5 text-[11px] text-neon-cyan/80 hover:bg-bg-hover hover:text-neon-cyan transition-colors"
+                      onclick={(e: MouseEvent) => handleHistoryRetry(e, entry.id)}
+                    >
+                      ↺ Retry
+                    </button>
+                    <button
+                      class="w-full text-left px-3 py-1.5 text-[11px] text-text-dim hover:bg-bg-hover hover:text-neon-red transition-colors"
+                      onclick={(e: MouseEvent) => { contextMenuId = null; handleDelete(e, entry.id); }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                {/if}
               </div>
               <button
                 class="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover/entry:opacity-100 text-text-dim hover:text-neon-red hover:bg-neon-red/10 transition-all shrink-0"

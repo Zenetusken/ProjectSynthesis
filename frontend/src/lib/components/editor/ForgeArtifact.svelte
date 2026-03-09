@@ -72,9 +72,35 @@
   let scores = $derived(
     (validationData.scores || {}) as Record<string, number>
   );
+
+  // Retry UI state
+  const retryStrategies = [
+    { value: 'auto', label: 'Auto (keep current)' },
+    { value: 'chain-of-thought', label: 'chain-of-thought' },
+    { value: 'few-shot', label: 'few-shot' },
+    { value: 'role-play', label: 'role-play' },
+    { value: 'structured-output', label: 'structured-output' },
+    { value: 'step-by-step', label: 'step-by-step' },
+  ];
+  let showRetryMenu = $state(false);
+  let selectedRetryStrategy = $state('auto');
+
+  async function handleRetry() {
+    if (!forge.optimizationId) return;
+    showRetryMenu = false;
+    await forge.retryForge(
+      forge.optimizationId,
+      selectedRetryStrategy === 'auto' ? undefined : selectedRetryStrategy
+    );
+  }
+
+  function handleDocClick() {
+    if (showRetryMenu) showRetryMenu = false;
+  }
 </script>
 
-<div class="flex flex-col h-full animate-fade-in">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="flex flex-col h-full animate-fade-in" onclick={handleDocClick}>
   <!-- Header -->
   <div class="flex items-center justify-between px-4 py-2 border-b border-border-subtle shrink-0 gap-2">
     <div class="flex items-center gap-2 min-w-0">
@@ -119,9 +145,62 @@
       {/if}
     </div>
     <div class="flex items-center gap-2 shrink-0">
+      {#if forge.isForging}
+        <svg class="w-3.5 h-3.5 animate-spin text-neon-cyan/60" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      {:else if forge.optimizationId}
+        <!-- Retry button with inline dropdown -->
+        <div class="relative">
+          <button
+            class="text-[10px] px-2 py-1 border border-border-subtle text-text-secondary hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors font-mono"
+            onclick={() => { showRetryMenu = !showRetryMenu; }}
+            title="Retry with a different strategy"
+          >
+            ↺ Retry
+          </button>
+          {#if showRetryMenu}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="absolute right-0 top-full mt-1 w-52 bg-bg-card border border-neon-cyan/30 z-[200] font-mono"
+              onmousedown={(e) => e.stopPropagation()}
+            >
+              <div class="px-3 py-1.5 border-b border-border-subtle text-[10px] text-neon-cyan/70 uppercase tracking-wider">
+                Retry with strategy
+              </div>
+              <div class="px-3 py-2">
+                <select
+                  name="retry-strategy"
+                  class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-neon-cyan/40 appearance-none cursor-pointer"
+                  bind:value={selectedRetryStrategy}
+                >
+                  {#each retryStrategies as s}
+                    <option value={s.value} class="bg-bg-card">{s.label}</option>
+                  {/each}
+                </select>
+              </div>
+              <div class="px-3 pb-2 flex items-center gap-2">
+                <button
+                  class="flex-1 py-1 text-[11px] border border-neon-cyan/40 text-neon-cyan hover:bg-neon-cyan/10 transition-colors font-mono"
+                  onclick={handleRetry}
+                >
+                  Retry
+                </button>
+                <button
+                  class="text-[11px] text-text-dim hover:text-text-secondary transition-colors px-1"
+                  onclick={() => { showRetryMenu = false; }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if forge.streamingText && !forge.isForging}
         <button
-          class="text-[10px] px-2 py-1 rounded bg-bg-card border border-border-subtle text-text-secondary hover:border-neon-cyan/30 hover:text-text-primary transition-colors"
+          class="text-[10px] px-2 py-1 border border-border-subtle text-text-secondary hover:border-neon-cyan/30 hover:text-text-primary transition-colors"
           onclick={handleReforge}
           title="Re-synthesize this prompt"
         >

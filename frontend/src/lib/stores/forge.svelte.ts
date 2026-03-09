@@ -1,3 +1,5 @@
+import { retryOptimization, type SSEEvent } from '$lib/api/client';
+
 export type StageStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped' | 'timed_out' | 'cancelled';
 
 export interface ForgeRecord {
@@ -331,6 +333,184 @@ class ForgeStore {
           model: record.model_validate ?? undefined,
         }
       };
+    }
+  }
+
+  async retryForge(optimizationId: string, strategy?: string) {
+    this.resetPipeline();
+    this.isForging = true;
+
+    const controller = new AbortController();
+    this.setAbortController(controller);
+
+    const handleEvent = (event: SSEEvent) => {
+      if (typeof event.data !== 'object' || event.data === null) return;
+      const data = event.data as Record<string, unknown>;
+      switch (event.event) {
+        case 'stage': {
+          const stageName = data.stage as string;
+          if (data.status === 'started') {
+            this.setStageRunning(stageName);
+          } else if (data.status === 'complete') {
+            if (this.stageResults[stageName]) {
+              this.stageResults[stageName] = {
+                ...this.stageResults[stageName],
+                duration: data.duration_ms as number | undefined,
+                tokenCount: data.token_count as number | undefined
+              };
+            }
+            if (this.stageStatuses[stageName] !== 'done') {
+              this.setStageComplete(stageName, {
+                stage: stageName,
+                data,
+                duration: data.duration_ms as number | undefined,
+                tokenCount: data.token_count as number | undefined
+              });
+            }
+          } else if (data.status === 'skipped') {
+            this.setStageSkipped(stageName);
+          } else if (data.status === 'failed') {
+            this.setStageFailed(stageName, data.error as string || `Stage ${stageName} failed`);
+          }
+          break;
+        }
+        case 'codebase_context': {
+          const existingExplore = this.stageResults['explore'];
+          const mergedData = { ...(existingExplore?.data ?? {}), ...data };
+          this.stageResults['explore'] = { stage: 'explore', data: mergedData };
+          if (!data.explore_failed) {
+            this.setStageComplete('explore', { stage: 'explore', data: mergedData });
+          }
+          break;
+        }
+        case 'explore_info':
+          if (this.stageResults['explore']) {
+            this.stageResults['explore'] = {
+              ...this.stageResults['explore'],
+              data: { ...this.stageResults['explore'].data, ...data }
+            };
+          } else {
+            this.stageResults['explore'] = { stage: 'explore', data };
+          }
+          break;
+        case 'analysis':
+          this.setStageComplete('analyze', { stage: 'analyze', data, duration: data.duration_ms as number | undefined });
+          break;
+        case 'strategy':
+          this.setStageComplete('strategy', { stage: 'strategy', data, duration: data.duration_ms as number | undefined });
+          break;
+        case 'agent_text': {
+          const agentContent = (data.content as string) ?? '';
+          if (agentContent) this.addAgentReasoning(agentContent);
+          break;
+        }
+        case 'step_progress': {
+          const step = data.step as string;
+          const chunk = (data.content as string) || '';
+          if (step === 'optimize') {
+            this.appendStreamingText(chunk);
+          } else if (step) {
+            this.appendStageText(step, chunk);
+          }
+          break;
+        }
+        case 'optimization':
+          this.setStageComplete('optimize', { stage: 'optimize', data, duration: data.duration_ms as number | undefined });
+          if (data.optimized_prompt) {
+            this.streamingText = data.optimized_prompt as string;
+          }
+          break;
+        case 'validation':
+          this.setStageComplete('validate', { stage: 'validate', data, duration: data.duration_ms as number | undefined });
+          if (data.overall_score != null) {
+            this.overallScore = data.overall_score as number;
+          } else {
+            const scores = data.scores as Record<string, number> | undefined;
+            if (scores?.overall_score != null) {
+              this.overallScore = scores.overall_score;
+            }
+          }
+          break;
+        case 'complete':
+          if (data.optimization_id) {
+            this.optimizationId = data.optimization_id as string;
+          }
+          this.finishForge(
+            this.overallScore ?? undefined,
+            data.total_duration_ms as number | undefined,
+            data.total_tokens as number | undefined
+          );
+          break;
+        case 'error': {
+          const errStage = (data.stage as string) || 'pipeline';
+          this.setStageFailed(errStage, data.error as string);
+          this.stageErrors[errStage] = {
+            error: (data.error as string) || `Stage ${errStage} failed`,
+            recoverable: data.recoverable !== false,
+          };
+          if (data.recoverable === false) {
+            this.finishForge();
+          }
+          break;
+        }
+        case 'context_warning':
+          this.contextWarning = data as unknown as ContextWarning;
+          break;
+        case 'tool_call':
+          this.addToolCall(data.tool as string, (data.input as Record<string, unknown>) ?? {});
+          break;
+        default:
+          break;
+      }
+    };
+
+    try {
+      const res = await retryOptimization(optimizationId, strategy);
+
+      if (!res.body) throw new Error('No response body for SSE stream');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        while (true) {
+          if (controller.signal.aborted) break;
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || '';
+
+          for (const raw of events) {
+            if (!raw.trim()) continue;
+            const typeMatch = raw.match(/^event: (.+)$/m);
+            const dataMatch = raw.match(/^data: (.+)$/m);
+            if (typeMatch && dataMatch) {
+              try {
+                const parsed = JSON.parse(dataMatch[1]);
+                handleEvent({ event: typeMatch[1], data: parsed });
+              } catch {
+                handleEvent({ event: typeMatch[1], data: dataMatch[1] });
+              }
+              await Promise.resolve();
+            }
+          }
+        }
+        if (this.isForging) this.finishForge();
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          this.error = (err as Error).message;
+          this.finishForge();
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        this.error = (err as Error).message;
+        this.isForging = false;
+        this.finishForge();
+      }
     }
   }
 
