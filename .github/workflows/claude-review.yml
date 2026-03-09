@@ -14,12 +14,21 @@ jobs:
   review:
     name: claude-review
     runs-on: ubuntu-latest
+    needs: []   # remove this line if you want to gate on ci.yml passing first
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so Claude can diff against base branch
+
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
+          use_sticky_comment: true   # update the same review comment on re-pushes
+          direct_prompt: |
             You are reviewing a pull request for **Project Synthesis** — a FastAPI + SvelteKit prompt-optimization platform with an industrial cyberpunk UI.
+
+            The PR diff is available via `git diff origin/${{ github.base_ref }}...HEAD`.
+            The full repo is checked out at the current working directory.
 
             ## Architecture rules (hard violations = block merge)
 
@@ -28,7 +37,7 @@ jobs:
             - `github_client.py` must always resolve tokens via `github_service.decrypt_token()` — never import `_get_fernet` from a router.
             - Provider is detected ONCE at startup via `detect_provider()` and injected via `app.state.provider`. Never call `detect_provider()` inside a request handler or MCP tool.
             - All list/search endpoints must return the pagination envelope `{total, count, offset, items, has_more, next_offset}`.
-            - Any `getattr(Optimization, sort)` call must be guarded by `VALID_SORT_COLUMNS` whitelist first.
+            - Any `getattr(Optimization, sort)` call must be guarded by `_VALID_SORT_COLUMNS` whitelist first.
             - GitHub tokens are Fernet-encrypted at rest. Only `github_service.encrypt_token` / `decrypt_token` are entry points — routers must not hold the Fernet key.
             - Soft-delete: set `deleted_at` timestamp, never call `session.delete()`. Trash window is 7 days.
             - Every authenticated endpoint must filter by `current_user.id` — never return or mutate another user's records.

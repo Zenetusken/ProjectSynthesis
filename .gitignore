@@ -35,8 +35,12 @@ test-results/
 *.swp
 *.swo
 
-# Claude Code local settings (machine-specific)
-.claude/
+# Claude Code — ignore session data and local overrides, but track shared config.
+# Use .claude/* (not .claude/) so negation exceptions work for tracked files.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/*
 
 # OS
 .DS_Store
