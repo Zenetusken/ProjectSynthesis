@@ -15,7 +15,10 @@ from app.database import get_session
 from app.models.auth import RefreshToken, User
 from app.models.github import GitHubToken
 from app.schemas.github import GitHubUserInfo
+from app.dependencies.auth import get_current_user
+from app.schemas.auth import AuthenticatedUser
 from app.services.auth_service import issue_jwt_pair
+from app.services.github_app_service import refresh_user_token
 from app.services.github_service import encrypt_token
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -360,3 +363,49 @@ async def github_logout(
     request.session.pop("github_login", None)
 
     return {"disconnected": True}
+
+
+_MANUAL_REFRESH_WINDOW_MINUTES = 30  # refresh if token expires within this window
+
+
+@router.post("/auth/github/token/refresh")
+async def refresh_github_token(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Manually trigger a GitHub App user token refresh.
+
+    Refreshes if the token expires within 30 minutes; returns refreshed=False otherwise.
+    Useful after the user reports GitHub API auth failures without waiting for auto-refresh.
+    """
+    session_id = request.session.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="No active session")
+
+    result = await session.execute(
+        select(GitHubToken).where(GitHubToken.session_id == session_id)
+    )
+    gh_token = result.scalar_one_or_none()
+    if not gh_token or gh_token.token_type != "github_app" or not gh_token.refresh_token_encrypted:
+        return {"refreshed": False, "reason": "not_a_github_app_token"}
+
+    now = datetime.now(timezone.utc)
+    expires_at = gh_token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at - now > timedelta(minutes=_MANUAL_REFRESH_WINDOW_MINUTES):
+        return {
+            "refreshed": False,
+            "reason": "not_expiring_soon",
+            "expires_at": expires_at.isoformat(),
+        }
+
+    refreshed = await refresh_user_token(bytes(gh_token.refresh_token_encrypted))
+    gh_token.token_encrypted = encrypt_token(refreshed["access_token"])
+    gh_token.expires_at = refreshed["expires_at"]
+    gh_token.refresh_token_encrypted = encrypt_token(refreshed["refresh_token"])
+    gh_token.refresh_token_expires_at = refreshed["refresh_token_expires_at"]
+
+    return {"refreshed": True, "expires_at": refreshed["expires_at"].isoformat()}

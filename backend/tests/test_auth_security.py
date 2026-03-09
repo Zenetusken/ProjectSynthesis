@@ -589,3 +589,82 @@ async def test_callback_redirect_includes_new_param_for_new_users():
     assert isinstance(result, RedirectResponse)
     location = result.headers.get("location", "")
     assert "new=1" in location, f"?new=1 must be in redirect URL for new users, got: {location}"
+
+
+# ── Cycle 9: Manual GitHub Token Refresh (Gap 8) ──────────────────────────
+
+
+async def test_github_token_refresh_endpoint_calls_refresh_user_token():
+    """POST /auth/github/token/refresh triggers refresh and updates the DB record."""
+    from app.routers.github_auth import refresh_github_token  # does not exist yet
+
+    from app.schemas.auth import AuthenticatedUser
+    current_user = AuthenticatedUser(id="user-uuid", github_login="octocat", roles=["user"])
+
+    mock_gh_token = MagicMock()
+    mock_gh_token.github_user_id = 999
+    mock_gh_token.token_type = "github_app"
+    mock_gh_token.refresh_token_encrypted = b"encrypted-refresh"
+    mock_gh_token.expires_at = datetime(2026, 3, 9, 10, 0, 0, tzinfo=timezone.utc)
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_gh_token
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.commit = AsyncMock()
+
+    mock_request = MagicMock()
+    mock_request.session = {"session_id": "test-session"}
+
+    new_expires = datetime(2026, 3, 9, 18, 0, 0, tzinfo=timezone.utc)
+
+    with patch("app.routers.github_auth.refresh_user_token", AsyncMock(return_value={
+        "access_token": "new_ghs_token",
+        "refresh_token": "new_refresh",
+        "expires_at": new_expires,
+        "refresh_token_expires_at": datetime(2026, 9, 9, tzinfo=timezone.utc),
+    })):
+        with patch("app.routers.github_auth.encrypt_token", return_value=b"enc"):
+            with patch("app.routers.github_auth.datetime") as mock_dt:
+                # Token expires at 10:00, mock now = 09:45 → within 30-min window
+                mock_dt.now.return_value = datetime(2026, 3, 9, 9, 45, 0, tzinfo=timezone.utc)
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                result = await refresh_github_token(
+                    request=mock_request, current_user=current_user, session=mock_session
+                )
+
+    assert result["refreshed"] is True
+    assert "expires_at" in result
+
+
+async def test_github_token_refresh_skips_if_not_expiring_soon():
+    """POST /auth/github/token/refresh returns refreshed=False when token is not near expiry."""
+    from app.routers.github_auth import refresh_github_token
+    from app.schemas.auth import AuthenticatedUser
+
+    current_user = AuthenticatedUser(id="user-uuid", github_login="octocat", roles=["user"])
+
+    mock_gh_token = MagicMock()
+    mock_gh_token.token_type = "github_app"
+    mock_gh_token.refresh_token_encrypted = b"encrypted-refresh"
+    # Token expires far in the future — should NOT trigger refresh
+    mock_gh_token.expires_at = datetime(2026, 3, 9, 23, 59, 0, tzinfo=timezone.utc)
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_gh_token
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    mock_request = MagicMock()
+    mock_request.session = {"session_id": "test-session"}
+
+    with patch("app.routers.github_auth.datetime") as mock_dt:
+        mock_dt.now.return_value = datetime(2026, 3, 9, 12, 0, 0, tzinfo=timezone.utc)
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result = await refresh_github_token(
+            request=mock_request, current_user=current_user, session=mock_session
+        )
+
+    assert result["refreshed"] is False
