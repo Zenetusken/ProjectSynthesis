@@ -49,6 +49,11 @@ async def test_compute_stats_empty_db(tmp_path):
     assert result["total_optimizations"] == 0
     assert result["average_score"] is None
     assert result["task_type_breakdown"] == {}
+    assert result["framework_breakdown"] == {}
+    assert result["provider_breakdown"] == {}
+    assert result["model_usage"] == {}
+    assert result["codebase_aware_count"] == 0
+    assert result["improvement_rate"] is None
     await eng.dispose()
 
 
@@ -68,4 +73,9 @@ async def test_compute_stats_respects_project_filter(tmp_path):
         result = await compute_stats(session, project="my-project")
 
     assert result["total_optimizations"] == 0
+    assert result["framework_breakdown"] == {}
+    assert result["provider_breakdown"] == {}
+    assert result["model_usage"] == {}
+    assert result["codebase_aware_count"] == 0
+    assert result["improvement_rate"] is None
     await eng.dispose()
