@@ -1,3 +1,5 @@
+import { fetchRepoTree, fetchFileContent } from '$lib/api/client';
+
 export interface GitHubRepo {
   full_name: string;
   description: string;
@@ -20,6 +22,19 @@ export interface GitHubFile {
   content?: string;
 }
 
+export interface TreeNode {
+  name: string;
+  path: string;
+  type: 'blob' | 'tree';
+  children?: TreeNode[];
+}
+
+export interface SelectedFile {
+  name: string;
+  path: string;
+  content: string;
+}
+
 class GitHubStore {
   isConnected = $state(false);
   username = $state('');
@@ -28,6 +43,12 @@ class GitHubStore {
   selectedBranch = $state<string | null>(null);
   files = $state<GitHubFile[]>([]);
   error = $state<string | null>(null);
+
+  // File tree state
+  fileTree = $state<TreeNode[] | null>(null);
+  treeLoading = $state(false);
+  treeError = $state<string | null>(null);
+  selectedFiles = $state<SelectedFile[]>([]);
 
   get currentRepo(): GitHubRepo | undefined {
     return this.repos.find(r => r.full_name === this.selectedRepo);
@@ -48,12 +69,19 @@ class GitHubStore {
     this.selectedBranch = null;
     this.files = [];
     this.error = null;
+    this.fileTree = null;
+    this.treeLoading = false;
+    this.treeError = null;
+    this.selectedFiles = [];
   }
 
   selectRepo(fullName: string, branch?: string) {
     this.selectedRepo = fullName;
     this.selectedBranch = branch ?? null;
     this.files = [];
+    this.fileTree = null;
+    this.treeError = null;
+    this.selectedFiles = [];
   }
 
   setFiles(files: GitHubFile[]) {
@@ -62,6 +90,103 @@ class GitHubStore {
 
   setError(error: string) {
     this.error = error;
+  }
+
+  async loadFileTree(owner: string, repo: string, branch: string): Promise<void> {
+    this.treeLoading = true;
+    this.treeError = null;
+    try {
+      const response = await fetchRepoTree(owner, repo, branch);
+      // Build nested tree from flat path list
+      const roots: TreeNode[] = [];
+      const dirMap = new Map<string, TreeNode>();
+
+      for (const entry of response.tree) {
+        if (entry.type === 'commit') continue; // skip submodules
+        const parts = entry.path.split('/');
+        const isBlob = entry.type === 'blob' || entry.type == null;
+
+        let current = roots;
+        let currentPath = '';
+
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          currentPath = currentPath ? `${currentPath}/${part}` : part;
+          const isLast = i === parts.length - 1;
+
+          if (isLast) {
+            const node: TreeNode = {
+              name: part,
+              path: entry.path,
+              type: isBlob ? 'blob' : 'tree',
+            };
+            current.push(node);
+          } else {
+            // Intermediate directory segment
+            let dir = dirMap.get(currentPath);
+            if (!dir) {
+              dir = { name: part, path: currentPath, type: 'tree', children: [] };
+              dirMap.set(currentPath, dir);
+              current.push(dir);
+            }
+            current = dir.children!;
+          }
+        }
+      }
+
+      // Sort recursively: directories first, then files, both alphabetically
+      function sortNodes(nodes: TreeNode[]): TreeNode[] {
+        nodes.sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'tree' ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        for (const node of nodes) {
+          if (node.children) sortNodes(node.children);
+        }
+        return nodes;
+      }
+
+      this.fileTree = sortNodes(roots);
+    } catch (err) {
+      this.treeError = (err as Error).message;
+    } finally {
+      this.treeLoading = false;
+    }
+  }
+
+  async toggleFileSelection(owner: string, repo: string, filePath: string, branch: string): Promise<void> {
+    const existingIndex = this.selectedFiles.findIndex(f => f.path === filePath);
+    if (existingIndex >= 0) {
+      // Deselect
+      this.selectedFiles = this.selectedFiles.filter(f => f.path !== filePath);
+      return;
+    }
+    if (this.selectedFiles.length >= 5) {
+      // Silently ignore — UI disables the checkbox
+      return;
+    }
+    try {
+      const response = await fetchFileContent(owner, repo, filePath, branch);
+      const fileName = filePath.split('/').pop() ?? filePath;
+      this.selectedFiles = [
+        ...this.selectedFiles,
+        { name: fileName, path: filePath, content: response.content }
+      ];
+    } catch (err) {
+      // Individual file fetch failure is non-fatal; caller can show toast if desired
+      console.error('[github] toggleFileSelection failed:', err);
+    }
+  }
+
+  clearFileSelection() {
+    this.selectedFiles = [];
+  }
+
+  clearFileTree() {
+    this.fileTree = null;
+    this.treeLoading = false;
+    this.treeError = null;
+    this.selectedFiles = [];
   }
 }
 

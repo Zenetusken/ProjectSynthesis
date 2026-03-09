@@ -3,6 +3,27 @@
   import { context } from '$lib/stores/context.svelte';
   import { toast } from '$lib/stores/toast.svelte';
 
+  // Sync github.selectedFiles → context chips.
+  // Runs whenever selectedFiles changes (file selected/deselected in the tree browser).
+  // Guard with a flag to avoid an infinite loop when this effect calls removeChip/addChip
+  // (chip mutations would re-trigger if we watched chips, but we only watch selectedFiles).
+  $effect(() => {
+    const files = github.selectedFiles;
+    // Collect IDs of existing github-sourced chips that are no longer in selectedFiles.
+    const toRemove = context.chips.filter(
+      c => c.source === 'github' && !files.some(f => f.path === c.filePath)
+    );
+    for (const chip of toRemove) {
+      context.removeChip(chip.id);
+    }
+    // Add chips for files that don't have one yet.
+    for (const f of files) {
+      if (!context.chips.some(c => c.source === 'github' && c.filePath === f.path)) {
+        context.addChip('file', f.name, f.content.length, f.content, 'github', f.path);
+      }
+    }
+  });
+
   let showMenu = $state(false);
 
   // N24: file input binding
@@ -121,7 +142,19 @@
       <span>@</span>{chip.label}{#if chip.size} <span class="text-text-dim/60">({formatSize(chip.size)})</span>{/if}
       <button
         class="ml-0.5 text-text-dim hover:text-neon-red transition-colors duration-150"
-        onclick={() => context.removeChip(chip.id)}
+        onclick={() => {
+          // When removing a github file chip, also deselect it from the github store
+          // so the tree checkbox updates accordingly.
+          if (chip.source === 'github' && chip.filePath && github.selectedRepo) {
+            const [owner, repo] = github.selectedRepo.split('/');
+            const branch = github.selectedBranch ?? github.currentRepo?.default_branch ?? 'main';
+            github.toggleFileSelection(owner, repo, chip.filePath, branch);
+            // toggleFileSelection will deselect the file, which triggers the $effect above
+            // to remove the chip — so we don't call context.removeChip here to avoid double removal.
+          } else {
+            context.removeChip(chip.id);
+          }
+        }}
         aria-label="Remove context"
       >
         ×
