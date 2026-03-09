@@ -6,6 +6,7 @@
   import { forge } from '$lib/stores/forge.svelte';
   import { github } from '$lib/stores/github.svelte';
   import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe } from '$lib/api/client';
+  import { toast } from '$lib/stores/toast.svelte';
   import type { RepoInfo } from '$lib/api/client';
   import { user } from '$lib/stores/user.svelte';
   import { auth } from '$lib/stores/auth.svelte';
@@ -109,7 +110,7 @@
     user.loading = true;
     fetchAuthMe()
       .then(p => user.setProfile(p))
-      .catch(e => { user.error = (e as Error).message; })
+      .catch(e => { user.error = (e as Error).message; toast.error('Profile load failed'); })
       .finally(() => { user.loading = false; });
   });
 

@@ -103,12 +103,14 @@ async def delete_optimization(
     session: AsyncSession = Depends(get_session),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Soft-delete an optimization record."""
-    from app.services.optimization_service import delete_optimization as svc_delete
-    deleted = await svc_delete(session, optimization_id)
-    if not deleted:
+    """Soft-delete an optimization record (user-scoped)."""
+    from app.services.optimization_service import get_optimization_orm
+    opt = await get_optimization_orm(session, optimization_id)
+    if not opt or opt.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Optimization not found")
+    opt.deleted_at = datetime.now(timezone.utc)
     await session.commit()
+    logger.info("Soft-deleted optimization %s by user %s", optimization_id, current_user.id)
     return {"deleted": True, "id": optimization_id}
 
 

@@ -2,6 +2,7 @@
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
+  import { toast } from '$lib/stores/toast.svelte';
   import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, fetchHistoryTrash, restoreOptimization, type HistoryStats, type HistoryResponse } from '$lib/api/client';
   import { getStrategyHex } from '$lib/utils/strategy';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
@@ -116,7 +117,9 @@
       await loadTrash();
       await loadHistory();
       await loadStats();
-    } catch { /* silent */ }
+    } catch (err) {
+      toast.error(`Restore failed: ${(err as Error).message}`);
+    }
   }
 
   async function openHistoryEntry(entry: typeof history.entries[0]) {
@@ -280,12 +283,14 @@
       </button>
       <button
         class="text-[10px] px-1.5 py-0.5 border {showTrash ? 'border-neon-red/50 text-neon-red' : 'border-border-subtle text-text-dim hover:border-neon-red/30 hover:text-neon-red/70'} transition-colors"
+        aria-pressed={showTrash}
         onclick={() => { showTrash = !showTrash; if (showTrash) loadTrash(); }}
       >
         TRASH
       </button>
       <button
         class="text-[10px] px-1.5 py-0.5 border {showFilters ? 'border-neon-cyan/50 text-neon-cyan' : 'border-border-subtle text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan/70'} transition-colors"
+        aria-expanded={showFilters}
         onclick={() => { showFilters = !showFilters; }}
       >
         FILTER
@@ -319,6 +324,7 @@
             </div>
             <button
               class="text-[9px] font-mono text-neon-cyan/60 hover:text-neon-cyan shrink-0 ml-2 border border-neon-cyan/20 hover:border-neon-cyan/50 px-1.5 py-0.5 transition-colors"
+              aria-label="Restore optimization"
               onclick={(e: MouseEvent) => handleRestore(e, entry.id)}
             >
               RESTORE

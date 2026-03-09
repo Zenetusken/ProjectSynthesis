@@ -44,10 +44,11 @@
       Optionally set a display name to personalise your workspace.
     </p>
 
-    <label class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-1">
+    <label for="onboarding-display-name" class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-1">
       Display Name <span class="text-text-dim/50">(optional)</span>
     </label>
     <input
+      id="onboarding-display-name"
       type="text"
       maxlength="128"
       placeholder="Your name"
