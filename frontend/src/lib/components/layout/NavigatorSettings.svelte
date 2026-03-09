@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { fetchSettings, updateSettings, fetchProviderStatus, fetchProviderDetect, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, fetchGitHubAppConfig, saveGitHubAppConfig, fetchAuthMe, patchAuthMe, refreshGitHubToken, type AppSettings, type GitHubAppConfig, type ProviderDetectResponse, type ProviderStatusResponse } from '$lib/api/client';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { github } from '$lib/stores/github.svelte';
@@ -194,6 +195,11 @@
   let editOriginal = $state('');
   let savingField = $state(false);
   let savedField = $state<'display_name' | 'email' | null>(null);
+  let savedFieldTimer: ReturnType<typeof setTimeout> | null = null;
+
+  onDestroy(() => {
+    if (savedFieldTimer) clearTimeout(savedFieldTimer);
+  });
 
   // Svelte action: focuses the element when it mounts into the DOM.
   function focusEl(node: HTMLElement) {
@@ -231,7 +237,8 @@
       editValue = '';
       editOriginal = '';
       savedField = field;
-      setTimeout(() => { savedField = null; }, 1500);
+      if (savedFieldTimer) clearTimeout(savedFieldTimer);
+      savedFieldTimer = setTimeout(() => { savedField = null; }, 1500);
     } catch (e) {
       editValue = editOriginal;
       cancelEdit();

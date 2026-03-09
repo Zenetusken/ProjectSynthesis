@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onDestroy, untrack } from 'svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { history } from '$lib/stores/history.svelte';
@@ -55,10 +55,14 @@
   let tagsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let prevTagsSnapshot: string[] = [];
 
+  onDestroy(() => {
+    if (tagsDebounceTimer) clearTimeout(tagsDebounceTimer);
+  });
+
   // Sync pendingTags from forge.tags when optimizationId changes
   $effect(() => {
-    void forge.optimizationId;
-    pendingTags = [...(forge.tags ?? [])];
+    void forge.optimizationId;  // explicit dependency
+    pendingTags = untrack(() => forge.tags) ?? [];
     addingTag = false;
     newTagValue = '';
   });

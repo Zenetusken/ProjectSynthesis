@@ -111,8 +111,12 @@ class CommandPaletteStore {
     }
   }
 
-  registerCommands(cmds: PaletteCommand[]) {
-    this.commands = cmds;
+  registerCommands(cmds: PaletteCommand[]): void {
+    for (const cmd of cmds) {
+      if (!this.commands.find(c => c.id === cmd.id)) {
+        this.commands.push(cmd);
+      }
+    }
   }
 
   registerCommand(cmd: Command): void {

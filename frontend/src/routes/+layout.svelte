@@ -338,7 +338,7 @@
     commandPalette.registerCommand({
       id: 'forge.run',
       label: 'Run Optimization',
-      shortcut: '⌘↵',
+      shortcut: 'Ctrl+Enter',
       group: 'Forge',
       action: () => {
         setTimeout(() => {
@@ -406,7 +406,7 @@
     commandPalette.registerCommand({
       id: 'nav.toggle-navigator',
       label: 'Toggle Navigator',
-      shortcut: '⌘B',
+      shortcut: 'Ctrl+B',
       group: 'Navigation',
       action: () => {
         workbench.toggleNavigator();
@@ -415,7 +415,7 @@
     commandPalette.registerCommand({
       id: 'nav.toggle-inspector',
       label: 'Toggle Inspector',
-      shortcut: '⌘.',
+      shortcut: 'Ctrl+.',
       group: 'Navigation',
       action: () => {
         workbench.toggleInspector();
