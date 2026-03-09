@@ -12,7 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session, get_session
+from app.dependencies.auth import get_current_user
 from app.models.optimization import Optimization
+from app.schemas.auth import AuthenticatedUser
 from app.schemas.optimization import OptimizeRequest, PatchOptimizationRequest, RetryRequest
 from app.config import settings
 from app.services.url_fetcher import fetch_url_contexts
@@ -58,6 +60,7 @@ async def optimize_prompt(
     req: Request,
     session: AsyncSession = Depends(get_session),
     retry_of: str | None = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Run the optimization pipeline with SSE streaming."""
     if not req.app.state.provider:
@@ -77,6 +80,7 @@ async def optimize_prompt(
         linked_repo_full_name=request.repo_full_name,
         linked_repo_branch=request.repo_branch,
         retry_of=retry_of,
+        user_id=current_user.id,
     )
     session.add(optimization)
     await session.commit()
@@ -245,6 +249,7 @@ async def optimize_prompt(
 async def get_optimization(
     optimization_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get a single optimization by ID."""
     result = await session.execute(
@@ -261,6 +266,7 @@ async def patch_optimization(
     optimization_id: str,
     patch: PatchOptimizationRequest,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Update metadata on an optimization."""
     result = await session.execute(
@@ -290,6 +296,7 @@ async def retry_optimization(
     body: RetryRequest,
     req: Request,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Retry an optimization with optional strategy override."""
     result = await session.execute(
@@ -314,5 +321,10 @@ async def retry_optimization(
         github_token=body.github_token,      # N40: re-run Explore on retry
     )
 
-    # Reuse the optimize endpoint logic, linking retry to original
-    return await optimize_prompt(retry_request, req, session, retry_of=optimization_id)
+    # Reuse the optimize endpoint logic, linking retry to original.
+    # current_user must be passed explicitly — FastAPI won't inject it for inner calls.
+    return await optimize_prompt(
+        retry_request, req, session,
+        retry_of=optimization_id,
+        current_user=current_user,
+    )

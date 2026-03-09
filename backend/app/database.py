@@ -59,6 +59,8 @@ async def _migrate_add_missing_columns() -> None:
             "secondary_frameworks": "TEXT",
             "approach_notes": "TEXT",
             "strategy_source": "TEXT",
+            "deleted_at": "DATETIME",   # soft-delete timestamp (arch-audit plan)
+            "user_id": "TEXT",          # authenticated user who created this record
         }
     }
 
