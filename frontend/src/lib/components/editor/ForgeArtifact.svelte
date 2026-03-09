@@ -48,6 +48,7 @@
 
   // ── Tags editing ─────────────────────────────────────────────────────────────
   const MAX_TAGS = 10;
+  const TAGS_DEBOUNCE_MS = 500;
   let pendingTags = $state<string[]>([]);
   let addingTag = $state(false);
   let newTagValue = $state('');
@@ -88,7 +89,7 @@
         history.updateEntryTags(id, snapshot);
         toast.error('Failed to save tags');
       }
-    }, 500);
+    }, TAGS_DEBOUNCE_MS);
   }
 
   function addTag() {
@@ -322,7 +323,7 @@
   <div class="flex items-center h-8 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
     {#each subTabs as st}
       <button
-        class="px-3 py-1 text-xs rounded-t transition-colors
+        class="px-3 py-1 text-xs transition-colors
           {activeSubTab === st.id
             ? 'text-neon-cyan border-b border-neon-cyan bg-bg-primary'
             : 'text-text-dim hover:text-text-secondary'}"

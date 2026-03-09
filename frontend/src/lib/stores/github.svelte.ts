@@ -180,7 +180,6 @@ class GitHubStore {
       ];
     } catch (err) {
       this.fileError = (err as Error).message;
-      console.error('[github] toggleFileSelection failed:', err);
     }
   }
 

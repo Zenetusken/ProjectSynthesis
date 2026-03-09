@@ -266,7 +266,7 @@
             {#each Object.entries(stats.framework_breakdown).slice(0, 4) as [fw, count]}
               {@const hex = getStrategyHex(fw)}
               <button
-                class="text-[9px] px-1 py-0.5 rounded border transition-colors cursor-pointer bg-bg-card"
+                class="text-[9px] px-1 py-0.5 border transition-colors cursor-pointer bg-bg-card"
                 style="color: {hex}; border-color: {history.filters.strategy === fw ? hex + '80' : 'rgba(74,74,106,0.15)'}; {history.filters.strategy === fw ? `background: ${hex}20;` : ''}"
                 onclick={() => { history.updateFilters({ strategy: history.filters.strategy === fw ? null : fw, offset: 0 }); loadHistory(); }}
               >
@@ -275,7 +275,7 @@
             {/each}
             {#if history.filters.strategy}
               <button
-                class="text-[9px] px-1 py-0.5 rounded bg-neon-red/10 border border-neon-red/20 text-neon-red hover:bg-neon-red/20 transition-colors"
+                class="text-[9px] px-1 py-0.5 bg-neon-red/10 border border-neon-red/20 text-neon-red hover:bg-neon-red/20 transition-colors"
                 onclick={() => { history.updateFilters({ strategy: null, offset: 0 }); loadHistory(); }}
               >
                 ✕ Clear
@@ -292,7 +292,7 @@
         type="text"
         name="history-search"
         placeholder="Search history..."
-        class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
+        class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-xs text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
         oninput={(e) => debouncedSearch((e.target as HTMLInputElement).value)}
       />
       {#if showFilters}
