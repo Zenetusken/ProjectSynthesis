@@ -8,12 +8,17 @@ import json
 import logging
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.optimization import Optimization
 
 logger = logging.getLogger(__name__)
+
+VALID_SORT_COLUMNS: frozenset[str] = frozenset({
+    "created_at", "overall_score", "task_type", "updated_at",
+    "duration_ms", "primary_framework", "status",
+})
 
 
 async def create_optimization(
@@ -82,8 +87,8 @@ async def list_optimizations(
     Returns:
         Tuple of (list of optimization dicts, total count).
     """
-    query = select(Optimization)
-    count_query = select(func.count(Optimization.id))
+    query = select(Optimization).where(Optimization.deleted_at.is_(None))
+    count_query = select(func.count(Optimization.id)).where(Optimization.deleted_at.is_(None))
 
     if project:
         query = query.where(Optimization.project == project)
@@ -103,9 +108,7 @@ async def list_optimizations(
         count_query = count_query.where(search_filter)
 
     # Sorting — whitelist prevents getattr on arbitrary user input
-    _VALID_SORT_COLUMNS = {"created_at", "overall_score", "task_type", "updated_at",
-                           "duration_ms", "primary_framework", "status"}
-    if sort not in _VALID_SORT_COLUMNS:
+    if sort not in VALID_SORT_COLUMNS:
         sort = "created_at"
     sort_column = getattr(Optimization, sort)
     if order == "asc":
@@ -124,6 +127,79 @@ async def list_optimizations(
     return [opt.to_dict() for opt in optimizations], total
 
 
+async def compute_stats(
+    session: AsyncSession,
+    project: Optional[str] = None,
+) -> dict:
+    """Compute aggregated stats using SQL aggregates (O(1) memory)."""
+    base_filter = [Optimization.deleted_at.is_(None)]
+    if project:
+        base_filter.append(Optimization.project == project)
+
+    totals_result = await session.execute(
+        select(
+            func.count(Optimization.id).label("total"),
+            func.avg(Optimization.overall_score).label("avg_score"),
+            func.sum(case((Optimization.linked_repo_full_name.isnot(None), 1), else_=0)).label("codebase_aware"),
+            func.sum(case((Optimization.is_improvement.is_(True), 1), else_=0)).label("improvements"),
+            func.count(Optimization.is_improvement).label("validated"),
+        ).where(*base_filter)
+    )
+    totals = totals_result.one()
+    total = totals.total or 0
+    avg_score = round(float(totals.avg_score), 2) if totals.avg_score is not None else None
+    improvement_rate = (
+        round(totals.improvements / totals.validated, 3) if totals.validated else None
+    )
+
+    tt_result = await session.execute(
+        select(Optimization.task_type, func.count(Optimization.id))
+        .where(*base_filter, Optimization.task_type.isnot(None))
+        .group_by(Optimization.task_type)
+        .order_by(func.count(Optimization.id).desc())
+    )
+    task_type_breakdown = {row[0]: row[1] for row in tt_result.fetchall()}
+
+    fw_result = await session.execute(
+        select(Optimization.primary_framework, func.count(Optimization.id))
+        .where(*base_filter, Optimization.primary_framework.isnot(None))
+        .group_by(Optimization.primary_framework)
+        .order_by(func.count(Optimization.id).desc())
+    )
+    framework_breakdown = {row[0]: row[1] for row in fw_result.fetchall()}
+
+    pv_result = await session.execute(
+        select(Optimization.provider_used, func.count(Optimization.id))
+        .where(*base_filter, Optimization.provider_used.isnot(None))
+        .group_by(Optimization.provider_used)
+        .order_by(func.count(Optimization.id).desc())
+    )
+    provider_breakdown = {row[0]: row[1] for row in pv_result.fetchall()}
+
+    model_usage: dict[str, int] = {}
+    for field_name in ("model_explore", "model_analyze", "model_strategy",
+                       "model_optimize", "model_validate"):
+        col = getattr(Optimization, field_name)
+        mv_result = await session.execute(
+            select(col, func.count(Optimization.id))
+            .where(*base_filter, col.isnot(None))
+            .group_by(col)
+        )
+        for row in mv_result.fetchall():
+            model_usage[row[0]] = model_usage.get(row[0], 0) + row[1]
+
+    return {
+        "total_optimizations": total,
+        "average_score": avg_score,
+        "task_type_breakdown": task_type_breakdown,
+        "framework_breakdown": framework_breakdown,
+        "provider_breakdown": provider_breakdown,
+        "model_usage": model_usage,
+        "codebase_aware_count": totals.codebase_aware or 0,
+        "improvement_rate": improvement_rate,
+    }
+
+
 async def get_optimization(
     session: AsyncSession,
     optimization_id: str,
@@ -138,7 +214,10 @@ async def get_optimization(
         Optimization dict if found, None otherwise.
     """
     result = await session.execute(
-        select(Optimization).where(Optimization.id == optimization_id)
+        select(Optimization).where(
+            Optimization.id == optimization_id,
+            Optimization.deleted_at.is_(None),
+        )
     )
     opt = result.scalar_one_or_none()
     if opt is None:
@@ -160,7 +239,10 @@ async def get_optimization_orm(
         Optimization ORM instance if found, None otherwise.
     """
     result = await session.execute(
-        select(Optimization).where(Optimization.id == optimization_id)
+        select(Optimization).where(
+            Optimization.id == optimization_id,
+            Optimization.deleted_at.is_(None),
+        )
     )
     return result.scalar_one_or_none()
 
@@ -187,7 +269,7 @@ async def update_optimization(
     for key, value in kwargs.items():
         if hasattr(opt, key):
             # JSON-encode list fields
-            if key in ("weaknesses", "strengths", "changes_made", "issues", "tags"):
+            if key in ("weaknesses", "strengths", "changes_made", "issues", "tags", "secondary_frameworks"):
                 if isinstance(value, list):
                     value = json.dumps(value)
             setattr(opt, key, value)
