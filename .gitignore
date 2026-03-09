@@ -62,3 +62,4 @@ feature_list_gen.py
 .sdk_integrated
 .claude_settings.json
 generations/
+docs/marketplace-webhook.md
