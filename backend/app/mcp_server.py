@@ -75,6 +75,104 @@ async def _opt_session(optimization_id: str) -> AsyncGenerator[tuple, None]:
         yield session, result.scalar_one_or_none()
 
 
+# ── Module-level helpers ───────────────────────────────────────────────────────
+
+def _accumulate_event(opt: "Optimization", event_type: str, event_data: dict) -> None:
+    """Map one pipeline event to fields on the Optimization ORM object."""
+    if event_type == "codebase_context":
+        opt.model_explore = event_data.get("model")
+    elif event_type == "analysis":
+        opt.task_type = event_data.get("task_type")
+        opt.complexity = event_data.get("complexity")
+        opt.weaknesses = json.dumps(event_data.get("weaknesses", []))
+        opt.strengths = json.dumps(event_data.get("strengths", []))
+        opt.model_analyze = event_data.get("model")
+    elif event_type == "strategy":
+        opt.primary_framework = event_data.get("primary_framework")
+        opt.secondary_frameworks = json.dumps(event_data.get("secondary_frameworks", []))
+        opt.approach_notes = event_data.get("approach_notes")
+        opt.strategy_rationale = event_data.get("rationale")
+        opt.strategy_source = event_data.get("strategy_source")
+        opt.model_strategy = event_data.get("model")
+    elif event_type == "optimization":
+        opt.optimized_prompt = event_data.get("optimized_prompt")
+        opt.changes_made = json.dumps(event_data.get("changes_made", []))
+        opt.framework_applied = event_data.get("framework_applied")
+        opt.optimization_notes = event_data.get("optimization_notes")
+        opt.model_optimize = event_data.get("model")
+    elif event_type == "validation":
+        scores = event_data.get("scores", {})
+        opt.clarity_score = scores.get("clarity_score")
+        opt.specificity_score = scores.get("specificity_score")
+        opt.structure_score = scores.get("structure_score")
+        opt.faithfulness_score = scores.get("faithfulness_score")
+        opt.conciseness_score = scores.get("conciseness_score")
+        opt.overall_score = scores.get("overall_score")
+        opt.is_improvement = event_data.get("is_improvement")
+        opt.verdict = event_data.get("verdict")
+        opt.issues = json.dumps(event_data.get("issues", []))
+        opt.model_validate = event_data.get("model")
+
+
+async def _run_and_persist(
+    provider,
+    prompt: str,
+    *,
+    opt_id: str,
+    strategy=None,
+    repo_full_name=None,
+    repo_branch=None,
+    github_token=None,
+    file_contexts=None,
+    instructions=None,
+    url_fetched=None,
+    retry_of=None,
+) -> tuple[dict, "Optimization"]:
+    """Create Optimization record, run pipeline, persist results. Returns (events, opt)."""
+    import time
+    from app.services.pipeline import run_pipeline
+
+    opt = Optimization(
+        id=opt_id,
+        raw_prompt=prompt,
+        status="running",
+        linked_repo_full_name=repo_full_name,
+        linked_repo_branch=repo_branch,
+        retry_of=retry_of,
+    )
+    async with async_session() as s:
+        s.add(opt)
+        await s.commit()
+
+    results: dict = {}
+    start = time.time()
+    async for event_type, event_data in run_pipeline(
+        provider=provider,
+        raw_prompt=prompt,
+        optimization_id=opt_id,
+        strategy_override=strategy,
+        repo_full_name=repo_full_name,
+        repo_branch=repo_branch,
+        github_token=github_token,
+        file_contexts=file_contexts,
+        instructions=instructions,
+        url_fetched_contexts=url_fetched,
+    ):
+        _accumulate_event(opt, event_type, event_data)
+        if event_type in ("analysis", "strategy", "optimization", "validation"):
+            results[event_type] = event_data
+
+    opt.status = "completed"
+    opt.duration_ms = int((time.time() - start) * 1000)
+    opt.provider_used = provider.name
+
+    async with async_session() as s:
+        await s.merge(opt)
+        await s.commit()
+
+    return results, opt
+
+
 # ── Server factory ────────────────────────────────────────────────────────────
 
 def create_mcp_server(provider=None) -> FastMCP:
@@ -210,27 +308,17 @@ def create_mcp_server(provider=None) -> FastMCP:
             The 'optimization.optimized_prompt' field contains the final result.
             The 'validation.scores.overall_score' field is 1-10.
         """
-        from app.services.pipeline import run_pipeline
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
         url_fetched = await fetch_url_contexts(url_contexts)
-        results = {}
-        async with asyncio.timeout(settings.PIPELINE_TIMEOUT_SECONDS):
-            async for event_type, event_data in run_pipeline(
-                provider=prov,
-                raw_prompt=prompt,
-                optimization_id=_new_run_id("mcp"),
-                strategy_override=strategy,
-                repo_full_name=repo_full_name,
-                repo_branch=repo_branch,
-                github_token=github_token,
-                file_contexts=file_contexts,
-                instructions=instructions,
-                url_fetched_contexts=url_fetched,
-            ):
-                if event_type in ("analysis", "strategy", "optimization", "validation", "complete"):
-                    results[event_type] = event_data
-        return json.dumps(results, indent=2)
+        opt_id = _new_run_id("mcp")
+        results, opt = await _run_and_persist(
+            prov, prompt, opt_id=opt_id, strategy=strategy,
+            repo_full_name=repo_full_name, repo_branch=repo_branch,
+            github_token=github_token, file_contexts=file_contexts,
+            instructions=instructions, url_fetched=url_fetched,
+        )
+        return json.dumps({"optimization_id": opt_id, **results}, default=str, indent=2)
 
     @mcp.tool(
         name="get_optimization",
