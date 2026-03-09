@@ -726,3 +726,29 @@ async def test_user_not_found_and_token_not_found_return_same_error_body():
     assert exc_a.value.detail["message"] == exc_b.value.detail["message"], (
         f"Error messages differ: '{exc_a.value.detail['message']}' vs '{exc_b.value.detail['message']}'"
     )
+
+
+# ── Cycle 11: SameSite Strict (Gap D) ─────────────────────────────────────
+
+
+def test_set_refresh_cookie_uses_samesite_strict():
+    """The JWT refresh cookie must use SameSite=Strict (not Lax)."""
+    import inspect
+    from app.routers import github_auth
+
+    source = inspect.getsource(github_auth._set_refresh_cookie)
+    assert 'samesite="strict"' in source or "samesite='strict'" in source, (
+        "Refresh cookie must use SameSite=Strict — 'lax' found instead. "
+        "The refresh endpoint is only called via same-origin fetch, not top-level navigation."
+    )
+
+
+def test_jwt_refresh_response_cookie_uses_samesite_strict():
+    """The new cookie set by /auth/jwt/refresh must also use SameSite=Strict."""
+    import inspect
+    from app.routers import auth
+
+    source = inspect.getsource(auth.jwt_refresh)
+    assert 'samesite="strict"' in source or "samesite='strict'" in source, (
+        "jwt_refresh cookie must use SameSite=Strict"
+    )

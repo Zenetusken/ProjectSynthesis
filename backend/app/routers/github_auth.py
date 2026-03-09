@@ -76,7 +76,7 @@ def _set_refresh_cookie(response: Response | RedirectResponse, raw_refresh: str)
         key="jwt_refresh_token",
         value=raw_refresh,
         httponly=True,
-        samesite="lax",
+        samesite="strict",   # was "lax" — safe since /auth/jwt/refresh is same-origin XHR only
         path="/auth/jwt/refresh",
         max_age=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         secure=settings.JWT_COOKIE_SECURE,
