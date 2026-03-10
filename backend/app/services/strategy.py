@@ -11,10 +11,13 @@ from typing import AsyncGenerator, Optional
 from app.config import settings
 from app.prompts.strategy_prompt import get_strategy_prompt
 from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
+from app.services.cache_service import get_cache
 from app.services.context_builders import build_analysis_summary, build_codebase_summary
 from app.services.strategy_selector import heuristic_strategy_fallback
 
 logger = logging.getLogger(__name__)
+
+_STRATEGY_CACHE_TTL = 604800  # 7 days
 
 
 async def run_strategy(
@@ -22,6 +25,7 @@ async def run_strategy(
     raw_prompt: str,
     analysis: dict,
     codebase_context: Optional[dict] = None,
+    strategy_override: Optional[str] = None,
 ) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 2 strategy selection.
 
@@ -30,6 +34,19 @@ async def run_strategy(
         ("strategy", dict) with keys: primary_framework, secondary_frameworks,
                                        rationale, approach_notes
     """
+    # Cache check: strategy is near-deterministic for task_type + complexity
+    cache = get_cache()
+    task_type = analysis.get("task_type", "general")
+    complexity = analysis.get("complexity", "moderate")
+    cache_key = cache.make_key("strategy", task_type, complexity) if cache else None
+
+    if cache and cache_key and not strategy_override:
+        cached = await cache.get(cache_key)
+        if cached is not None:
+            cached["strategy_source"] = "cached"
+            yield ("strategy", cached)
+            return
+
     system_prompt = get_strategy_prompt()
 
     user_message = (
@@ -107,5 +124,9 @@ async def run_strategy(
     result.setdefault("secondary_frameworks", [])
     result.setdefault("rationale", "")
     result.setdefault("approach_notes", "")
+
+    # Cache successful LLM results
+    if cache and cache_key and not strategy_override and result.get("strategy_source") in ("llm", "llm_json"):
+        await cache.set(cache_key, result, ttl_seconds=_STRATEGY_CACHE_TTL)
 
     yield ("strategy", result)

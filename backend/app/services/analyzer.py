@@ -11,9 +11,12 @@ from typing import AsyncGenerator, Optional
 from app.config import settings
 from app.prompts.analyzer_prompt import get_analyzer_prompt
 from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
+from app.services.cache_service import get_cache
 from app.services.context_builders import build_codebase_summary
 
 logger = logging.getLogger(__name__)
+
+_ANALYZE_CACHE_TTL = 86400  # 24 hours
 
 
 async def run_analyze(
@@ -31,6 +34,21 @@ async def run_analyze(
         ("analysis", dict) with keys: task_type, weaknesses, strengths, complexity,
                                        recommended_frameworks, codebase_informed
     """
+    # Cache check: same prompt + same context type flags = same classification
+    cache = get_cache()
+    if cache:
+        context_flags = f"{bool(codebase_context)}:{bool(file_contexts)}:{bool(url_fetched_contexts)}:{bool(instructions)}"
+        prompt_hash = cache.hash_content(raw_prompt)
+        flags_hash = cache.hash_content(context_flags)
+        analyze_cache_key = cache.make_key("analyze", prompt_hash, flags_hash)
+        cached = await cache.get(analyze_cache_key)
+        if cached is not None:
+            cached["analysis_quality"] = "cached"
+            yield ("analysis", cached)
+            return
+    else:
+        analyze_cache_key = None
+
     system_prompt = get_analyzer_prompt()
 
     user_message = f"Analyze this prompt:\n\n---\n{raw_prompt}\n---"
@@ -146,5 +164,9 @@ async def run_analyze(
     result.setdefault("complexity", "moderate")
     result.setdefault("recommended_frameworks", [])
     result.setdefault("codebase_informed", codebase_context is not None)
+
+    # Cache successful results
+    if cache and analyze_cache_key and result.get("analysis_quality") == "full":
+        await cache.set(analyze_cache_key, result, ttl_seconds=_ANALYZE_CACHE_TTL)
 
     yield ("analysis", result)

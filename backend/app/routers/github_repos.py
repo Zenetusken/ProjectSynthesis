@@ -1,5 +1,4 @@
 import logging
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
@@ -12,26 +11,19 @@ from app.models.github import GitHubToken, LinkedRepo
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.github import LinkRepoRequest
 from app.services import github_service
+from app.services.cache_service import get_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["github-repos"])
 
-# Simple in-memory cache for repo lists
-_repo_cache: dict[str, tuple[float, list]] = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes
-MAX_REPO_CACHE_SIZE = 500
+_REPO_CACHE_TTL = 300  # 5 minutes
 
 
-def _evict_repo_cache_if_full() -> None:
-    """Evict oldest entry when cache exceeds MAX_REPO_CACHE_SIZE (Python dict insertion order)."""
-    while len(_repo_cache) > MAX_REPO_CACHE_SIZE:
-        oldest_key = next(iter(_repo_cache))
-        _repo_cache.pop(oldest_key)
-
-
-def evict_repo_cache(session_id: str) -> None:
+async def evict_repo_cache(session_id: str) -> None:
     """Remove cached repo list for a session (call on logout/disconnect)."""
-    _repo_cache.pop(session_id, None)
+    cache = get_cache()
+    if cache:
+        await cache.delete(cache.make_key("repos", session_id))
 
 
 async def _get_github_token(
@@ -84,11 +76,12 @@ async def list_repos(
     token = await _get_github_token(request, session, current_user)
 
     # Check cache
-    cache_key = request.session.get("session_id", "")
-    if cache_key in _repo_cache:
-        cached_time, cached_repos = _repo_cache[cache_key]
-        if time.time() - cached_time < CACHE_TTL_SECONDS:
-            return cached_repos
+    cache = get_cache()
+    cache_key = cache.make_key("repos", request.session.get("session_id", "")) if cache else ""
+    if cache:
+        cached = await cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     # Fetch from GitHub via service layer
     try:
@@ -96,8 +89,8 @@ async def list_repos(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to fetch repos: {e}")
 
-    _repo_cache[cache_key] = (time.time(), repos)
-    _evict_repo_cache_if_full()
+    if cache:
+        await cache.set(cache_key, repos, ttl_seconds=_REPO_CACHE_TTL)
     return repos
 
 

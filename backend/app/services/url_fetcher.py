@@ -14,7 +14,12 @@ import re
 
 import httpx
 
+from app.services.cache_service import get_cache
+
 logger = logging.getLogger(__name__)
+
+_URL_CACHE_TTL = 3600       # 1 hour for successful fetches
+_URL_ERROR_CACHE_TTL = 300  # 5 minutes for errors
 
 # ── Remove noise blocks entirely ─────────────────────────────────────────────
 _SCRIPT_RE = re.compile(r"<script[^>]*>.*?</script>", re.DOTALL | re.IGNORECASE)
@@ -104,15 +109,38 @@ async def fetch_url_contexts(url_contexts: list[str] | None) -> list[dict]:
     """
     if not url_contexts:
         return []
+
+    cache = get_cache()
     results: list[dict] = []
+
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
         for url in url_contexts:
+            # Check cache first
+            if cache:
+                url_hash = cache.hash_content(url)
+                cache_key = cache.make_key("url_fetch", url_hash)
+                cached = await cache.get(cache_key)
+                if cached is not None:
+                    results.append(cached)
+                    continue
+            else:
+                cache_key = None
+
             try:
                 resp = await client.get(url, headers={"User-Agent": "ProjectSynthesis/1.0"})
                 resp.raise_for_status()
                 content = strip_html(resp.text)[:3000]
-                results.append({"url": url, "content": content, "error": None})
+                entry = {"url": url, "content": content, "error": None}
+                results.append(entry)
+                # Cache successful result
+                if cache and cache_key:
+                    await cache.set(cache_key, entry, ttl_seconds=_URL_CACHE_TTL)
             except Exception as e:
                 logger.warning("URL fetch failed for %s: %s", url, e)
-                results.append({"url": url, "content": "", "error": str(e)})
+                entry = {"url": url, "content": "", "error": str(e)}
+                results.append(entry)
+                # Cache error result with short TTL
+                if cache and cache_key:
+                    await cache.set(cache_key, entry, ttl_seconds=_URL_ERROR_CACHE_TTL)
+
     return results
