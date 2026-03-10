@@ -40,7 +40,7 @@ class SessionCacheMiddleware:
         if app is None:
             return
         redis_svc = getattr(app.state, "redis", None)
-        if redis_svc is None or not redis_svc.is_available or redis_svc.client is None:
+        if redis_svc is None or not redis_svc.is_ready:
             return
 
         # Access session data from scope (set by SessionMiddleware)
@@ -53,6 +53,8 @@ class SessionCacheMiddleware:
             return
 
         try:
+            # Bypass CacheService intentionally: session data should NOT be cached
+            # in-memory (security concern) and must only persist in Redis.
             key = f"synthesis:session:{session_id}"
             await redis_svc.client.set(
                 key,

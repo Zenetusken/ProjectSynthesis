@@ -5,9 +5,16 @@ The app never crashes due to a missing Redis instance.
 """
 
 import logging
-from typing import Optional
+import time
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from redis.asyncio import ConnectionPool as _RedisPool
+    from redis.asyncio import Redis as _RedisClient
 
 logger = logging.getLogger(__name__)
+
+_RECONNECT_COOLDOWN = 30  # seconds between reconnection attempts
 
 try:
     import redis.asyncio as aioredis
@@ -38,9 +45,10 @@ class RedisService:
         self._port = port
         self._db = db
         self._password = password
-        self._pool: Optional[object] = None
-        self._client: Optional[object] = None
+        self._pool: Optional["_RedisPool"] = None
+        self._client: Optional["_RedisClient"] = None
         self._available = False
+        self._last_reconnect_attempt: float = 0.0
 
     async def connect(self) -> bool:
         """Attempt to connect to Redis. Returns True if successful.
@@ -107,14 +115,39 @@ class RedisService:
         self._available = False
 
     async def health_check(self) -> bool:
-        """Return True if Redis responds to PING within the socket timeout."""
-        if not self._available or self._client is None:
+        """Return True if Redis responds to PING.
+
+        When Redis was previously marked unavailable, attempts reconnection
+        with a cooldown to avoid connection storms.
+        """
+        if self._available:
+            if self._client is None:
+                self._available = False
+                return False
+            try:
+                return await self._client.ping()
+            except Exception:
+                self._available = False
+                return False
+
+        # Redis marked unavailable — attempt reconnection with cooldown
+        now = time.time()
+        if now - self._last_reconnect_attempt < _RECONNECT_COOLDOWN:
             return False
-        try:
-            return await self._client.ping()
-        except Exception:
-            self._available = False
-            return False
+        self._last_reconnect_attempt = now
+
+        # If pool/client still exist, try a simple ping first
+        if self._client is not None:
+            try:
+                await self._client.ping()
+                self._available = True
+                logger.info("Redis reconnected at %s:%s", self._host, self._port)
+                return True
+            except Exception:
+                return False
+
+        # Client was torn down — attempt full reconnect
+        return await self.connect()
 
     @property
     def is_available(self) -> bool:
@@ -122,7 +155,16 @@ class RedisService:
         return self._available
 
     @property
-    def client(self) -> Optional[object]:
+    def is_ready(self) -> bool:
+        """Whether Redis is available and the client is accessible.
+
+        Convenience guard combining ``is_available`` and a non-None ``client``
+        so callers don't need to repeat the double-check pattern.
+        """
+        return self._available and self._client is not None
+
+    @property
+    def client(self) -> Optional["_RedisClient"]:
         """The underlying redis.asyncio.Redis client, or None if unavailable."""
         return self._client if self._available else None
 
