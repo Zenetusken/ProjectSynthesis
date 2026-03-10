@@ -67,7 +67,11 @@ class AuthStore {
         signal: controller.signal
       });
       if (!res.ok) {
-        this.clearToken();
+        // 429 = rate-limited: the token is still valid; don't log the user out.
+        // Any other non-2xx (401, 500 …) means the session is gone — clear it.
+        if (res.status !== 429) {
+          this.clearToken();
+        }
         return null;
       }
       const data: { access_token: string } = await res.json();

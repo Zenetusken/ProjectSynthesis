@@ -17,15 +17,21 @@ const BASE = '';
 async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers ?? {});
 
-  if (auth.accessToken) {
-    headers.set('Authorization', `Bearer ${auth.accessToken}`);
+  // Snapshot the token at request time. Re-reading auth.accessToken after the
+  // await would create a race: a request that started without a token could see
+  // a non-null token once auth.refresh() completes during the in-flight wait,
+  // and then spuriously trigger a second refresh on an expected 401.
+  const tokenAtRequestTime = auth.accessToken;
+  if (tokenAtRequestTime) {
+    headers.set('Authorization', `Bearer ${tokenAtRequestTime}`);
   }
 
   // Use global fetch directly inside this wrapper to avoid recursion.
   const attempt = await globalThis.fetch(input, { ...init, headers, credentials: 'include' });
 
-  // Attempt a single silent refresh on 401 and retry the original request.
-  if (attempt.status === 401 && auth.accessToken) {
+  // Only attempt a silent refresh if the request was made WITH a token.
+  // This prevents the timing race described above.
+  if (attempt.status === 401 && tokenAtRequestTime) {
     const newToken = await auth.refresh();
     if (newToken) {
       headers.set('Authorization', `Bearer ${newToken}`);

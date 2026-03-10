@@ -65,10 +65,15 @@ async def get_current_user(
     device_id: str | None = payload.get("device_id")
 
     if device_id:
-        # New path: look up the exact RT for this device
+        # New path: look up the most-recent RT for this device.
+        # ORDER BY created_at DESC is critical: after every rotation the old RT is
+        # marked revoked and a new RT is created — both share the same device_id.
+        # Without the ordering SQLite returns the oldest (revoked) row first,
+        # causing every authenticated request after a hard-refresh to receive 401.
         result = await session.execute(
             select(RefreshToken)
             .where(RefreshToken.user_id == user_id, RefreshToken.device_id == device_id)
+            .order_by(RefreshToken.created_at.desc())
             .limit(1)
         )
     else:
