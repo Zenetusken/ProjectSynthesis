@@ -15,6 +15,7 @@
   import { checkAndCelebrateMilestones } from '$lib/utils/milestones';
   import { getStrategyInfo } from '$lib/utils/strategyReference';
   import Tip from '$lib/components/shared/Tip.svelte';
+  import { getCaretCoordinates } from '$lib/utils/caretCoords';
 
   let { tab }: { tab: EditorTab } = $props();
 
@@ -38,6 +39,10 @@
   let contextBarRef: ContextBar | undefined = $state();
   let textareaRef: HTMLTextAreaElement | undefined = $state();
   let atSelectedIndex = $state(0);
+  let containerRef: HTMLDivElement | undefined = $state();
+  let popupTop = $state(0);
+  let popupLeft = $state(0);
+  let popupAbove = $state(false);
 
   const contextSources = [
     { type: 'file', label: 'File', category: 'Sources', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
@@ -108,6 +113,7 @@
       showAtPopup = true;
       atQuery = '';
       atSelectedIndex = 0;
+      updatePopupPosition();
     } else if (showAtPopup) {
       // Update fuzzy query with characters after @
       const beforeCursor = value.slice(0, cursorPos);
@@ -119,6 +125,47 @@
       }
     }
   }
+
+  function updatePopupPosition() {
+    if (!textareaRef || !containerRef) return;
+    const POPUP_W = 256, POPUP_H_EST = 220, MARGIN = 8;
+    const coords = getCaretCoordinates(textareaRef, textareaRef.selectionStart);
+
+    // Textarea-relative → container-relative
+    const rawTop = textareaRef.offsetTop + coords.top;
+    const rawLeft = textareaRef.offsetLeft + coords.left;
+
+    // Container viewport rect for edge detection
+    const cr = containerRef.getBoundingClientRect();
+
+    // Vertical: below caret by default, flip above if overflows viewport
+    const belowY = rawTop + coords.height + 4;
+    if (cr.top + belowY + POPUP_H_EST > window.innerHeight - MARGIN) {
+      popupAbove = true;
+      popupTop = Math.max(0, rawTop - POPUP_H_EST - 4);
+    } else {
+      popupAbove = false;
+      popupTop = belowY;
+    }
+
+    // Horizontal: start at caret, shift left if overflows right edge
+    const viewportRight = cr.left + rawLeft + POPUP_W;
+    if (viewportRight > window.innerWidth - MARGIN) {
+      popupLeft = Math.max(0, rawLeft - (viewportRight - window.innerWidth + MARGIN));
+    } else {
+      popupLeft = rawLeft;
+    }
+  }
+
+  // Recalculate popup position when textarea is scrolled while popup is open
+  $effect(() => {
+    if (showAtPopup && textareaRef) {
+      const ta = textareaRef;
+      const onScroll = () => updatePopupPosition();
+      ta.addEventListener('scroll', onScroll);
+      return () => ta.removeEventListener('scroll', onScroll);
+    }
+  });
 
   function handleTextareaKeydown(e: KeyboardEvent) {
     if (!showAtPopup) return;
@@ -409,7 +456,7 @@
 
 <div class="flex flex-col h-full">
   <!-- Textarea -->
-  <div class="flex-1 p-4 relative">
+  <div class="flex-1 p-4 relative" bind:this={containerRef}>
     <textarea
       id="prompt-textarea"
       name="prompt-text"
@@ -426,7 +473,11 @@
     {#if showAtPopup}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="absolute left-4 top-10 w-64 bg-bg-card border border-border-subtle rounded-lg z-[300] animate-dropdown-enter"
+        class="absolute w-64 bg-bg-card border border-border-subtle z-[300]"
+        class:animate-dropdown-enter={!popupAbove}
+        class:animate-dropdown-enter-up={popupAbove}
+        style:top="{popupTop}px"
+        style:left="{popupLeft}px"
         data-testid="at-context-popup"
         onmousedown={(e) => e.preventDefault()}
       >
