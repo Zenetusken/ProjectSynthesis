@@ -15,6 +15,7 @@ from app.services.codebase_explorer import (
     _merge_file_lists,
     _normalize_snippets,
     _normalize_string_list,
+    _validate_explore_output,
 )
 from app.services.repo_index_service import IndexStatus, RankedFile
 
@@ -589,3 +590,55 @@ class TestExtractPromptReferencedFiles:
         prompt = "Audit backend/pipeline.py — check pipeline.py for bugs"
         result = _extract_prompt_referenced_files(prompt, tree)
         assert result.count("backend/pipeline.py") == 1
+
+
+class TestValidateExploreOutput:
+    """Test post-LLM output validation."""
+
+    def test_valid_snippet_passes_through(self):
+        snippets = [{"file": "main.py", "lines": "1-10", "context": "entry point"}]
+        file_contents = {"main.py": "\n".join(f"line {i}" for i in range(1, 51))}
+        s, o, g = _validate_explore_output(snippets, [], [], file_contents, max_lines_shown=50)
+        assert s[0]["context"] == "entry point"  # no flag added
+
+    def test_snippet_beyond_visible_range_flagged(self):
+        snippets = [{"file": "big.py", "lines": "400-420", "context": "some logic"}]
+        file_contents = {"big.py": "\n".join(f"line {i}" for i in range(1, 301))}
+        s, o, g = _validate_explore_output(snippets, [], [], file_contents, max_lines_shown=300)
+        assert "[unverified" in s[0]["context"]
+
+    def test_observation_with_valid_line_ref_unchanged(self):
+        obs = ["Pipeline stage at line 50 handles retries"]
+        file_contents = {"pipeline.py": "x" * 100}
+        s, o, g = _validate_explore_output([], obs, [], file_contents, max_lines_shown=300)
+        assert o[0] == obs[0]  # within range, no flag
+
+    def test_observation_with_invalid_line_ref_flagged(self):
+        obs = ["Bug at lines 600-610 in pipeline.py"]
+        file_contents = {"pipeline.py": "x"}
+        s, o, g = _validate_explore_output([], obs, [], file_contents, max_lines_shown=300)
+        assert "[unverified" in o[0]
+
+    def test_grounding_note_bug_claim_in_truncated_file_flagged(self):
+        # File content includes truncation marker — indicates the file was cut off
+        truncated_content = "\n".join(f"line {i}" for i in range(1, 301))
+        truncated_content += "\n\n[TRUNCATED — only lines 1–300 of 800 shown.]"
+        notes = ["analysis_quality is NOT set when defaults are applied in analyzer.py"]
+        file_contents = {"analyzer.py": truncated_content}
+        s, o, g = _validate_explore_output([], [], notes, file_contents, max_lines_shown=300)
+        assert "[unverified" in g[0]
+
+    def test_snippet_for_unknown_file_flagged(self):
+        snippets = [{"file": "nonexistent.py", "lines": "1-5", "context": "ghost"}]
+        s, o, g = _validate_explore_output(snippets, [], [], {}, max_lines_shown=300)
+        assert "[unverified" in s[0]["context"]
+
+    def test_empty_inputs_no_crash(self):
+        s, o, g = _validate_explore_output([], [], [], {}, max_lines_shown=300)
+        assert s == [] and o == [] and g == []
+
+    def test_unparseable_line_range_left_alone(self):
+        snippets = [{"file": "a.py", "lines": "various", "context": "ok"}]
+        file_contents = {"a.py": "x"}
+        s, o, g = _validate_explore_output(snippets, [], [], file_contents, max_lines_shown=300)
+        assert s[0]["context"] == "ok"  # can't parse "various", so left alone

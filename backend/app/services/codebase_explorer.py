@@ -96,6 +96,107 @@ def _normalize_snippets(raw: Any) -> list[dict]:
     return result
 
 
+_LINE_REF_PATTERNS = [
+    re.compile(r"lines?\s+(\d+)\s*[-\u2013]\s*(\d+)"),          # "lines 233-240" or "line 45-62"
+    re.compile(r"line\s+(\d+)(?!\s*[-\u2013])"),                 # "line 42" (single)
+    re.compile(r"\bL(\d+)\b"),                                    # "L42"
+    re.compile(r"\.(?:py|ts|js|svelte|go|rs|java):(\d+)"),       # "pipeline.py:233"
+]
+
+_BUG_CLAIM_INDICATORS = re.compile(
+    r"does NOT|is NOT set|is NOT|but doesn't|but does not|missing|"
+    r"never set|not implemented|not called|not used|not defined",
+    re.IGNORECASE,
+)
+
+
+def _validate_explore_output(
+    snippets: list[dict],
+    observations: list[str],
+    grounding_notes: list[str],
+    file_contents: dict[str, str],
+    max_lines_shown: int,
+) -> tuple[list[dict], list[str], list[str]]:
+    """Validate LLM explore output against what was actually shown.
+
+    Flags unverifiable claims with [unverified] suffixes.
+    Returns (snippets, observations, grounding_notes) with flags applied.
+    """
+    _UNVERIFIED = " [unverified \u2014 beyond visible range]"
+    _UNVERIFIED_TRUNC = " [unverified \u2014 file truncated at line {}]"
+
+    # Build a set of file stems for fuzzy matching in observations
+    file_stems = {}
+    for path in file_contents:
+        filename = path.split("/")[-1]
+        file_stems[filename] = path
+        stem = filename.rsplit(".", 1)[0]
+        file_stems[stem] = path
+
+    def _parse_line_range(lines_str: str) -> tuple[int, int] | None:
+        """Parse '45-62' or '45' into (start, end). Returns None if unparseable."""
+        lines_str = lines_str.strip()
+        m = re.match(r"(\d+)\s*[-\u2013]\s*(\d+)", lines_str)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+        m = re.match(r"(\d+)$", lines_str)
+        if m:
+            n = int(m.group(1))
+            return n, n
+        return None
+
+    def _max_line_for_file(file_path: str) -> int:
+        """Return the max visible line for a file, or 0 if unknown."""
+        content = file_contents.get(file_path)
+        if content is None:
+            return 0
+        return min(max_lines_shown, content.count("\n") + 1)
+
+    # Validate snippets
+    validated_snippets = []
+    for snip in snippets:
+        snip = dict(snip)  # copy
+        file_path = snip.get("file", "")
+        lines_str = snip.get("lines", "")
+        rng = _parse_line_range(lines_str) if lines_str else None
+
+        if file_path not in file_contents:
+            snip["context"] = snip.get("context", "") + _UNVERIFIED
+        elif rng:
+            max_line = _max_line_for_file(file_path)
+            if rng[1] > max_line:
+                snip["context"] = snip.get("context", "") + _UNVERIFIED
+        validated_snippets.append(snip)
+
+    # Validate observations and grounding notes
+    def _flag_text(text: str) -> str:
+        for pattern in _LINE_REF_PATTERNS:
+            for m in pattern.finditer(text):
+                groups = m.groups()
+                line_num = int(groups[-1])  # last group is always a line number
+                if line_num > max_lines_shown:
+                    return text + _UNVERIFIED
+        return text
+
+    def _is_truncated(file_path: str) -> bool:
+        """Check if a file was truncated by looking for the truncation marker."""
+        content = file_contents.get(file_path, "")
+        return "[TRUNCATED" in content
+
+    def _flag_bug_claim(text: str) -> str:
+        if _BUG_CLAIM_INDICATORS.search(text):
+            # Check if the claim references a truncated file
+            for filename, path in file_stems.items():
+                if filename in text and _is_truncated(path):
+                    return text + _UNVERIFIED_TRUNC.format(max_lines_shown)
+        return text
+
+    validated_obs = [_flag_text(o) for o in observations]
+    validated_notes = [_flag_bug_claim(_flag_text(n)) for n in grounding_notes]
+
+    return validated_snippets, validated_obs, validated_notes
+
+
 # JSON Schema for the explore stage output.
 # Used by complete_json for structured output enforcement.
 EXPLORE_OUTPUT_SCHEMA: dict = {
@@ -700,14 +801,31 @@ async def run_explore(
     # ── Build CodebaseContext ─────────────────────────────────────────
     duration_ms = int((time.monotonic() - start_ms) * 1000)
 
+    # Step 1: Normalize LLM output
+    tech_stack = _normalize_string_list(parsed.get("tech_stack", []))
+    snippets = _normalize_snippets(parsed.get("relevant_code_snippets", []))
+    observations = _normalize_string_list(parsed.get("codebase_observations", []))
+    grounding_notes = _normalize_string_list(parsed.get("prompt_grounding_notes", []))
+
+    # Step 2: Validate against what was actually shown to the LLM
+    try:
+        snippets, observations, grounding_notes = _validate_explore_output(
+            snippets, observations, grounding_notes,
+            file_contents=file_contents,
+            max_lines_shown=max_lines,
+        )
+    except Exception as val_err:
+        logger.warning("Explore output validation failed, using unvalidated data: %s", val_err)
+
+    # Step 3: Construct CodebaseContext with validated data
     context = CodebaseContext(
         repo=repo_full_name,
         branch=used_branch,
-        tech_stack=_normalize_string_list(parsed.get("tech_stack", [])),
+        tech_stack=tech_stack,
         key_files_read=list(file_contents.keys()),
-        relevant_snippets=_normalize_snippets(parsed.get("relevant_code_snippets", [])),
-        observations=_normalize_string_list(parsed.get("codebase_observations", [])),
-        grounding_notes=_normalize_string_list(parsed.get("prompt_grounding_notes", [])),
+        relevant_snippets=snippets,
+        observations=observations,
+        grounding_notes=grounding_notes,
         files_read_count=len(file_contents),
         coverage_pct=min(100, round(len(file_contents) / max(1, total_in_tree) * 100)),
         duration_ms=duration_ms,
