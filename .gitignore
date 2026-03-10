@@ -19,7 +19,7 @@ build/
 # Database
 data/*
 !data/.gitkeep
-e2e_test.db
+e2e_test.db*
 
 # Playwright E2E test outputs
 playwright-report/

@@ -54,6 +54,20 @@ To add it manually or to a different Claude Code workspace:
 claude mcp add --transport http --scope project project-synthesis http://127.0.0.1:8001/mcp
 ```
 
+### Docker deployment
+
+When running via `docker compose`, the standalone MCP server runs in its own container. nginx exposes it on host port 8001.
+
+The existing `.mcp.json` (`http://127.0.0.1:8001/mcp`) works without changes — Claude Code runs on the host machine and connects to port 8001, which nginx proxies to the MCP container.
+
+| Context | URL | Notes |
+|---|---|---|
+| Host → Docker (Claude Code) | `http://127.0.0.1:8001/mcp` | nginx proxies to MCP container |
+| Host → Docker (browser) | `http://localhost/mcp` | nginx proxies on port 80 |
+| Container → Container | `http://mcp:8001/mcp` | Docker service name (internal only) |
+
+> **Note:** The `.mcp.json` file is designed for local use. If Claude Code runs on a remote machine, replace `127.0.0.1` with the Docker host's IP or hostname.
+
 ---
 
 ## Connecting from an MCP Inspector or custom client

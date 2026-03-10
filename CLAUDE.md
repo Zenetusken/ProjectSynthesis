@@ -177,3 +177,71 @@ The explore phase uses **semantic retrieval + single-shot synthesis**, not an ag
 - `explore_prompt.py` — **DEPRECATED** (old 25-turn agentic prompt, kept for reference only)
 
 **Config** (`config.py`): `EMBEDDING_MODEL`, `REPO_INDEX_TTL_HOURS`, `REPO_INDEX_MAX_FILES`, `EXPLORE_INDEX_WAIT_TIMEOUT`, `EXPLORE_FILE_READ_CONCURRENCY`, `EXPLORE_MAX_FILES`, `EXPLORE_RESULT_CACHE_TTL`
+
+## Docker deployment
+
+Production deployment via Docker Compose. All traffic routes through nginx; only ports 80 (HTTP) and 8001 (standalone MCP) are exposed to the host.
+
+### Quick start
+```bash
+cp .env.docker.example .env.docker
+# Edit .env.docker — at minimum set ANTHROPIC_API_KEY and change all CHANGE-ME secrets
+docker compose up --build -d
+```
+
+### Architecture
+```
+           [Browser]
+              │
+         [nginx :80]  ← only host-exposed port
+        ┌─────┼──────────┐
+        │     │           │
+ [frontend] [backend]  [mcp :8001]
+   :5199     :8000        │
+                │         │
+             [redis]   [db-data vol]
+              :6379
+```
+
+Routing: `/` → frontend, `/api/*` + `/auth/*` → backend, `/mcp` + `/mcp/ws` → backend, port 8001 → standalone MCP
+
+### Services
+
+| Service | Image | Host port | Health check |
+|---------|-------|-----------|-------------|
+| nginx | nginx:1.27-alpine (custom) | 80, 8001 | wget /api/health |
+| backend | python:3.14-slim (custom) | none | curl /api/health |
+| frontend | node:24-slim (custom) | none | curl / |
+| mcp | reuses backend image | none | TCP :8001 |
+| redis | redis:7-alpine | none | redis-cli ping |
+
+### Volumes
+- `db-data` — SQLite database (shared by backend + mcp)
+- `redis-data` — Redis AOF persistence
+
+### Key env vars for Docker
+- `MCP_HOST=0.0.0.0` — bind all interfaces inside container
+- `MCP_PROBE_HOST=mcp` — health check resolves Docker service name
+- `REDIS_HOST=redis` — Docker service name
+- `TRUSTED_PROXIES=172.16.0.0/12` — Docker bridge subnet
+- `FRONTEND_URL=http://localhost` — nginx serves on :80
+- `ORIGIN=http://localhost` — SvelteKit adapter-node CSRF
+
+### TLS setup
+1. Place `fullchain.pem` and `privkey.pem` in `nginx/certs/`
+2. Uncomment the TLS server block in `nginx/nginx.conf`
+3. Add `- "443:443"` to nginx ports in `docker-compose.yml`
+4. Set `FRONTEND_URL=https://your-domain.com`, `CORS_ORIGINS=https://your-domain.com`, `ORIGIN=https://your-domain.com`, `JWT_COOKIE_SECURE=true`
+
+### Container hardening
+- All containers: `no-new-privileges`, `restart: unless-stopped`, JSON log rotation (10 MB / 3 files)
+- nginx, frontend, redis: `read_only: true` with tmpfs for writable paths
+- All services run as non-root users (UID 10001)
+- Resource limits: backend 2 GB / 2 CPU, others capped lower
+
+### Troubleshooting
+- **Frontend returns HTML for /api calls**: nginx is not routing — check `docker compose logs nginx`
+- **MCP health check fails**: ensure `MCP_PROBE_HOST=mcp` in `.env.docker`
+- **Redis not connecting**: verify `REDIS_HOST=redis` (Docker service name, not localhost)
+- **Embedding model slow on first request**: the backend Dockerfile pre-caches the model; if using a custom image, ensure `HF_HOME` is set
+- **CSRF errors in SvelteKit**: `ORIGIN` must match the external URL exactly (e.g., `http://localhost`)
