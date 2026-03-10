@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreToolUse hook — runs Ruff check before any `gh pr create` command.
+# PreToolUse hook — runs Ruff check before git push and gh pr create commands.
 #
 # Claude Code passes the full tool context on stdin as JSON:
 #   { "tool_name": "Bash", "tool_input": { "command": "..." }, ... }
@@ -23,8 +23,18 @@ except Exception:
     pass
 " 2>/dev/null || true)
 
-# Only act on gh pr create calls.
-if ! printf '%s' "$COMMAND" | grep -qE 'gh[[:space:]]+pr[[:space:]]+create'; then
+# Gate: only act on git push or gh pr create commands.
+IS_GIT_PUSH=false
+IS_GH_PR=false
+
+if printf '%s' "$COMMAND" | grep -qE 'git[[:space:]]+push'; then
+  IS_GIT_PUSH=true
+fi
+if printf '%s' "$COMMAND" | grep -qE 'gh[[:space:]]+pr[[:space:]]+create'; then
+  IS_GH_PR=true
+fi
+
+if [[ "$IS_GIT_PUSH" == false && "$IS_GH_PR" == false ]]; then
   exit 0
 fi
 
@@ -35,20 +45,27 @@ if [[ -x "backend/.venv/bin/ruff" ]]; then
 elif command -v ruff &>/dev/null; then
   RUFF="ruff"
 else
-  echo "⚠  ruff not found — skipping lint check before PR creation."
+  echo "⚠  ruff not found — skipping lint gate."
   exit 0
 fi
 
+# ── Describe what triggered the check ────────────────────────────────────────
+if [[ "$IS_GH_PR" == true ]]; then
+  ACTION="PR creation"
+elif [[ "$IS_GIT_PUSH" == true ]]; then
+  ACTION="push"
+fi
+
 # ── Run Ruff ─────────────────────────────────────────────────────────────────
-echo "Running Ruff before creating PR..."
+echo "Running Ruff before ${ACTION}..."
 echo ""
 
 if "$RUFF" check backend/app/ backend/tests/; then
   echo ""
-  echo "✓ Ruff passed — proceeding with PR creation."
+  echo "✓ Ruff passed — proceeding with ${ACTION}."
   exit 0
 else
   echo ""
-  echo "✗ Ruff check failed. Fix the errors above before creating the PR."
+  echo "✗ Ruff check failed. Fix the errors above before ${ACTION}."
   exit 2
 fi
