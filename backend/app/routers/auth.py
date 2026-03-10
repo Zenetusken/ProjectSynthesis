@@ -1,6 +1,7 @@
 """JWT authentication router: refresh token rotation, profile, and session management."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -76,6 +77,7 @@ async def get_auth_me(
         "display_name": user.display_name,
         "onboarding_completed": user.onboarding_completed_at is not None,
         "onboarding_completed_at": user.onboarding_completed_at.isoformat() if user.onboarding_completed_at else None,
+        "preferences": json.loads(user.preferences) if user.preferences else {},
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         "created_at": user.created_at.isoformat(),
     }
@@ -107,6 +109,8 @@ async def patch_auth_me(
         user.onboarding_completed_at = datetime.now(timezone.utc)
     elif data.onboarding_completed is False:
         user.onboarding_completed_at = None
+    if data.preferences is not None:
+        user.preferences = json.dumps(data.preferences)
 
     await session.commit()
     return {"updated": True}

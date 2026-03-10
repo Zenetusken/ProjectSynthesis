@@ -94,6 +94,7 @@ async def _migrate_add_missing_columns() -> None:
             "avatar_url": "TEXT",
             "display_name": "TEXT",
             "onboarding_completed_at": "DATETIME",
+            "preferences": "TEXT",
             "last_login_at": "DATETIME",
         },
     }
@@ -173,6 +174,7 @@ async def create_tables():
     # Import all models so they register with Base.metadata
     import app.models.auth  # noqa: F401
     import app.models.github  # noqa: F401
+    import app.models.onboarding_event  # noqa: F401
     import app.models.optimization  # noqa: F401
 
     async with engine.begin() as conn:

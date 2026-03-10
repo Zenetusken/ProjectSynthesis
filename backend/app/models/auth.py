@@ -36,6 +36,7 @@ class User(Base):
     avatar_url = Column(Text, nullable=True)
     display_name = Column(Text, nullable=True)
     onboarding_completed_at = Column(DateTime, nullable=True)
+    preferences = Column(Text, nullable=True)  # JSON — user preferences (dismissed tips, milestones, etc.)
     last_login_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=_utcnow, nullable=False)

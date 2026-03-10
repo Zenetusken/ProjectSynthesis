@@ -26,6 +26,7 @@ from app.routers import github_auth, github_repos, health, history, optimize
 from app.routers.auth import router as jwt_auth_router
 from app.routers.github import router as github_router
 from app.routers.github_config import router as github_config_router
+from app.routers.onboarding import router as onboarding_router
 from app.routers.providers import router as providers_router
 from app.routers.providers import set_provider as providers_set_provider
 from app.routers.settings import router as settings_router
@@ -230,6 +231,7 @@ app.include_router(github_router)
 app.include_router(settings_router)
 app.include_router(jwt_auth_router)
 app.include_router(github_config_router)
+app.include_router(onboarding_router)
 
 if settings.TESTING:
     from app.routers.test_helpers import router as test_helpers_router

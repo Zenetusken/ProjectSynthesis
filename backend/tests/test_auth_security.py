@@ -491,6 +491,7 @@ async def test_get_auth_me_returns_user_profile():
     mock_user.avatar_url = "https://avatars.example.com/1"
     mock_user.display_name = "The Octocat"
     mock_user.onboarding_completed_at = None
+    mock_user.preferences = None
     mock_user.last_login_at = datetime(2026, 3, 9, 12, 0, 0, tzinfo=timezone.utc)
     mock_user.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
 

@@ -27,6 +27,10 @@ class PatchAuthMeRequest(BaseModel):
         description="When True, stamps onboarding_completed_at = now(). "
                     "When False, clears the timestamp (resets onboarding).",
     )
+    preferences: dict | None = Field(
+        default=None,
+        description="User preferences JSON (dismissed tips, milestones, walkthrough state, etc.).",
+    )
 
 
 class GetAuthMeResponse(BaseModel):
@@ -40,6 +44,7 @@ class GetAuthMeResponse(BaseModel):
     display_name: str | None
     onboarding_completed: bool
     onboarding_completed_at: str | None
+    preferences: dict
     last_login_at: str | None
     created_at: str
 
