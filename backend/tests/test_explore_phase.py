@@ -9,6 +9,7 @@ import pytest
 from app.services.codebase_explorer import (
     CodebaseContext,
     _deduplicate_files,
+    _extract_prompt_referenced_files,
     _format_files_for_llm,
     _get_anchor_paths,
     _keyword_fallback,
@@ -487,3 +488,59 @@ class TestBatchReadFilesTruncation:
 
         content = result["small.py"]
         assert "TRUNCATED" not in content
+
+
+class TestExtractPromptReferencedFiles:
+    """Test tree-validated prompt file extraction."""
+
+    def _tree(self, paths):
+        return [{"path": p, "sha": "abc", "size_bytes": 100} for p in paths]
+
+    def test_exact_path_match(self):
+        tree = self._tree(["backend/app/services/pipeline.py", "README.md"])
+        prompt = "Audit backend/app/services/pipeline.py for handoff issues"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        assert "backend/app/services/pipeline.py" in result
+
+    def test_filename_match(self):
+        tree = self._tree(["src/pipeline.py", "tests/test_pipeline.py"])
+        prompt = "Check pipeline.py for bugs"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        assert "src/pipeline.py" in result
+
+    def test_ambiguous_filename_skipped(self):
+        tree = self._tree([f"pkg{i}/index.ts" for i in range(5)])
+        prompt = "Fix index.ts"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        assert result == []  # >3 matches, skipped
+
+    def test_url_excluded(self):
+        tree = self._tree(["src/config.py"])
+        prompt = "See https://example.com/config.py for details"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        # config.py should NOT match from a URL context
+        assert result == []
+
+    def test_backslash_normalized(self):
+        tree = self._tree(["src/app/main.py"])
+        prompt = r"Check src\app\main.py"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        assert "src/app/main.py" in result
+
+    def test_module_stem_match(self):
+        tree = self._tree(["backend/app/services/optimizer.py", "README.md"])
+        prompt = "How does the optimizer handle secondary frameworks?"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        assert "backend/app/services/optimizer.py" in result
+
+    def test_no_matches_returns_empty(self):
+        tree = self._tree(["src/main.py"])
+        prompt = "What is the meaning of life?"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        assert result == []
+
+    def test_deduplication(self):
+        tree = self._tree(["backend/pipeline.py"])
+        prompt = "Audit backend/pipeline.py — check pipeline.py for bugs"
+        result = _extract_prompt_referenced_files(prompt, tree)
+        assert result.count("backend/pipeline.py") == 1

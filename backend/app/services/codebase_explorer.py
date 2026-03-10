@@ -13,6 +13,7 @@ Background indexing (see repo_index_service.py) runs when a repo is linked.
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, AsyncGenerator, Optional
@@ -160,6 +161,79 @@ class CodebaseContext:
     coverage_pct: int = 0
     duration_ms: int = 0
     explore_quality: str = "complete"
+
+
+# Code extension set for module stem matching
+_CODE_EXTENSIONS = frozenset({
+    ".py", ".ts", ".js", ".jsx", ".tsx", ".svelte", ".vue",
+    ".go", ".rs", ".java", ".rb", ".php", ".cs", ".swift",
+    ".yaml", ".yml", ".toml", ".json", ".md", ".txt",
+})
+
+
+def _extract_prompt_referenced_files(
+    raw_prompt: str,
+    tree: list[dict],
+    max_matches_per_ref: int | None = None,
+) -> list[str]:
+    """Extract file paths mentioned in the prompt, validated against the repo tree.
+
+    Three-tier matching (exact path > filename > module stem).
+    Ambiguous references (>max_matches_per_ref matches) are skipped.
+    """
+    if max_matches_per_ref is None:
+        max_matches_per_ref = settings.EXPLORE_MAX_AMBIGUOUS_MATCHES
+
+    # Normalize prompt: backslashes to forward slashes
+    normalized = raw_prompt.replace("\\", "/")
+
+    # Strip URL-like strings to prevent false matches
+    normalized = re.sub(r"https?://\S+", "", normalized)
+
+    tree_paths = [e["path"] for e in tree]
+    tree_path_set = set(tree_paths)
+    result: list[str] = []
+    seen: set[str] = set()
+
+    def _add(path: str) -> None:
+        if path not in seen:
+            seen.add(path)
+            result.append(path)
+
+    # Tier 1: Exact path match — check each tree path against the prompt
+    for tp in tree_paths:
+        if tp in normalized:
+            _add(tp)
+
+    # Tier 2: Filename match — extract filename-like tokens from prompt
+    filename_pattern = re.compile(r"[\w./-]*\w+\.\w{1,10}")
+    candidates = filename_pattern.findall(normalized)
+
+    for candidate in candidates:
+        filename = candidate.split("/")[-1]
+        if not any(filename.endswith(ext) for ext in _CODE_EXTENSIONS):
+            continue
+        matches = [tp for tp in tree_paths if tp.endswith("/" + filename) or tp == filename]
+        if 0 < len(matches) <= max_matches_per_ref:
+            for m in matches:
+                _add(m)
+
+    # Tier 3: Module stem match — words that match a code file's stem
+    words = set(normalized.lower().split())
+    words = {w.strip(".,;:!?()[]{}\"'") for w in words}
+    words = {w for w in words if len(w) >= 3 and "/" not in w and "." not in w}
+
+    for word in words:
+        matches = [
+            tp for tp in tree_paths
+            if tp.split("/")[-1].rsplit(".", 1)[0].lower() == word
+            and any(tp.endswith(ext) for ext in _CODE_EXTENSIONS)
+        ]
+        if 0 < len(matches) <= max_matches_per_ref:
+            for m in matches:
+                _add(m)
+
+    return result
 
 
 # ── Deterministic anchor files ──────────────────────────────────────────
