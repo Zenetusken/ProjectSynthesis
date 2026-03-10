@@ -56,7 +56,7 @@ _DOC_EXTENSIONS = frozenset({".md", ".txt", ".rst", ".adoc"})
 # Config/manifest files: embed path only
 _CONFIG_EXTENSIONS = frozenset({
     ".json", ".yaml", ".yml", ".toml", ".xml", ".ini", ".cfg",
-    ".env", ".env.example", ".env.local",
+    ".env",
 })
 
 # Lock files and generated files: skip entirely
@@ -264,7 +264,7 @@ class RepoIndexService:
                 })
 
             # 5. Batch embed
-            embed_svc = get_embedding_service(settings.EMBEDDING_MODEL)
+            embed_svc = get_embedding_service()
             if not await embed_svc.ensure_loaded():
                 logger.error("Embedding model failed to load — storing without embeddings")
                 async with async_session() as session:

@@ -50,4 +50,5 @@ class RepoIndexMeta(Base):
 
     __table_args__ = (
         Index("idx_repo_index_meta_repo_branch", "repo_full_name", "branch", unique=True),
+        {"sqlite_autoincrement": False},
     )

@@ -2,6 +2,9 @@
 
 Defines 6 ToolDefinition objects that the agentic explore stage can call.
 Each tool fetches data from the linked GitHub repository.
+
+Note: These tools are kept for MCP use. The explore stage itself now uses
+semantic retrieval + single-shot synthesis (see codebase_explorer.py).
 """
 
 import json
@@ -56,9 +59,12 @@ def get_cached_tree_size(repo_full_name: str, branch: str) -> int:
     return len(cached) if cached is not None else 0
 
 
-# Regex for get_file_outline: matches top-level function/class/interface definitions
+# Regex for get_file_outline: matches top-level function/class/interface definitions.
+# Uses [ \t]* (not \s*) for indent capture to avoid matching across line
+# boundaries (\s matches \n, which would cause off-by-one line numbers).
+# Shared with repo_index_service._extract_outline — keep in sync.
 OUTLINE_PATTERNS = re.compile(
-    r'^(\s*)'
+    r'^([ \t]*)'
     r'(def |async def |class |function |export function |export default function '
     r'|export class |export interface |export type |interface |type '
     r'|const .+ = \(|module\.exports|fn |pub fn |pub struct |pub enum |pub trait |impl )',
