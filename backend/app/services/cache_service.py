@@ -1,0 +1,126 @@
+"""Generic async cache service backed by Redis with in-memory LRU fallback.
+
+Provides a simple get/set/delete interface. Values are JSON-serialized.
+When Redis is unavailable, falls back to an in-memory dict with TTL-based
+expiry and lazy cleanup.
+
+Usage::
+
+    from app.services.cache_service import get_cache
+
+    cache = get_cache()
+    if cache:
+        await cache.set("key", {"data": 1}, ttl_seconds=300)
+        result = await cache.get("key")
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import time
+from typing import Any, Optional
+
+from app.services.redis_service import RedisService
+
+logger = logging.getLogger(__name__)
+
+# In-memory fallback eviction threshold
+_MAX_MEMORY_ENTRIES = 1000
+
+
+def _hash_content(content: str) -> str:
+    """SHA256 truncated to 16 chars for cache keys."""
+    return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+
+class CacheService:
+    """Async cache backed by Redis with in-memory fallback."""
+
+    def __init__(self, redis_service: RedisService) -> None:
+        self._redis = redis_service
+        # In-memory fallback: {key: (expiry_timestamp, value)}
+        self._memory: dict[str, tuple[float, Any]] = {}
+
+    async def get(self, key: str) -> Any | None:
+        """Get a value by key. Returns None on miss or expiry."""
+        if self._redis.is_available and self._redis.client is not None:
+            try:
+                raw = await self._redis.client.get(key)
+                if raw is not None:
+                    return json.loads(raw)
+                return None
+            except Exception as e:
+                logger.debug("Redis cache get failed for %s: %s", key, e)
+
+        # Fallback to in-memory
+        entry = self._memory.get(key)
+        if entry is None:
+            return None
+        expiry, value = entry
+        if time.time() > expiry:
+            del self._memory[key]
+            return None
+        return value
+
+    async def set(self, key: str, value: Any, ttl_seconds: int) -> None:
+        """Store a value with TTL. JSON-serializes the value."""
+        serialized = json.dumps(value, default=str)
+
+        if self._redis.is_available and self._redis.client is not None:
+            try:
+                await self._redis.client.set(key, serialized, ex=ttl_seconds)
+                return
+            except Exception as e:
+                logger.debug("Redis cache set failed for %s: %s", key, e)
+
+        # Fallback to in-memory with lazy cleanup
+        if len(self._memory) > _MAX_MEMORY_ENTRIES:
+            self._cleanup_memory()
+        self._memory[key] = (time.time() + ttl_seconds, value)
+
+    async def delete(self, key: str) -> None:
+        """Delete a key from cache."""
+        if self._redis.is_available and self._redis.client is not None:
+            try:
+                await self._redis.client.delete(key)
+            except Exception as e:
+                logger.debug("Redis cache delete failed for %s: %s", key, e)
+
+        # Always clean up in-memory too
+        self._memory.pop(key, None)
+
+    def _cleanup_memory(self) -> None:
+        """Remove expired entries from in-memory fallback."""
+        now = time.time()
+        expired = [k for k, (exp, _) in self._memory.items() if now > exp]
+        for k in expired:
+            del self._memory[k]
+
+    @staticmethod
+    def make_key(*parts: str) -> str:
+        """Build a namespaced cache key: ``synthesis:{part1}:{part2}:...``"""
+        return "synthesis:" + ":".join(parts)
+
+    @staticmethod
+    def hash_content(content: str) -> str:
+        """SHA256 hash truncated to 16 chars, for use in cache keys."""
+        return _hash_content(content)
+
+
+# ── Module-level singleton ──────────────────────────────────────────────────
+
+_instance: Optional[CacheService] = None
+
+
+def init_cache(redis_service: RedisService) -> CacheService:
+    """Initialize and return the cache service singleton."""
+    global _instance
+    _instance = CacheService(redis_service)
+    return _instance
+
+
+def get_cache() -> Optional[CacheService]:
+    """Return the cache service singleton, or None if not initialized."""
+    return _instance

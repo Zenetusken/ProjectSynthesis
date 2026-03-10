@@ -56,10 +56,18 @@ class Settings(BaseSettings):
     # Set to True in production (behind HTTPS) to add Secure flag to cookies.
     JWT_COOKIE_SECURE: bool = False
 
-    # Rate limiting — auth endpoints (slowapi format: "N/period")
+    # Rate limiting — auth endpoints (limits library format: "N/period")
     RATE_LIMIT_AUTH_LOGIN: str = "20/minute"
     RATE_LIMIT_AUTH_CALLBACK: str = "10/minute"
     RATE_LIMIT_JWT_REFRESH: str = "60/minute"
+    RATE_LIMIT_HISTORY: str = "60/minute"
+    RATE_LIMIT_HISTORY_WRITE: str = "20/minute"
+
+    # Redis (optional — in-memory fallback when unavailable)
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str = ""
 
     # Test mode — enables test-only endpoints. Never set True in production.
     TESTING: bool = False
@@ -78,6 +86,15 @@ class Settings(BaseSettings):
             self.FRONTEND_URL.startswith("http://localhost")
             or self.FRONTEND_URL.startswith("http://127.0.0.1")
         )
+        # Block startup if production deployment uses weak default secrets.
+        if not _is_localhost:
+            weak_in_prod = [f for f, w in _WEAK_DEFAULTS.items() if getattr(self, f) == w]
+            if weak_in_prod:
+                raise RuntimeError(
+                    f"FATAL: Production detected (FRONTEND_URL={self.FRONTEND_URL}) "
+                    f"but these secrets use default dev values: {', '.join(weak_in_prod)}. "
+                    f"Set strong random values in .env before deploying."
+                )
         if not self.JWT_COOKIE_SECURE and not _is_localhost:
             _log.critical(
                 "SECURITY: JWT_COOKIE_SECURE=False but FRONTEND_URL=%s is not localhost. "
