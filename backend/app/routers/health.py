@@ -21,7 +21,10 @@ async def _probe_mcp() -> bool:
     """
     try:
         _, writer = await asyncio.wait_for(
-            asyncio.open_connection(settings.MCP_HOST, settings.MCP_PORT),
+            asyncio.open_connection(
+                settings.MCP_PROBE_HOST or settings.MCP_HOST,
+                settings.MCP_PORT,
+            ),
             timeout=_MCP_PROBE_TIMEOUT,
         )
         writer.close()

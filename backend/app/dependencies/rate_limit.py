@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
+from ipaddress import ip_address, ip_network
 from typing import TYPE_CHECKING, Callable
 
 from fastapi import HTTPException, Request
@@ -33,10 +34,32 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Trusted proxy IPs — only trust X-Forwarded-For from these addresses
-_trusted_proxy_set: set[str] = {
-    ip.strip() for ip in _settings.TRUSTED_PROXIES.split(",") if ip.strip()
-} if _settings.TRUSTED_PROXIES else {"127.0.0.1", "::1"}
+
+def _parse_trusted_proxies(raw: str) -> list:
+    """Parse comma-separated IPs and CIDR blocks into ip_network objects.
+
+    Supports both individual IPs (``127.0.0.1``) and CIDR ranges
+    (``172.16.0.0/12``).  Individual IPs are promoted to /32 or /128
+    networks via ``strict=False``.
+    """
+    nets: list = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            nets.append(ip_network(item, strict=False))
+        except ValueError:
+            logger.warning("Invalid TRUSTED_PROXIES entry (skipped): %s", item)
+    return nets
+
+
+# Trusted proxy networks — only trust X-Forwarded-For from these addresses
+_trusted_proxy_nets: list = (
+    _parse_trusted_proxies(_settings.TRUSTED_PROXIES)
+    if _settings.TRUSTED_PROXIES
+    else _parse_trusted_proxies("127.0.0.1,::1")
+)
 
 # Module-level state — initialized once via init_rate_limiter()
 _storage = None
@@ -57,12 +80,23 @@ def _get_client_ip(request: Request) -> str:
     TRUSTED_PROXIES), the first IP in X-Forwarded-For is used. Otherwise,
     the direct client IP is returned to prevent rate-limit bypass via
     header spoofing.
+
+    Supports CIDR notation (e.g., ``172.16.0.0/12``) so Docker bridge
+    subnets can be trusted without listing every possible container IP.
     """
-    direct_ip = request.client.host if request.client else "unknown"
+    direct_ip_str = request.client.host if request.client else "unknown"
     forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded and direct_ip in _trusted_proxy_set:
+    if not forwarded:
+        return direct_ip_str
+
+    try:
+        direct_ip = ip_address(direct_ip_str)
+    except ValueError:
+        return direct_ip_str
+
+    if any(direct_ip in net for net in _trusted_proxy_nets):
         return forwarded.split(",")[0].strip()
-    return direct_ip
+    return direct_ip_str
 
 
 async def init_rate_limiter(redis_service: "RedisService | None" = None) -> None:

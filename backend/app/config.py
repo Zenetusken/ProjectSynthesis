@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5199"
     MCP_PORT: int = 8001
     MCP_HOST: str = "127.0.0.1"
+    MCP_PROBE_HOST: str = ""  # Docker: set to "mcp" (service name)
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/synthesis.db"
     CORS_ORIGINS: str = "http://localhost:5199,http://localhost:4173"
 
