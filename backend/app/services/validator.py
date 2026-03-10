@@ -27,13 +27,13 @@ SCORE_WEIGHTS = {
 }
 
 
-def compute_overall_score(scores: dict) -> int:
+def compute_overall_score(scores: dict) -> int | None:
     """Compute weighted average overall score.
 
     Weights: clarity 20%, specificity 20%, structure 15%,
              faithfulness 25%, conciseness 20%
 
-    Returns: integer 1-10
+    Returns: integer 1-10, or None if no valid scores are present.
     """
     weighted_sum = 0.0
     total_weight = 0.0
@@ -45,7 +45,7 @@ def compute_overall_score(scores: dict) -> int:
             total_weight += weight
 
     if total_weight == 0:
-        return 5  # default mid-score
+        return None  # no valid scores — distinguish from a real score
 
     raw = weighted_sum / total_weight
     return max(1, min(10, round(raw)))

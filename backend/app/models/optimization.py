@@ -1,9 +1,13 @@
+import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 
 from app.database import Base
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow():
@@ -76,7 +80,8 @@ class Optimization(Base):
     tags = Column(Text, default="[]")  # JSON array
     title = Column(Text, nullable=True)
     version = Column(Text, nullable=True)
-    retry_of = Column(Text, nullable=True)  # FK -> optimizations.id
+    retry_of = Column(Text, ForeignKey("optimizations.id", ondelete="SET NULL"), nullable=True)
+    row_version = Column(Integer, nullable=False, server_default="0", default=0)
 
     # GitHub / codebase context
     linked_repo_full_name = Column(Text, nullable=True)
@@ -88,11 +93,11 @@ class Optimization(Base):
         Index("idx_optimizations_task_type", "task_type"),
         Index("idx_optimizations_created_at", created_at.desc()),
         Index("idx_optimizations_user_id", "user_id"),
+        Index("idx_optimizations_retry_of", "retry_of"),
     )
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API responses."""
-        import json
         result = {}
         for col in self.__table__.columns:
             value = getattr(self, col.name)
@@ -104,6 +109,10 @@ class Optimization(Base):
                     try:
                         value = json.loads(value)
                     except (json.JSONDecodeError, TypeError):
-                        pass
+                        logger.warning(
+                            "Malformed JSON in %s.%s (id=%s), returning empty list",
+                            self.__tablename__, col.name, self.id,
+                        )
+                        value = []
             result[col.name] = value
         return result

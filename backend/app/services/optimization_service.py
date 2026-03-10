@@ -16,6 +16,17 @@ from app.models.optimization import Optimization
 
 logger = logging.getLogger(__name__)
 
+
+def escape_like(s: str) -> str:
+    """Escape SQL LIKE wildcards (%, _) in user input.
+
+    Prevents user-supplied ``%`` and ``_`` from acting as wildcards in
+    LIKE / ILIKE clauses. The escape character is ``\\``.
+    Callers must add ``.escape("\\\\")`` to the SQLAlchemy ``ilike()`` call.
+    """
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 VALID_SORT_COLUMNS: frozenset[str] = frozenset({
     "created_at", "overall_score", "task_type", "updated_at",
     "duration_ms", "primary_framework", "status",
@@ -100,10 +111,11 @@ async def list_optimizations(
         count_query = count_query.where(Optimization.task_type == task_type)
 
     if search:
-        search_pattern = f"%{search}%"
+        escaped = escape_like(search)
+        search_pattern = f"%{escaped}%"
         search_filter = (
-            Optimization.raw_prompt.ilike(search_pattern)
-            | Optimization.title.ilike(search_pattern)
+            Optimization.raw_prompt.ilike(search_pattern, escape="\\")
+            | Optimization.title.ilike(search_pattern, escape="\\")
         )
         query = query.where(search_filter)
         count_query = count_query.where(search_filter)
@@ -111,6 +123,8 @@ async def list_optimizations(
     # Sorting — whitelist prevents getattr on arbitrary user input
     if sort not in VALID_SORT_COLUMNS:
         sort = "created_at"
+    if order not in ("asc", "desc"):
+        order = "desc"
     sort_column = getattr(Optimization, sort)
     if order == "asc":
         query = query.order_by(sort_column.asc())
@@ -324,17 +338,24 @@ async def restore_optimization(
 async def delete_optimization(
     session: AsyncSession,
     optimization_id: str,
+    user_id: Optional[str] = None,
 ) -> bool:
     """Soft-delete an optimization by setting deleted_at.
 
     Args:
         session: Async database session.
         optimization_id: The UUID of the optimization to soft-delete.
+        user_id: When provided, restricts deletion to records owned by this user.
+                 Pass None to skip ownership check (single-user/localhost mode).
 
     Returns:
         True if soft-deleted, False if not found.
     """
-    opt = await get_optimization_orm(session, optimization_id)
+    filters = [Optimization.id == optimization_id, Optimization.deleted_at.is_(None)]
+    if user_id:
+        filters.append(Optimization.user_id == user_id)
+    result = await session.execute(select(Optimization).where(*filters))
+    opt = result.scalar_one_or_none()
     if opt is None:
         return False
 

@@ -25,6 +25,7 @@ class PatchOptimizationRequest(BaseModel):
     tags: Optional[list[str]] = None
     version: Optional[str] = None
     project: Optional[str] = None
+    expected_version: Optional[int] = None
 
 
 class RetryRequest(BaseModel):

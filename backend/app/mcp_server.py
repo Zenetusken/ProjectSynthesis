@@ -61,17 +61,25 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[MCPAppContext]:
 # ── Shared DB helper ──────────────────────────────────────────────────────────
 
 @asynccontextmanager
-async def _opt_session(optimization_id: str) -> AsyncGenerator[tuple, None]:
+async def _opt_session(
+    optimization_id: str, user_id: Optional[str] = None
+) -> AsyncGenerator[tuple, None]:
     """Context manager yielding (session, opt) for a given optimization ID.
 
     Yields (session, None) when not found — callers must check for None.
     Keeps the session open so callers can mutate and commit within the same
     transaction without hitting DetachedInstanceError.
+
+    Args:
+        optimization_id: The UUID to look up.
+        user_id: Optional owner filter. When set, only records owned by this
+                 user are returned. Omit for unscoped access.
     """
     async with async_session() as session:
-        result = await session.execute(
-            select(Optimization).where(Optimization.id == optimization_id)
-        )
+        query = select(Optimization).where(Optimization.id == optimization_id)
+        if user_id:
+            query = query.where(Optimization.user_id == user_id)
+        result = await session.execute(query)
         yield session, result.scalar_one_or_none()
 
 
@@ -209,7 +217,7 @@ def create_mcp_server(provider=None) -> FastMCP:
 
     # Whitelisted sort columns — prevents getattr on arbitrary user input (B5)
     from app.services.optimization_service import VALID_SORT_COLUMNS as _SORT_COLUMNS
-    from app.services.optimization_service import compute_stats
+    from app.services.optimization_service import compute_stats, escape_like
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -334,18 +342,22 @@ def create_mcp_server(provider=None) -> FastMCP:
             openWorldHint= False,
         ),
     )
-    async def get_optimization(optimization_id: str) -> str:
+    async def get_optimization(
+        optimization_id: str, user_id: Optional[str] = None
+    ) -> str:
         """Get a specific optimization record by ID.
 
         Args:
             optimization_id: The UUID of the optimization to retrieve.
                              Use list_optimizations to discover valid IDs.
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON with full optimization record including scores, prompts, and metadata.
             Returns {"error": ...} with a hint if not found.
         """
-        async with _opt_session(optimization_id) as (_, opt):
+        async with _opt_session(optimization_id, user_id=user_id) as (_, opt):
             if not opt:
                 return _not_found(optimization_id)
             return json.dumps(opt.to_dict(), indent=2)
@@ -369,6 +381,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         offset: int = 0,
         sort: str = "created_at",
         order: str = "desc",
+        user_id: Optional[str] = None,
     ) -> str:
         """List optimization history with filtering, sorting, and pagination.
 
@@ -381,6 +394,8 @@ def create_mcp_server(provider=None) -> FastMCP:
             offset: Number of records to skip for pagination (default 0)
             sort: Sort column — one of: created_at, overall_score, task_type, updated_at
             order: Sort direction — 'asc' or 'desc' (default 'desc')
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON with: items (array), total, count, offset, has_more, next_offset.
@@ -393,6 +408,8 @@ def create_mcp_server(provider=None) -> FastMCP:
         limit = min(max(1, limit), 100)
 
         query = select(Optimization).where(Optimization.deleted_at.is_(None))
+        if user_id:
+            query = query.where(Optimization.user_id == user_id)
         if project:
             query = query.where(Optimization.project == project)
         if task_type:
@@ -400,9 +417,11 @@ def create_mcp_server(provider=None) -> FastMCP:
         if min_score is not None:
             query = query.where(Optimization.overall_score >= min_score)
         if search:
-            pattern = f"%{search}%"
+            escaped = escape_like(search)
+            pattern = f"%{escaped}%"
             query = query.where(
-                (Optimization.raw_prompt.ilike(pattern)) | (Optimization.title.ilike(pattern))
+                (Optimization.raw_prompt.ilike(pattern, escape="\\"))
+                | (Optimization.title.ilike(pattern, escape="\\"))
             )
 
         sort_col = getattr(Optimization, sort)
@@ -440,11 +459,17 @@ def create_mcp_server(provider=None) -> FastMCP:
             openWorldHint= False,
         ),
     )
-    async def get_stats(project: Optional[str] = None, ctx: Optional[Context] = None) -> str:
+    async def get_stats(
+        project: Optional[str] = None,
+        user_id: Optional[str] = None,
+        ctx: Optional[Context] = None,
+    ) -> str:
         """Get aggregated statistics across optimization history.
 
         Args:
             project: Scope stats to this project label. Omit for global stats.
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON with total_optimizations, average_score, task_type_breakdown,
@@ -452,7 +477,7 @@ def create_mcp_server(provider=None) -> FastMCP:
             codebase_aware_count, improvement_rate.
         """
         async with async_session() as session:
-            stats = await compute_stats(session, project=project)
+            stats = await compute_stats(session, project=project, user_id=user_id)
         return json.dumps(stats, indent=2)
 
     @mcp.tool(
@@ -465,12 +490,16 @@ def create_mcp_server(provider=None) -> FastMCP:
             openWorldHint= False,
         ),
     )
-    async def delete_optimization(optimization_id: str) -> str:
+    async def delete_optimization(
+        optimization_id: str, user_id: Optional[str] = None
+    ) -> str:
         """Soft-delete an optimization record by ID (sets deleted_at; purged after 7 days).
 
         Args:
             optimization_id: The UUID of the optimization to delete.
                              Use list_optimizations to discover valid IDs.
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON confirming deletion with {"deleted": true, "id": "..."}.
@@ -478,7 +507,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         """
         from app.services.optimization_service import delete_optimization as svc_delete
         async with async_session() as session:
-            deleted = await svc_delete(session, optimization_id)
+            deleted = await svc_delete(session, optimization_id, user_id=user_id)
             await session.commit()
         if not deleted:
             return _not_found(optimization_id)
@@ -497,6 +526,7 @@ def create_mcp_server(provider=None) -> FastMCP:
     async def list_trash(
         limit: int = 20,
         offset: int = 0,
+        user_id: Optional[str] = None,
     ) -> str:
         """List soft-deleted optimizations still within the 7-day recovery window.
 
@@ -506,6 +536,8 @@ def create_mcp_server(provider=None) -> FastMCP:
         Args:
             limit: Maximum results per page (default 20, max 100).
             offset: Number of records to skip for pagination (default 0).
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON pagination envelope: {total, count, offset, items, has_more,
@@ -518,6 +550,8 @@ def create_mcp_server(provider=None) -> FastMCP:
                 Optimization.deleted_at.isnot(None),
                 Optimization.deleted_at >= cutoff,
             ]
+            if user_id:
+                base.append(Optimization.user_id == user_id)
             count_result = await session.execute(
                 select(func.count(Optimization.id)).where(*base)
             )
@@ -553,7 +587,9 @@ def create_mcp_server(provider=None) -> FastMCP:
             openWorldHint=False,
         ),
     )
-    async def restore_optimization(optimization_id: str) -> str:
+    async def restore_optimization(
+        optimization_id: str, user_id: Optional[str] = None
+    ) -> str:
         """Restore a soft-deleted optimization from the trash (clears deleted_at).
 
         The record must still be within the 7-day recovery window. Use list_trash
@@ -561,15 +597,16 @@ def create_mcp_server(provider=None) -> FastMCP:
 
         Args:
             optimization_id: The UUID of the optimization to restore.
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON {"restored": true, "id": "..."} on success.
             Returns {"error": ...} if not found in trash or recovery window expired.
         """
         from app.services.optimization_service import restore_optimization as svc_restore
-        # MCP operates without user sessions — pass None to skip user-ownership check
         async with async_session() as session:
-            restored = await svc_restore(session, optimization_id, user_id=None)
+            restored = await svc_restore(session, optimization_id, user_id=user_id)
             if restored:
                 await session.commit()
         if not restored:
@@ -593,6 +630,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         query: str,
         limit: int = 10,
         offset: int = 0,
+        user_id: Optional[str] = None,
     ) -> str:
         """Full-text search across prompt content, optimized prompts, and titles.
 
@@ -602,22 +640,23 @@ def create_mcp_server(provider=None) -> FastMCP:
             query: Search string to match against prompt and title text
             limit: Maximum results per page (default 10, max 100)
             offset: Number of records to skip for pagination (default 0)
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON with: items, total, count, offset, has_more, next_offset.
         """
         limit = min(max(1, limit), 100)
-        pattern = f"%{query}%"
-        stmt = (
-            select(Optimization)
-            .where(
-                Optimization.deleted_at.is_(None),
-                (Optimization.raw_prompt.ilike(pattern))
-                | (Optimization.optimized_prompt.ilike(pattern))
-                | (Optimization.title.ilike(pattern))
-            )
-            .order_by(Optimization.created_at.desc())
-        )
+        escaped = escape_like(query)
+        pattern = f"%{escaped}%"
+        stmt = select(Optimization).where(Optimization.deleted_at.is_(None))
+        if user_id:
+            stmt = stmt.where(Optimization.user_id == user_id)
+        stmt = stmt.where(
+            (Optimization.raw_prompt.ilike(pattern, escape="\\"))
+            | (Optimization.optimized_prompt.ilike(pattern, escape="\\"))
+            | (Optimization.title.ilike(pattern, escape="\\"))
+        ).order_by(Optimization.created_at.desc())
         async with async_session() as session:
             count_result = await session.execute(
                 select(func.count()).select_from(stmt.subquery())
@@ -651,6 +690,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         project: str,
         include_prompts: bool = True,
         limit: int = 50,
+        user_id: Optional[str] = None,
     ) -> str:
         """Get all optimizations belonging to a project, ordered by most recent.
 
@@ -659,16 +699,19 @@ def create_mcp_server(provider=None) -> FastMCP:
             include_prompts: Include raw_prompt and optimized_prompt text (default True).
                              Set False for a compact summary view.
             limit: Maximum results to return (default 50)
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON array of optimization records. Empty array if project has no records.
         """
-        stmt = (
-            select(Optimization)
-            .where(Optimization.project == project)
-            .order_by(Optimization.created_at.desc())
-            .limit(limit)
+        stmt = select(Optimization).where(
+            Optimization.project == project,
+            Optimization.deleted_at.is_(None),
         )
+        if user_id:
+            stmt = stmt.where(Optimization.user_id == user_id)
+        stmt = stmt.order_by(Optimization.created_at.desc()).limit(limit)
         async with async_session() as session:
             result = await session.execute(stmt)
             items = []
@@ -696,6 +739,8 @@ def create_mcp_server(provider=None) -> FastMCP:
         remove_tags: Optional[list[str]] = None,
         project: Optional[str] = None,
         title: Optional[str] = None,
+        expected_version: Optional[int] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         """Update tags, project label, or title on an existing optimization.
 
@@ -708,14 +753,25 @@ def create_mcp_server(provider=None) -> FastMCP:
             remove_tags: Tags to remove (missing tags are silently ignored)
             project: New project label. Pass empty string to clear.
             title: New title. Pass empty string to clear.
+            expected_version: Expected row_version for optimistic locking. If provided and
+                              does not match the current row_version, the update is rejected
+                              with a VERSION_CONFLICT error. Omit to skip the check.
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON with the full updated optimization record.
             Returns {"error": ...} with a hint if not found.
         """
-        async with _opt_session(optimization_id) as (session, opt):
+        async with _opt_session(optimization_id, user_id=user_id) as (session, opt):
             if not opt:
                 return _not_found(optimization_id)
+            if expected_version is not None and opt.row_version != expected_version:
+                return json.dumps({
+                    "error": "VERSION_CONFLICT",
+                    "message": "Record was modified. Refetch and retry.",
+                    "current_version": opt.row_version,
+                })
             current_tags: list[str] = json.loads(opt.tags) if opt.tags else []
             if add_tags:
                 current_tags = list(dict.fromkeys(current_tags + add_tags))  # dedup, preserve order
@@ -728,6 +784,7 @@ def create_mcp_server(provider=None) -> FastMCP:
             if title is not None:
                 opt.title = title or None
             opt.updated_at = datetime.now(timezone.utc)
+            opt.row_version += 1
             # Capture dict BEFORE commit — SQLAlchemy expires attrs on commit,
             # and async sessions cannot lazy-load expired attrs (raises MissingGreenlet).
             updated = opt.to_dict()
@@ -751,6 +808,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         file_contexts: Optional[list[dict]] = None,  # N31: [{name, content}]
         instructions: Optional[list[str]] = None,    # N31: output constraints
         url_contexts: Optional[list[str]] = None,    # N31: URLs to fetch+inject
+        user_id: Optional[str] = None,
         ctx: Optional[Context] = None,
     ) -> str:
         """Re-run the optimization pipeline for an existing record with an optional strategy override.
@@ -768,13 +826,15 @@ def create_mcp_server(provider=None) -> FastMCP:
             file_contexts: List of {"name": str, "content": str} dicts for attached files.
             instructions: List of output constraint strings for this retry run.
             url_contexts: List of URLs to fetch and inject as reference material.
+            user_id: Optional owner filter. When set, only records owned by this user
+                     are visible. Omit for unscoped access (single-user/localhost mode).
 
         Returns:
             JSON with keys: analysis, strategy, optimization, validation.
             Returns {"error": ...} with a hint if not found.
         """
         # B6: capture all ORM values as locals inside the session block
-        async with _opt_session(optimization_id) as (_, orig):
+        async with _opt_session(optimization_id, user_id=user_id) as (_, orig):
             if not orig:
                 return _not_found(optimization_id)
             raw_prompt = orig.raw_prompt

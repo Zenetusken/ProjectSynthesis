@@ -10,6 +10,7 @@ Token encryption and storage is owned by app.routers.github_auth.
 import base64
 import logging
 import os
+import threading
 from typing import Optional
 
 import anyio
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 # ───────────────────────────────────────────────────────────────────────
 
 _fernet: Optional[Fernet] = None
+_fernet_lock = threading.Lock()
 
 # File extensions and directories to exclude when browsing repos
 EXCLUDED_EXTENSIONS = frozenset({
@@ -47,31 +49,44 @@ MAX_FILE_SIZE_BYTES = 100 * 1024  # 100 KB
 
 
 def _get_fernet() -> Fernet:
-    """Return a Fernet instance, creating/loading the key as needed."""
+    """Return a Fernet instance, creating/loading the key as needed.
+
+    Thread-safe: uses a lock to prevent concurrent first-access from
+    generating different keys (race condition).
+    """
     global _fernet
     if _fernet is not None:
         return _fernet
 
-    key = settings.GITHUB_TOKEN_ENCRYPTION_KEY
-    if key:
-        _fernet = Fernet(key.encode() if isinstance(key, str) else key)
+    with _fernet_lock:
+        # Double-check after acquiring the lock
+        if _fernet is not None:
+            return _fernet
+
+        key = settings.GITHUB_TOKEN_ENCRYPTION_KEY
+        if key:
+            _fernet = Fernet(key.encode() if isinstance(key, str) else key)
+            return _fernet
+
+        # Auto-generate and persist a key if not configured
+        key_path = os.path.join("data", ".github_encryption_key")
+        os.makedirs("data", exist_ok=True)
+        key_bytes: bytes
+        if os.path.exists(key_path):
+            with open(key_path, "rb") as f:
+                key_bytes = f.read().strip()
+        else:
+            key_bytes = Fernet.generate_key()
+            # Atomic creation with restricted permissions (owner read/write only)
+            fd = os.open(key_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                os.write(fd, key_bytes)
+            finally:
+                os.close(fd)
+            logger.info("Generated new GitHub token encryption key at %s", key_path)
+
+        _fernet = Fernet(key_bytes)
         return _fernet
-
-    # Auto-generate and persist a key if not configured
-    key_path = os.path.join("data", ".github_encryption_key")
-    os.makedirs("data", exist_ok=True)
-    key_bytes: bytes
-    if os.path.exists(key_path):
-        with open(key_path, "rb") as f:
-            key_bytes = f.read().strip()
-    else:
-        key_bytes = Fernet.generate_key()
-        with open(key_path, "wb") as f:
-            f.write(key_bytes)
-        logger.info("Generated new GitHub token encryption key at %s", key_path)
-
-    _fernet = Fernet(key_bytes)
-    return _fernet
 
 
 def encrypt_token(token: str) -> bytes:
@@ -125,6 +140,11 @@ async def get_token_for_session(
 
     Returns:
         Decrypted token string, or None if no token exists.
+
+    Side-effect:
+        When a GitHub App token is auto-refreshed, ``session.commit()``
+        is called to persist the new credentials. This may commit any
+        other pending changes in the caller's session.
     """
     from datetime import datetime, timedelta, timezone
 
@@ -189,9 +209,13 @@ async def get_token_for_session(
 # GitHub API wrappers (PyGithub, async via anyio)
 # ───────────────────────────────────────────────────────────────────────
 
+_GITHUB_REQUEST_TIMEOUT = 30  # seconds — PyGithub passes this to requests
+_THREAD_TIMEOUT = 60  # seconds — outer guard for anyio.to_thread.run_sync calls
+
+
 def _make_github(token: str) -> Github:
     """Create a PyGithub client authenticated with the given token."""
-    return Github(auth=Auth.Token(token))
+    return Github(auth=Auth.Token(token), timeout=_GITHUB_REQUEST_TIMEOUT)
 
 
 def _is_excluded(path: str) -> bool:
@@ -244,7 +268,8 @@ async def get_user_repos(token: str) -> list[dict]:
         return repos
 
     try:
-        return await anyio.to_thread.run_sync(_sync)
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
     except Exception as e:
         logger.error("Failed to list repos: %s", e)
         return []
@@ -286,7 +311,8 @@ async def get_repo_tree(
         return entries
 
     try:
-        return await anyio.to_thread.run_sync(_sync)
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
     except Exception as e:
         logger.error("Failed to get repo tree for %s@%s: %s", full_name, branch, e)
         return []
@@ -316,7 +342,8 @@ async def read_file_content(
         return blob.content
 
     try:
-        return await anyio.to_thread.run_sync(_sync)
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
     except Exception as e:
         logger.error("Failed to read file %s from %s: %s", file_sha, full_name, e)
         return None
@@ -350,7 +377,8 @@ async def read_file_by_path(
         return content.decoded_content.decode("utf-8", errors="replace")
 
     try:
-        return await anyio.to_thread.run_sync(_sync)
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
     except Exception as e:
         logger.error("Failed to read file '%s' from %s: %s", path, full_name, e)
         return None
@@ -384,7 +412,8 @@ async def get_repo_info(token: str, full_name: str) -> Optional[dict]:
         }
 
     try:
-        return await anyio.to_thread.run_sync(_sync)
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
     except Exception as e:
         logger.error("Failed to get repo info for %s: %s", full_name, e)
         return None
@@ -411,7 +440,8 @@ async def get_repo_branches(token: str, full_name: str) -> list[dict]:
         return result
 
     try:
-        return await anyio.to_thread.run_sync(_sync)
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
     except Exception as e:
         logger.error("Failed to list branches for %s: %s", full_name, e)
         return []
@@ -434,4 +464,9 @@ async def get_default_branch(token: str, repo_full_name: str) -> str:
         g = _make_github(token)
         return g.get_repo(repo_full_name).default_branch
 
-    return await anyio.to_thread.run_sync(_sync)
+    try:
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
+    except Exception as e:
+        logger.error("Failed to get default branch for %s: %s", repo_full_name, e)
+        raise

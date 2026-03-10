@@ -22,14 +22,6 @@ from app.services.url_fetcher import fetch_url_contexts
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["optimize"])
 
-# Deprecated: use req.app.state.provider. Kept for backward compat with main.py lifespan.
-_provider = None
-
-
-def set_provider(provider):
-    """Deprecated: provider is now read from app.state. Kept for main.py compat."""
-    pass  # no-op — provider injected via app.state at startup
-
 
 def _default_serializer(obj: object) -> str:
     """JSON fallback serializer for types not handled by default."""
@@ -128,7 +120,16 @@ async def optimize_prompt(
                                 "codebase_context_snapshot truncated from %d to 65536 chars for opt %s",
                                 len(_snapshot), opt_id,
                             )
-                            _snapshot = _snapshot[:65536]
+                            # JSON-safe truncation: reduce content and re-serialize
+                            # rather than slicing raw JSON which can produce invalid output
+                            truncated_data = {
+                                k: v for k, v in event_data.items()
+                                if k in ("model", "repo_full_name", "branch", "file_count", "tree")
+                            }
+                            truncated_data["_truncated"] = True
+                            _snapshot = json.dumps(truncated_data)
+                            if len(_snapshot) > 65536:
+                                _snapshot = json.dumps({"_truncated": True, "model": event_data.get("model")})
                         optimization.codebase_context_snapshot = _snapshot
                         optimization.model_explore = event_data.get("model")
                     elif event_type == "analysis":
@@ -250,7 +251,6 @@ async def optimize_prompt(
     )
 
 
-
 @router.get("/api/optimize/{optimization_id}")
 async def get_optimization(
     optimization_id: str,
@@ -277,8 +277,18 @@ async def patch_optimization(
         select(Optimization).where(Optimization.id == optimization_id)
     )
     optimization = result.scalar_one_or_none()
-    if not optimization:
+    if not optimization or optimization.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Optimization not found")
+
+    if patch.expected_version is not None and optimization.row_version != patch.expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "VERSION_CONFLICT",
+                "message": "Record was modified by another request. Refetch and retry.",
+                "current_version": optimization.row_version,
+            },
+        )
 
     if patch.title is not None:
         optimization.title = patch.title  # type: ignore[assignment]
@@ -290,6 +300,7 @@ async def patch_optimization(
         optimization.project = patch.project  # type: ignore[assignment]
 
     optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+    optimization.row_version += 1
     await session.commit()
     return optimization.to_dict()
 
@@ -307,7 +318,7 @@ async def retry_optimization(
         select(Optimization).where(Optimization.id == optimization_id)
     )
     original = result.scalar_one_or_none()
-    if not original:
+    if not original or original.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
     # Create a new optimize request based on the original
