@@ -13,7 +13,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
@@ -28,7 +27,6 @@ from app.routers.github import router as github_router
 from app.routers.github_config import router as github_config_router
 from app.routers.onboarding import router as onboarding_router
 from app.routers.providers import router as providers_router
-from app.routers.providers import set_provider as providers_set_provider
 from app.routers.settings import router as settings_router
 from app.services.cleanup import cleanup_loop
 from app.services.github_credentials_service import load_credentials_from_file
@@ -103,11 +101,14 @@ async def lifespan(app: FastAPI):
 
     On startup:
     - Creates all database tables (acts as simple migration).
+    - Connects to Redis (graceful degradation if unavailable).
+    - Initializes rate limiter and cache service.
     - Detects the best available LLM provider.
     - Injects the provider into routers that need it.
     - Mounts MCP server (streamable-HTTP + WebSocket) if mcp is installed.
 
     On shutdown:
+    - Closes Redis connection.
     - Performs any necessary cleanup.
     """
     global _mcp_http_app, _mcp_ws_asgi
@@ -117,6 +118,30 @@ async def lifespan(app: FastAPI):
     # Create database tables
     await create_tables()
     logger.info("Database tables ready")
+
+    # Initialize Redis (graceful degradation)
+    from app.services.redis_service import RedisService
+
+    redis_svc = RedisService(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=settings.REDIS_DB,
+        password=settings.REDIS_PASSWORD,
+    )
+    connected = await redis_svc.connect()
+    if not connected:
+        logger.critical("Redis unavailable — falling back to in-memory rate limiting and caching")
+    app.state.redis = redis_svc
+
+    # Initialize rate limiter (uses Redis if available, else in-memory)
+    from app.dependencies.rate_limit import init_rate_limiter
+
+    await init_rate_limiter(redis_svc)
+
+    # Initialize cache service
+    from app.services.cache_service import init_cache
+
+    app.state.cache = init_cache(redis_svc)
 
     # Load persisted GitHub App credentials (hot-reload before first request)
     load_credentials_from_file()
@@ -128,11 +153,6 @@ async def lifespan(app: FastAPI):
         logger.error("LLM Provider detection failed:\n%s", e)
         raise
     logger.info("LLM Provider: %s", provider.name)
-
-    # Wire up provider to routers that need it
-    health.set_provider(provider)
-    optimize.set_provider(provider)
-    providers_set_provider(provider)
 
     # Store provider on app state for access elsewhere
     app.state.provider = provider
@@ -149,6 +169,12 @@ async def lifespan(app: FastAPI):
         _mcp_ws_asgi = make_websocket_asgi(mcp)
         app.state.mcp = mcp
         logger.info("MCP server mounted at /mcp (streamable-HTTP) and /mcp/ws (WebSocket)")
+        if settings.MCP_HOST not in ("127.0.0.1", "localhost", "::1"):
+            logger.warning(
+                "SECURITY: MCP_HOST=%s — MCP WebSocket endpoint bypasses auth/CORS middleware. "
+                "Bind to 127.0.0.1 or add authentication to the WebSocket handshake.",
+                settings.MCP_HOST,
+            )
         async with mcp.session_manager.run():
             logger.info("Project Synthesis ready")
             yield
@@ -157,6 +183,9 @@ async def lifespan(app: FastAPI):
         yield
 
     # Shutdown
+    await redis_svc.close()
+    logger.info("Redis connection closed")
+
     cleanup_task = getattr(app.state, "cleanup_task", None)
     if cleanup_task and not cleanup_task.done():
         cleanup_task.cancel()
@@ -178,15 +207,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Rate limit exceeded handler — structured JSON matching the rest of the API
-async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    return JSONResponse(
-        status_code=429,
-        content={"code": "RATE_LIMIT_EXCEEDED", "message": f"Too many requests: {exc.detail}"},
-    )
-
-app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
-
 # Streamable HTTP MCP — mounted on FastAPI so it shares the session_manager lifespan.
 # HTTP clients (Claude SDK, curl) do not send an Origin header, so CORSMiddleware
 # does not interfere.
@@ -194,12 +214,20 @@ app.mount("/mcp", _LazyMCPHttpApp())
 
 # ── Middleware ─────────────────────────────────────────────────────────
 
+# Session cache middleware (mirrors session data to Redis for server-side visibility).
+# Registered before SessionMiddleware so it runs AFTER it in the ASGI stack
+# (Starlette middleware wraps in reverse registration order).
+from app.middleware.session_cache import SessionCacheMiddleware
+
+app.add_middleware(SessionCacheMiddleware)
+
 # Session middleware (required for GitHub OAuth CSRF state)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
     session_cookie="synthesis_session",
     max_age=86400 * 7,  # 7 days
+    https_only=settings.JWT_COOKIE_SECURE,
 )
 
 # CORS middleware
@@ -212,8 +240,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────
@@ -249,7 +277,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "Internal server error",
-            "detail": str(exc),
+            "detail": "An unexpected error occurred.",
             "path": str(request.url.path),
         },
     )

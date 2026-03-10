@@ -18,14 +18,6 @@ from app.schemas.auth import AuthenticatedUser
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["providers"])
 
-# Deprecated: use request.app.state.provider. Kept for backward compat with main.py lifespan.
-_provider = None
-
-
-def set_provider(provider):
-    """Deprecated: provider is now read from app.state. Kept for main.py compat."""
-    pass  # no-op — provider injected via app.state at startup
-
 
 @router.get("/api/providers/detect")
 async def detect_providers(

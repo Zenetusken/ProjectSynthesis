@@ -7,14 +7,13 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import RateLimit
 from app.models.auth import RefreshToken, User
 from app.models.github import GitHubToken
 from app.routers.github_repos import evict_repo_cache
@@ -27,7 +26,6 @@ from app.utils.jwt import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["github-auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 # ── JWT helpers ────────────────────────────────────────────────────────────
 
@@ -117,8 +115,10 @@ def _rotate_session(request: Request, **new_data) -> str:
 
 
 @router.get("/auth/github/login")
-@limiter.limit(lambda: settings.RATE_LIMIT_AUTH_LOGIN)
-async def github_login(request: Request):
+async def github_login(
+    request: Request,
+    _rl: None = Depends(RateLimit(lambda: settings.RATE_LIMIT_AUTH_LOGIN)),
+):
     """Initiate GitHub App OAuth flow. Redirects to GitHub."""
     # Soft check: redirect already-authenticated users back to the app.
     # This is a UX improvement, not a security gate — no DB revocation check.
@@ -156,12 +156,12 @@ async def github_login(request: Request):
 
 
 @router.get("/auth/github/callback")
-@limiter.limit(lambda: settings.RATE_LIMIT_AUTH_CALLBACK)
 async def github_callback(
     request: Request,
     code: str = "",
     state: str = "",
     session: AsyncSession = Depends(get_session),
+    _rl: None = Depends(RateLimit(lambda: settings.RATE_LIMIT_AUTH_CALLBACK)),
 ):
     """Handle GitHub App OAuth callback."""
     if not code or not state:
@@ -338,7 +338,7 @@ async def github_logout(
         await session.execute(
             delete(GitHubToken).where(GitHubToken.session_id == session_id)
         )
-        evict_repo_cache(session_id)
+        await evict_repo_cache(session_id)
 
     # Revoke the user's most recent JWT refresh token so get_current_user
     # returns AUTH_TOKEN_REVOKED for any outstanding access token after logout.

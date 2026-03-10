@@ -6,14 +6,13 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from jose import ExpiredSignatureError, JWTError
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import RateLimit
 from app.models.auth import RefreshToken, User
 from app.schemas.auth import (
     ERR_TOKEN_EXPIRED,
@@ -34,7 +33,6 @@ from app.utils.jwt import (
 )
 
 router = APIRouter(tags=["jwt-auth"])
-limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/auth/token", response_model=TokenResponse)
@@ -142,11 +140,11 @@ async def logout_all_devices(
 
 
 @router.post("/auth/jwt/refresh", response_model=TokenResponse)
-@limiter.limit(lambda: settings.RATE_LIMIT_JWT_REFRESH)
 async def jwt_refresh(
     request: Request,
     response: Response,
     session: AsyncSession = Depends(get_session),
+    _rl: None = Depends(RateLimit(lambda: settings.RATE_LIMIT_JWT_REFRESH)),
 ) -> dict:
     """Rotate refresh token and issue a new access token.
 
