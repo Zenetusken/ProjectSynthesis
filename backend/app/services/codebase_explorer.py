@@ -15,7 +15,7 @@ import asyncio
 import logging
 import time
 from dataclasses import asdict, dataclass, field
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 
 import anyio
 
@@ -35,6 +35,65 @@ from app.services.repo_index_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ── LLM output normalization helpers ──────────────────────────────────
+
+def _normalize_string_list(raw: Any) -> list[str]:
+    """Coerce LLM output to a flat list of strings.
+
+    Handles: list[str], list[dict] (extracts first string value),
+    list[list] (joins), single string (wraps), None (empty list).
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    if not isinstance(raw, list):
+        return [str(raw)]
+    result: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            result.append(item)
+        elif isinstance(item, dict):
+            # Extract the most useful string value from the dict
+            for key in (
+                "detail", "text", "description", "observation",
+                "note", "content", "summary",
+            ):
+                if key in item and isinstance(item[key], str):
+                    result.append(item[key])
+                    break
+            else:
+                # Fallback: join all string values
+                vals = [str(v) for v in item.values() if v]
+                if vals:
+                    result.append(" — ".join(vals))
+        elif isinstance(item, list):
+            result.append(" ".join(str(x) for x in item))
+        else:
+            result.append(str(item))
+    return result
+
+
+def _normalize_snippets(raw: Any) -> list[dict]:
+    """Coerce LLM snippet output to list[dict] with file/lines/context keys."""
+    if not isinstance(raw, list):
+        return []
+    result: list[dict] = []
+    for item in raw:
+        if isinstance(item, dict):
+            result.append({
+                "file": str(item.get("file", item.get("path", "unknown"))),
+                "lines": str(item.get("lines", item.get("line_range", ""))),
+                "context": str(
+                    item.get("context", item.get("description", item.get("content", "")))
+                ),
+            })
+        elif isinstance(item, str):
+            result.append({"file": "unknown", "lines": "", "context": item})
+    return result
+
 
 # JSON Schema for the explore stage output.
 # Used by complete_json for structured output enforcement.
@@ -522,11 +581,11 @@ async def run_explore(
     context = CodebaseContext(
         repo=repo_full_name,
         branch=used_branch,
-        tech_stack=parsed.get("tech_stack", []),
+        tech_stack=_normalize_string_list(parsed.get("tech_stack", [])),
         key_files_read=list(file_contents.keys()),
-        relevant_snippets=parsed.get("relevant_code_snippets", []),
-        observations=parsed.get("codebase_observations", []),
-        grounding_notes=parsed.get("prompt_grounding_notes", []),
+        relevant_snippets=_normalize_snippets(parsed.get("relevant_code_snippets", [])),
+        observations=_normalize_string_list(parsed.get("codebase_observations", [])),
+        grounding_notes=_normalize_string_list(parsed.get("prompt_grounding_notes", [])),
         files_read_count=len(file_contents),
         coverage_pct=min(100, round(len(file_contents) / max(1, total_in_tree) * 100)),
         duration_ms=duration_ms,

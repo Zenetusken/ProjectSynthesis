@@ -18,6 +18,20 @@
   let liveToolCount = $derived(forge.liveActivity.filter(e => e.type === 'tool').length);
   let liveReasoningCount = $derived(forge.liveActivity.filter(e => e.type === 'reasoning').length);
 
+  /** Coerce unknown values (e.g. LLM-returned objects) to a display string. */
+  function ensureString(val: unknown): string {
+    if (typeof val === 'string') return val;
+    if (val == null) return '';
+    if (typeof val === 'object') {
+      const obj = val as Record<string, unknown>;
+      for (const key of ['detail', 'text', 'description', 'observation', 'note', 'content']) {
+        if (typeof obj[key] === 'string') return obj[key] as string;
+      }
+      return JSON.stringify(val);
+    }
+    return String(val);
+  }
+
   function fmtCall(tool: string, input: Record<string, unknown>): string {
     // Semantic explore pipeline tools
     if (tool === 'semantic_retrieval') {
@@ -91,7 +105,7 @@
       </div>
       {#if observations.length > 0}
         {#each observations as obs}
-          <p class="text-text-dim font-mono text-[10px] truncate" title={obs}>· {obs}</p>
+          <p class="text-text-dim font-mono text-[10px] truncate" title={ensureString(obs)}>· {ensureString(obs)}</p>
         {/each}
       {:else if forge.error}
         <p class="text-text-dim font-mono text-[10px] truncate" title={forge.error}>· {forge.error}</p>
@@ -135,7 +149,7 @@
     {#if observations.length > 0}
       <div class="space-y-1">
         {#each observations as obs}
-          <p class="text-text-secondary text-[11px]">· {obs}</p>
+          <p class="text-text-secondary text-[11px]">· {ensureString(obs)}</p>
         {/each}
       </div>
     {/if}
@@ -144,7 +158,7 @@
     {#if groundingNotes.length > 0}
       <div class="border-t border-border-subtle pt-1.5 space-y-1">
         {#each groundingNotes as note}
-          <p class="text-text-dim italic text-[10px]">{note}</p>
+          <p class="text-text-dim italic text-[10px]">{ensureString(note)}</p>
         {/each}
       </div>
     {/if}

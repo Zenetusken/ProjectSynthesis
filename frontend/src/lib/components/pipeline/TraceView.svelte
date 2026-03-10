@@ -2,6 +2,20 @@
   import { forge } from '$lib/stores/forge.svelte';
   import { getScoreColor } from '$lib/utils/colors';
 
+  /** Coerce unknown values (e.g. LLM-returned objects) to a display string. */
+  function ensureString(val: unknown): string {
+    if (typeof val === 'string') return val;
+    if (val == null) return '';
+    if (typeof val === 'object') {
+      const obj = val as Record<string, unknown>;
+      for (const key of ['detail', 'text', 'description', 'observation', 'note', 'content']) {
+        if (typeof obj[key] === 'string') return obj[key] as string;
+      }
+      return JSON.stringify(val);
+    }
+    return String(val);
+  }
+
   // Stage configuration
   const STAGE_COLORS: Record<string, string> = {
     explore:  '#00d4aa',
@@ -310,7 +324,7 @@
                     {#each data.observations as obs}
                       <div class="trace-bullet" style="--bullet-color: {color};">
                         <span class="trace-bullet-marker">▸</span>
-                        <span class="text-text-secondary leading-snug">{obs}</span>
+                        <span class="text-text-secondary leading-snug">{ensureString(obs)}</span>
                       </div>
                     {/each}
                   </div>
@@ -323,7 +337,7 @@
                     {#each data.grounding_notes as note}
                       <div class="trace-bullet" style="--bullet-color: {color};">
                         <span class="trace-bullet-marker">▸</span>
-                        <span class="text-text-secondary leading-snug">{note}</span>
+                        <span class="text-text-secondary leading-snug">{ensureString(note)}</span>
                       </div>
                     {/each}
                   </div>

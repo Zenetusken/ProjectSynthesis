@@ -11,6 +11,8 @@ from app.services.codebase_explorer import (
     _deduplicate_files,
     _get_anchor_paths,
     _keyword_fallback,
+    _normalize_snippets,
+    _normalize_string_list,
 )
 from app.services.repo_index_service import IndexStatus, RankedFile
 
@@ -277,3 +279,106 @@ class TestCodebaseContext:
         assert ctx.repo == "owner/repo"
         assert ctx.branch == "develop"
         assert len(ctx.tech_stack) == 2
+
+
+class TestNormalizeStringList:
+    """Test _normalize_string_list coercion of LLM output."""
+
+    def test_none_returns_empty(self):
+        assert _normalize_string_list(None) == []
+
+    def test_single_string_wraps(self):
+        assert _normalize_string_list("hello") == ["hello"]
+
+    def test_list_of_strings_passthrough(self):
+        assert _normalize_string_list(["a", "b"]) == ["a", "b"]
+
+    def test_dict_extracts_detail_key(self):
+        result = _normalize_string_list([{"detail": "found it"}])
+        assert result == ["found it"]
+
+    def test_dict_extracts_text_key(self):
+        result = _normalize_string_list([{"text": "note here"}])
+        assert result == ["note here"]
+
+    def test_dict_extracts_description_key(self):
+        result = _normalize_string_list([{"description": "desc"}])
+        assert result == ["desc"]
+
+    def test_dict_priority_order(self):
+        """'detail' key takes priority over 'text'."""
+        result = _normalize_string_list([{"detail": "first", "text": "second"}])
+        assert result == ["first"]
+
+    def test_dict_fallback_joins_values(self):
+        result = _normalize_string_list([{"unknown_key": "z", "other": "w"}])
+        assert len(result) == 1
+        assert "z" in result[0]
+        assert "w" in result[0]
+
+    def test_dict_with_empty_values_skipped(self):
+        """Dict with all falsy values produces nothing."""
+        result = _normalize_string_list([{"a": "", "b": 0, "c": None}])
+        assert result == []
+
+    def test_mixed_list(self):
+        result = _normalize_string_list(["a", {"detail": "b"}, 42])
+        assert result == ["a", "b", "42"]
+
+    def test_nested_list_joins(self):
+        result = _normalize_string_list([["hello", "world"]])
+        assert result == ["hello world"]
+
+    def test_numeric_input(self):
+        assert _normalize_string_list(42) == ["42"]
+
+    def test_empty_list(self):
+        assert _normalize_string_list([]) == []
+
+
+class TestNormalizeSnippets:
+    """Test _normalize_snippets coercion of LLM snippet output."""
+
+    def test_none_returns_empty(self):
+        assert _normalize_snippets(None) == []
+
+    def test_not_list_returns_empty(self):
+        assert _normalize_snippets("not a list") == []
+        assert _normalize_snippets(42) == []
+
+    def test_standard_keys_passthrough(self):
+        raw = [{"file": "a.py", "lines": "1-5", "context": "code here"}]
+        result = _normalize_snippets(raw)
+        assert len(result) == 1
+        assert result[0] == {"file": "a.py", "lines": "1-5", "context": "code here"}
+
+    def test_alternate_keys_remapped(self):
+        raw = [{"path": "b.py", "line_range": "10-20", "description": "desc"}]
+        result = _normalize_snippets(raw)
+        assert result[0]["file"] == "b.py"
+        assert result[0]["lines"] == "10-20"
+        assert result[0]["context"] == "desc"
+
+    def test_missing_keys_default(self):
+        raw = [{"file": "c.py"}]
+        result = _normalize_snippets(raw)
+        assert result[0]["lines"] == ""
+        assert result[0]["context"] == ""
+
+    def test_bare_string_wrapped(self):
+        raw = ["some code snippet"]
+        result = _normalize_snippets(raw)
+        assert result[0] == {"file": "unknown", "lines": "", "context": "some code snippet"}
+
+    def test_empty_list(self):
+        assert _normalize_snippets([]) == []
+
+    def test_mixed_dicts_and_strings(self):
+        raw = [
+            {"file": "a.py", "context": "code"},
+            "bare string",
+        ]
+        result = _normalize_snippets(raw)
+        assert len(result) == 2
+        assert result[0]["file"] == "a.py"
+        assert result[1]["file"] == "unknown"

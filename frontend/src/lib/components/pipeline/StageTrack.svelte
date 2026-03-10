@@ -17,6 +17,15 @@
     validate: 'Validate'
   };
 
+  // Fixed stage numbering — canonical indices regardless of visibility
+  const STAGE_NUMBERS: Record<string, number> = {
+    explore: 0,
+    analyze: 1,
+    strategy: 2,
+    optimize: 3,
+    validate: 4,
+  };
+
   const stageIcons: Record<string, string> = {
     explore: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
     analyze: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
@@ -83,7 +92,7 @@
       name={stageLabels[stage]}
       icon={stageIcons[stage]}
       {status}
-      index={i}
+      index={STAGE_NUMBERS[stage] ?? i}
       isActive={forge.currentStage === stage}
       duration={result?.duration}
       model={result?.data?.model as string | undefined}
