@@ -54,9 +54,10 @@ def build_codebase_summary(codebase_context: dict) -> str:
     elif quality == "partial":
         parts.append(
             f"Note: Coverage limited to {files_read_count} files "
-            f"({coverage_pct}% of repository). Be precise where you have "
-            "data; write clear general instructions where you don't — "
-            "never delegate exploration to the executor."
+            f"({coverage_pct}% of repository). This is navigational context only — "
+            "use it to write precise instructions where you have data; "
+            "write clear general instructions where you don't. "
+            "Never delegate exploration and never relay explore-phase findings."
         )
     elif quality == "failed":
         parts.append(
@@ -89,13 +90,13 @@ def build_codebase_summary(codebase_context: dict) -> str:
 
     observations = codebase_context.get("observations", [])
     if observations:
-        parts.append("Observations:")
+        parts.append("Architecture (structural observations, not correctness judgments):")
         for obs in list(observations)[:8]:
             parts.append(f"  - {obs}")
 
     grounding_notes = codebase_context.get("grounding_notes", [])   # was "notes"
     if grounding_notes:
-        parts.append("Grounding notes:")
+        parts.append("Context intelligence (navigation hints for executor):")
         for note in list(grounding_notes)[:8]:
             parts.append(f"  - {note}")
 

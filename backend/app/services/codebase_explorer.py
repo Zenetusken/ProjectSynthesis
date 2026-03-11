@@ -104,9 +104,11 @@ _LINE_REF_PATTERNS = [
     re.compile(r"\.(?:py|ts|js|svelte|go|rs|java):(\d+)"),       # "pipeline.py:233"
 ]
 
-_BUG_CLAIM_INDICATORS = re.compile(
+_EXECUTION_CLAIM_INDICATORS = re.compile(
     r"does NOT|is NOT set|is NOT|but doesn't|but does not|missing|"
-    r"never set|not implemented|not called|not used|not defined",
+    r"never set|not implemented|not called|not used|not defined|"
+    r"is broken|is wrong|should be|needs to be|fails to|"
+    r"incorrectly|improperly|bug|defect|flaw",
     re.IGNORECASE,
 )
 
@@ -184,16 +186,26 @@ def _validate_explore_output(
         content = file_contents.get(file_path, "")
         return "[TRUNCATED" in content
 
-    def _flag_bug_claim(text: str) -> str:
-        if _BUG_CLAIM_INDICATORS.search(text):
+    def _flag_execution_claim(text: str) -> str:
+        """Flag execution-layer claims that slipped past the synthesis prompt.
+
+        The explore phase is an intelligence layer — it should not make
+        correctness judgments. Any claim matching execution-layer language
+        (e.g. "is NOT called", "missing", "broken") gets flagged so
+        downstream stages treat it with appropriate skepticism.
+        """
+        if _EXECUTION_CLAIM_INDICATORS.search(text):
             # Check if the claim references a truncated file
             for filename, path in file_stems.items():
                 if filename in text and _is_truncated(path):
                     return text + _UNVERIFIED_TRUNC.format(max_lines_shown)
+            # Even non-truncated execution claims are flagged — the explore
+            # phase should provide navigation, not correctness verdicts
+            return text + " [unverified — explore provides context, not audit]"
         return text
 
     validated_obs = [_flag_text(o) for o in observations]
-    validated_notes = [_flag_bug_claim(_flag_text(n)) for n in grounding_notes]
+    validated_notes = [_flag_execution_claim(_flag_text(n)) for n in grounding_notes]
 
     return validated_snippets, validated_obs, validated_notes
 
@@ -224,17 +236,17 @@ EXPLORE_OUTPUT_SCHEMA: dict = {
                 },
                 "required": ["file", "context"],
             },
-            "description": "Code snippets relevant to the user's prompt",
+            "description": "Code snippets structurally relevant to the prompt intent — entry points, interfaces, data shapes",
         },
         "codebase_observations": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Key observations about the codebase architecture and patterns",
+            "description": "Architectural observations: project structure, data flow, component relationships, patterns",
         },
         "prompt_grounding_notes": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Notes on how the codebase relates to or corrects the user's prompt",
+            "description": "Context intelligence: maps prompt intent to codebase locations, key abstractions, and navigation hints for an executor",
         },
         "coverage_pct": {
             "type": "integer",
