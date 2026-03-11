@@ -24,7 +24,7 @@ from app.services.validator import run_validate
 logger = logging.getLogger(__name__)
 
 # Retry threshold: if overall_score < this, retry optimize+validate once
-LOW_SCORE_THRESHOLD = 5
+LOW_SCORE_THRESHOLD = 5.0
 
 
 def _estimate_tokens(text: str) -> int:

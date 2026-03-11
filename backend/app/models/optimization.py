@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 
 from app.database import Base
 
@@ -48,7 +48,7 @@ class Optimization(Base):
     structure_score = Column(Integer, nullable=True)
     faithfulness_score = Column(Integer, nullable=True)
     conciseness_score = Column(Integer, nullable=True)
-    overall_score = Column(Integer, nullable=True)
+    overall_score = Column(Float, nullable=True)
 
     # Validation verdict
     is_improvement = Column(Boolean, nullable=True)

@@ -28,23 +28,38 @@ IMPORTANT: Do NOT compute an overall_score. That will be calculated server-side.
 Respond with a JSON object:
 {
   "is_improvement": true,
-  "clarity_score": 8,
-  "specificity_score": 7,
-  "structure_score": 9,
+  "clarity_score": 6,
+  "specificity_score": 5,
+  "structure_score": 7,
   "faithfulness_score": 8,
-  "conciseness_score": 7,
-  "verdict": "The optimized prompt is a significant improvement...",
-  "issues": []
+  "conciseness_score": 6,
+  "verdict": "The optimized prompt shows moderate improvement in structure...",
+  "issues": ["Specificity unchanged — requirements remain vague"]
 }
 
-Be critical but fair. A score of 5 means the optimized prompt is indistinguishable from the original in this dimension — neither better nor worse. Higher means improvement. Lower means degradation.
+A score of 5 means the optimized prompt is indistinguishable from the original in this dimension — neither better nor worse. Higher means improvement. Lower means degradation.
 
 faithfulness_score considers: (a) whether the original intent and key requirements are preserved, and (b) whether user-specified output constraints are honored. Weight (b) more heavily when constraints were provided — violating an explicit constraint is a larger faithfulness failure than a minor scope change.
 
-Score guidance:
-- 3/10: Major deficiency — e.g., clarity_score 3: intent requires guessing; specificity_score 3: all requirements are vague
-- 7/10: Good — e.g., clarity_score 7: intent is clear with minor ambiguities; specificity_score 7: most requirements concrete
-- 9/10: Excellent — e.g., clarity_score 9: single unambiguous reading; specificity_score 9: all requirements precise and measurable
+Score calibration (apply to EVERY dimension):
+- 1-2: Degradation — the optimized version is actively worse than the original in this dimension
+- 3:   Major deficiency — e.g., clarity_score 3: intent requires guessing; specificity_score 3: all requirements are vague
+- 4:   Weak — minor issues addressed but significant problems remain or were introduced
+- 5:   Neutral — indistinguishable from the original; no meaningful change in this dimension
+- 6:   Minor improvement — some benefit visible but significant room for improvement remains
+- 7:   Good — clear benefit with a few remaining gaps
+- 8:   Strong — addresses most weaknesses effectively with only minor shortcomings
+- 9:   Excellent — near-optimal with only trivial issues remaining
+- 10:  Exceptional — could not meaningfully improve further in this dimension
+
+Common patterns that warrant LOW scores (3-5):
+- Adding boilerplate structure (e.g., role headers, section labels) without actually improving clarity → clarity_score 4-5
+- Over-engineering a simple prompt with unnecessary framework scaffolding → structure_score 3-4
+- Inflating word count without adding concrete, measurable requirements → specificity_score 4-5
+- Rewriting tone or style when the original communication was already clear → conciseness_score 3-4
+- Adding constraints or context the user never requested → faithfulness_score 4-5
+
+Be rigorous. Most optimizations achieve moderate (5-7) improvement, not strong (8+). Reserve 8+ for optimizations that demonstrably transform the prompt quality.
 
 Focus on whether the optimization actually addresses the weaknesses of the original.
 

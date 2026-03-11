@@ -27,13 +27,14 @@ SCORE_WEIGHTS = {
 }
 
 
-def compute_overall_score(scores: dict) -> int | None:
+def compute_overall_score(scores: dict) -> float | None:
     """Compute weighted average overall score.
 
     Weights: clarity 20%, specificity 20%, structure 15%,
              faithfulness 25%, conciseness 20%
 
-    Returns: integer 1-10, or None if no valid scores are present.
+    Returns: float 1.0-10.0 rounded to 1 decimal place,
+             or None if no valid scores are present.
     """
     weighted_sum = 0.0
     total_weight = 0.0
@@ -48,7 +49,7 @@ def compute_overall_score(scores: dict) -> int | None:
         return None  # no valid scores — distinguish from a real score
 
     raw = weighted_sum / total_weight
-    return max(1, min(10, round(raw)))
+    return max(1.0, min(10.0, round(raw, 1)))
 
 
 def _default_validation() -> dict:
@@ -79,7 +80,7 @@ async def run_validate(
         ("step_progress", {"step": "validate", "content": chunk}) for each streamed chunk
         ("validation", dict) with canonical shape:
             scores: dict  — all 5 dimension scores + overall_score (authoritative)
-            overall_score: int  — convenience copy for direct pipeline access
+            overall_score: float  — convenience copy for direct pipeline access
             is_improvement: bool
             verdict: str
             issues: list[str]
