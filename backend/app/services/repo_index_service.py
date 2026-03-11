@@ -34,6 +34,7 @@ from app.models.repo_index import RepoFileIndex, RepoIndexMeta
 from app.services.codebase_patterns import OUTLINE_PATTERNS
 from app.services.embedding_service import get_embedding_service
 from app.services.github_service import (
+    get_branch_head_sha,
     get_repo_tree,
     read_file_content,
 )
@@ -87,6 +88,7 @@ class IndexStatus:
     indexed_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    head_sha: Optional[str] = None  # branch HEAD SHA when index was built
 
     @property
     def is_ready(self) -> bool:
@@ -167,6 +169,9 @@ class RepoIndexService:
         """
         start = time.monotonic()
         logger.info("Building repo index for %s@%s", repo_full_name, branch)
+
+        # Fetch HEAD SHA before marking as building (lightweight single API call)
+        current_sha = await get_branch_head_sha(token, repo_full_name, branch)
 
         async with async_session() as session:
             # Upsert meta record → building
@@ -306,6 +311,7 @@ class RepoIndexService:
                 await self._upsert_meta(
                     session, repo_full_name, branch, status,
                     file_count=len(embedding_entries),
+                    head_sha=current_sha,
                 )
                 await session.commit()
 
@@ -420,6 +426,7 @@ class RepoIndexService:
             indexed_at=meta.indexed_at,
             expires_at=meta.expires_at,
             error_message=meta.error_message,
+            head_sha=meta.head_sha,
         )
 
         # Auto-mark expired
@@ -458,6 +465,7 @@ class RepoIndexService:
         status: str,
         file_count: Optional[int] = None,
         error_message: Optional[str] = None,
+        head_sha: Optional[str] = None,
     ) -> None:
         """Create or update the index metadata record."""
         result = await session.execute(
@@ -478,6 +486,7 @@ class RepoIndexService:
                 branch=branch,
                 status=status,
                 file_count=file_count,
+                head_sha=head_sha,
                 indexed_at=now if status in ("ready", "partial") else None,
                 expires_at=expires_at,
                 error_message=error_message,
@@ -487,6 +496,8 @@ class RepoIndexService:
             meta.status = status
             if file_count is not None:
                 meta.file_count = file_count
+            if head_sha is not None:
+                meta.head_sha = head_sha
             if status in ("ready", "partial"):
                 meta.indexed_at = now
                 meta.expires_at = expires_at

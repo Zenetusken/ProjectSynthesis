@@ -44,6 +44,7 @@ class RepoIndexMeta(Base):
     branch = Column(Text, nullable=False)
     status = Column(Text, nullable=False, default="pending")  # pending, building, ready, partial, failed, expired
     file_count = Column(Integer, nullable=True)
+    head_sha = Column(Text, nullable=True)  # branch HEAD commit SHA when index was built
     indexed_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)

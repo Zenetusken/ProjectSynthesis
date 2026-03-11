@@ -98,6 +98,9 @@ async def _migrate_add_missing_columns() -> None:
             "preferences": "TEXT",
             "last_login_at": "DATETIME",
         },
+        "repo_index_meta": {
+            "head_sha": "TEXT",  # branch HEAD commit SHA when index was built
+        },
     }
 
     async with engine.begin() as conn:

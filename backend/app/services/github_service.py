@@ -447,6 +447,33 @@ async def get_repo_branches(token: str, full_name: str) -> list[dict]:
         return []
 
 
+async def get_branch_head_sha(
+    token: str, full_name: str, branch: str
+) -> Optional[str]:
+    """Return the HEAD commit SHA for a branch (single API call).
+
+    Args:
+        token: Decrypted GitHub access token.
+        full_name: Repository full name (owner/repo).
+        branch: Branch name.
+
+    Returns:
+        The HEAD commit SHA string, or None on failure.
+    """
+    def _sync() -> str:
+        g = _make_github(token)
+        repo = g.get_repo(full_name)
+        b = repo.get_branch(branch)
+        return b.commit.sha
+
+    try:
+        with anyio.fail_after(_THREAD_TIMEOUT):
+            return await anyio.to_thread.run_sync(_sync)
+    except Exception as e:
+        logger.warning("Failed to get HEAD SHA for %s@%s: %s", full_name, branch, e)
+        return None
+
+
 async def get_default_branch(token: str, repo_full_name: str) -> str:
     """Return the default branch name for a GitHub repository.
 
