@@ -419,7 +419,7 @@ class TestStaleIndexDetection:
             ),
             current_sha="same_sha",
         )
-        events = await self._run(mocks)
+        await self._run(mocks)
 
         # build_index should NOT have been called
         mocks["idx_svc"].build_index.assert_not_called()
@@ -435,7 +435,7 @@ class TestStaleIndexDetection:
             ),
             current_sha=None,  # SHA fetch failed
         )
-        events = await self._run(mocks)
+        await self._run(mocks)
 
         # Should NOT trigger reindex (can't compare SHAs)
         mocks["idx_svc"].build_index.assert_not_called()
@@ -451,7 +451,7 @@ class TestStaleIndexDetection:
             ),
             current_sha="any_sha",
         )
-        events = await self._run(mocks)
+        await self._run(mocks)
 
         # No reindex triggered (can't compare — legacy row)
         mocks["idx_svc"].build_index.assert_not_called()
