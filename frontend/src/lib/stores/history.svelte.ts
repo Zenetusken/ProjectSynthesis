@@ -101,7 +101,7 @@ class HistoryStore {
 
   removeEntry(id: string) {
     this.entries = this.entries.filter(e => e.id !== id);
-    this.totalCount--;
+    this.totalCount = Math.max(0, this.totalCount - 1);
     if (this.selectedId === id) {
       this.selectedId = null;
     }

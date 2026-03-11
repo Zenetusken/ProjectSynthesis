@@ -144,10 +144,10 @@ async def test_delete_soft_deletes_record(client: AsyncClient, auth_headers):
     assert opt_id not in ids
 
 
-async def test_delete_wrong_user_returns_404(client: AsyncClient, auth_headers, other_auth_headers):
+async def test_delete_wrong_user_returns_403(client: AsyncClient, auth_headers, other_auth_headers):
     opt_id = await _create_optimization(client, auth_headers, "Other user cannot delete")
     resp = await client.delete(f"/api/history/{opt_id}", headers=other_auth_headers)
-    assert resp.status_code == 404
+    assert resp.status_code == 403
 
 
 # ── GET /api/history/trash ─────────────────────────────────────────────────

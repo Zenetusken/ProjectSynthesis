@@ -1,6 +1,6 @@
 # Project Synthesis MCP Server
 
-Project Synthesis exposes 14 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, and interact with linked GitHub repositories directly from a chat session. The explore stage uses semantic retrieval (pre-built embedding index) for fast codebase analysis.
+Project Synthesis exposes 15 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, and interact with linked GitHub repositories directly from a chat session. The explore stage uses semantic retrieval (pre-built embedding index) for fast codebase analysis.
 
 ## Transports
 
@@ -203,6 +203,18 @@ Soft-delete an optimization record (sets `deleted_at`; purged permanently after 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `optimization_id` | string | yes | UUID of the optimization to delete |
+
+---
+
+#### `batch_delete_optimizations`
+Batch soft-delete multiple optimization records (sets `deleted_at`; purged permanently after 7 days). All-or-nothing semantics: if any ID is not found, none are deleted. Use `list_trash` + `restore_optimization` to undo within the recovery window.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ids` | list[string] | yes | UUIDs of optimizations to delete (1–50 items). Use `list_optimizations` to discover valid IDs. |
+| `user_id` | string | no | Owner filter — when set, all records must belong to this user. Omit for unscoped access (single-user/localhost mode). |
+
+Returns `{"deleted_count": N, "ids": [...]}` on success, or `{"error": "..."}` on validation failure.
 
 ---
 

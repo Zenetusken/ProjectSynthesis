@@ -3,10 +3,10 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { toast } from '$lib/stores/toast.svelte';
-  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, fetchHistoryTrash, restoreOptimization, patchOptimization, batchDeleteOptimizations, type HistoryStats, type HistoryResponse } from '$lib/api/client';
+  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, patchOptimization, type HistoryStats } from '$lib/api/client';
   import { getStrategyHex } from '$lib/utils/strategy';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
 
   let loading = $state(false);
   let stats = $state<HistoryStats | null>(null);
@@ -58,6 +58,7 @@
     const next = new Set(selectedIds);
     if (next.has(id)) { next.delete(id); } else { next.add(id); }
     selectedIds = next;
+    confirmBatchDelete = false;
   }
 
   function clearSelection() { selectedIds = new Set(); }
