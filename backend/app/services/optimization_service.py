@@ -435,7 +435,7 @@ async def delete_optimization(
 
 async def batch_delete_optimizations(
     session: AsyncSession,
-    user_id: str,
+    user_id: Optional[str],
     ids: list[str],
 ) -> list[str]:
     """Batch soft-delete optimizations by setting deleted_at.
@@ -446,6 +446,7 @@ async def batch_delete_optimizations(
     Args:
         session: Async database session (transaction-scoped).
         user_id: Authenticated user's ID — all records must belong to this user.
+                 Pass None to skip ownership check (single-user/MCP mode).
         ids: List of optimization UUIDs to soft-delete (1–50 items).
 
     Returns:
@@ -478,15 +479,16 @@ async def batch_delete_optimizations(
         )
 
     # Validate: every record must belong to the authenticated user
-    unauthorized = [oid for oid, opt in records.items() if opt.user_id != user_id]
-    if unauthorized:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": ERR_INSUFFICIENT_PERMISSIONS,
-                "message": "Not authorized to delete one or more optimizations",
-            },
-        )
+    if user_id:
+        unauthorized = [oid for oid, opt in records.items() if opt.user_id != user_id]
+        if unauthorized:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": ERR_INSUFFICIENT_PERMISSIONS,
+                    "message": "Not authorized to delete one or more optimizations",
+                },
+            )
 
     # All checks passed — mutate
     now = datetime.now(timezone.utc)

@@ -640,7 +640,7 @@ def create_mcp_server(provider=None) -> FastMCP:
 
         try:
             async with async_session() as session:
-                deleted_ids = await svc_batch_delete(session, user_id or "", ids)
+                deleted_ids = await svc_batch_delete(session, user_id, ids)
                 await session.commit()
         except Exception as e:
             # Service raises HTTPException for 404/403 — extract detail
