@@ -149,7 +149,7 @@ curl -s -X POST http://127.0.0.1:8001/mcp \
 - **Pagination envelope**: all list/search endpoints return `{total, count, offset, items, has_more, next_offset}`.
 - **Redis graceful degradation**: Redis is optional. On connect failure, the app logs CRITICAL and falls back to in-memory rate limiting (`limits.storage.MemoryStorage`) and in-memory caching (dict with TTL, bounded at 1000 entries with LRU eviction). When Redis is marked unavailable, `health_check()` retries reconnection every 30 seconds (`_RECONNECT_COOLDOWN`). All Redis consumers use the `redis_service.is_ready` property guard. Health endpoint reports `redis_connected: true/false`; overall status is `"degraded"` (not `"error"`) when Redis is down.
 - **Rate limiting**: Uses the `limits` library (not slowapi) via a `RateLimit` FastAPI dependency class (`backend/app/dependencies/rate_limit.py`). Endpoints use `Depends(RateLimit(lambda: settings.RATE_LIMIT_*))` instead of decorators. `X-Forwarded-For` is only trusted from IPs in `TRUSTED_PROXIES` (defaults to loopback) to prevent rate-limit bypass via header spoofing.
-- **Pipeline caching**: Strategy (7-day TTL, keyed by task_type+complexity) and Analyze (24-hour TTL, keyed by prompt+context flags) stages are cached. Optimize and Validate are NOT cached (non-deterministic creative output).
+- **Pipeline caching**: Strategy (24-hour TTL, keyed by prompt_hash+analysis_hash) and Analyze (24-hour TTL, keyed by prompt+context flags) stages are cached. Optimize and Validate are NOT cached (non-deterministic creative output).
 
 ### Explore architecture (Stage 0)
 

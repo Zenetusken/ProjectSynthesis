@@ -132,7 +132,7 @@ List optimizations with pagination.
 | `offset` | int | 0 | Pagination offset |
 | `project` | string | — | Filter by project |
 | `task_type` | string | — | Filter by task type |
-| `min_score` | int | — | Minimum `overall_score` threshold |
+| `min_score` | float | — | Minimum `overall_score` threshold (1.0–10.0) |
 | `search` | string | — | Full-text filter on prompt content |
 | `sort` | string | `created_at` | Sort column: `created_at`, `overall_score`, `task_type`, `updated_at`, `duration_ms`, `primary_framework`, `status` |
 | `order` | string | `desc` | `asc` or `desc` |

@@ -280,8 +280,10 @@ def create_mcp_server(provider=None) -> FastMCP:
 
         Args:
             prompt: The raw prompt text to optimize (required)
-            strategy: Optional framework override — one of: CO-STAR, RISEN, CARE, TRACE,
-                      RODES, RTF, RACE. Omit to let the pipeline auto-select.
+            strategy: Optional framework override — one of: chain-of-thought, constraint-injection,
+                      context-enrichment, CO-STAR, few-shot-scaffolding, persona-assignment,
+                      RISEN, role-task-format, step-by-step, structured-output.
+                      Omit to let the pipeline auto-select.
             repo_full_name: GitHub repo (owner/repo) for codebase-aware optimization.
                             When set, the Explore stage reads the repo to ground the prompt.
             repo_branch: Branch to explore (defaults to 'main' when repo_full_name is set)
@@ -299,7 +301,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         Returns:
             JSON with keys: analysis, strategy, optimization, validation.
             The 'optimization.optimized_prompt' field contains the final result.
-            The 'validation.scores.overall_score' field is 1-10.
+            The 'validation.scores.overall_score' field is 1.0-10.0 (float, 1 decimal).
         """
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
@@ -357,7 +359,7 @@ def create_mcp_server(provider=None) -> FastMCP:
     async def list_optimizations(
         project: Optional[str] = None,
         task_type: Optional[str] = None,
-        min_score: Optional[int] = None,
+        min_score: Optional[float] = None,
         search: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
@@ -370,7 +372,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         Args:
             project: Filter by project label (exact match)
             task_type: Filter by task classification (e.g. 'coding', 'writing', 'analysis')
-            min_score: Only return optimizations with overall_score >= this value (1-10)
+            min_score: Only return optimizations with overall_score >= this value (1.0-10.0)
             search: Text search across raw_prompt and title fields
             limit: Maximum results per page (default 20, max 100)
             offset: Number of records to skip for pagination (default 0)
