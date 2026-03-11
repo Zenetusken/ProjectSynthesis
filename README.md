@@ -12,10 +12,12 @@ Every optimization streams in real time, scores across multiple quality dimensio
 
 ```bash
 cp .env.docker.example .env.docker
+# Edit .env.docker — set REDIS_PASSWORD to a strong random value.
+# All other secrets are auto-generated on first startup.
 docker compose up --build -d
 ```
 
-Open **http://localhost** — the in-app setup flow walks you through API key configuration and optional GitHub integration. No manual secret generation required; crypto secrets are auto-generated on first startup.
+Open **http://localhost** — the in-app setup flow walks you through Anthropic API key configuration and GitHub App authentication setup (both required). Once authenticated, linking a specific repository for codebase-aware optimization is optional.
 
 ## How It Works
 
