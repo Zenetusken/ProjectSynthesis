@@ -67,11 +67,18 @@ We tag releases when meaningful milestones land. Watch the repo if you want to f
 
 ---
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Claude](https://img.shields.io/badge/Powered_by-Claude-cc785c.svg?logo=anthropic&logoColor=white)](https://www.anthropic.com/claude)
+[![MCP](https://img.shields.io/badge/MCP-enabled-6366f1.svg)](docs/MCP.md)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg?logo=docker&logoColor=white)](docker-compose.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/Apache_2.0-D22128.svg?logo=apache&logoColor=white)](LICENSE)
 
-`RAG` · `prompt engineering` · `agentic AI` · `codebase-aware` · `semantic search` · `real-time streaming` · `SSE` · `vector embeddings` · `multi-stage pipeline` · `MCP server` · `Claude API` · `FastAPI` · `SvelteKit` · `Svelte 5` · `Tailwind CSS 4` · `SQLAlchemy` · `sentence-transformers` · `Redis` · `Docker Compose` · `self-hosted`
+![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)
+![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00.svg?logo=svelte&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS_4-06B6D4.svg?logo=tailwindcss&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-FF4438.svg?logo=redis&logoColor=white)
+![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00.svg?logo=sqlalchemy&logoColor=white)
+![sentence-transformers](https://img.shields.io/badge/sentence--transformers-EE4C2C.svg?logo=pytorch&logoColor=white)
 
 [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Terms](docs/TERMS.md) · [Architecture](CLAUDE.md)
