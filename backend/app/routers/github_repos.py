@@ -218,10 +218,17 @@ async def reindex_repo(
     branch = linked.branch if linked else "main"
 
     index_svc = get_repo_index_service()
+    # Capture current index head_sha before invalidation for response context
+    old_status = await index_svc.get_index_status(full_name, branch)
     await index_svc.invalidate_index(full_name, branch)
     asyncio.create_task(index_svc.build_index(token, full_name, branch))
 
-    return {"status": "reindexing", "repo": full_name, "branch": branch}
+    return {
+        "status": "reindexing",
+        "repo": full_name,
+        "branch": branch,
+        "previous_head_sha": old_status.head_sha,
+    }
 
 
 @router.delete("/api/github/repos/unlink")

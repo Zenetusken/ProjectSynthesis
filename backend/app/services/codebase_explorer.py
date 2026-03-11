@@ -26,6 +26,7 @@ from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
 from app.services.cache_service import CacheService, get_cache
 from app.services.codebase_patterns import ANCHOR_FILENAMES
 from app.services.github_service import (
+    get_branch_head_sha,
     get_default_branch,
     get_repo_tree,
     read_file_content,
@@ -600,12 +601,18 @@ async def run_explore(
             "used_branch": used_branch,
         })
 
-    # ── Check explore result cache ────────────────────────────────────
+    # ── Fetch current branch HEAD SHA (single lightweight API call) ──
+    current_sha = await get_branch_head_sha(token, repo_full_name, used_branch)
+
+    # ── Check explore result cache (SHA-aware key) ───────────────────
     cache = get_cache()
     cache_key = None
     if cache:
         prompt_hash = CacheService.hash_content(raw_prompt)
-        cache_key = CacheService.make_key("explore", repo_full_name, used_branch, prompt_hash)
+        # Include HEAD SHA in cache key — new push = new SHA = automatic cache miss
+        cache_key = CacheService.make_key(
+            "explore", repo_full_name, used_branch, current_sha or "", prompt_hash,
+        )
         cached = await cache.get(cache_key)
         if cached:
             logger.info("Stage 0 (Explore) cache hit for %s@%s", repo_full_name, used_branch)
@@ -640,7 +647,25 @@ async def run_explore(
     ranked_files: list[RankedFile] = []
     retrieval_method = "keyword_fallback"
 
-    if index_status.is_ready:
+    # ── Check if the index is stale (branch HEAD changed since last build) ──
+    index_stale = (
+        current_sha is not None
+        and index_status.head_sha is not None
+        and current_sha != index_status.head_sha
+    )
+
+    if index_stale:
+        logger.info(
+            "Branch HEAD changed (%s → %s) for %s@%s, triggering background reindex",
+            index_status.head_sha[:8], current_sha[:8],
+            repo_full_name, used_branch,
+        )
+        # Trigger background rebuild only if not already building (prevents duplicate tasks)
+        if index_status.status != "building":
+            asyncio.create_task(index_svc.build_index(token, repo_full_name, used_branch))
+        # Skip semantic retrieval for this run — keyword fallback reads fresh content
+        retrieval_method = "keyword_fallback"
+    elif index_status.is_ready:
         try:
             ranked_files = await index_svc.query_relevant_files(
                 repo_full_name, used_branch, raw_prompt, top_k=max_files,
