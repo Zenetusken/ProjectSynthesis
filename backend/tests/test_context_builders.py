@@ -228,7 +228,7 @@ def test_codebase_quality_partial_specific_warning():
     )
     assert "Coverage limited to 7 files" in result
     assert "35%" in result
-    assert "never delegate exploration" in result
+    assert "Never delegate exploration" in result
 
 
 def test_codebase_quality_failed_specific_warning():
@@ -291,7 +291,7 @@ def test_codebase_key_files_read_appears():
 def test_codebase_grounding_notes_appears():
     """N20 regression guard: grounding_notes (not notes) is used."""
     result = build_codebase_summary({"grounding_notes": ["Prompt references optimizer service"]})
-    assert "Grounding notes" in result
+    assert "Context intelligence" in result
     assert "Prompt references optimizer service" in result
 
 

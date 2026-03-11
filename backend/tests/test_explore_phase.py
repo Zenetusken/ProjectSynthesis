@@ -789,7 +789,7 @@ class TestValidateExploreOutput:
         s, o, g = _validate_explore_output([], obs, [], file_contents, max_lines_shown=300)
         assert "[unverified" in o[0]
 
-    def test_grounding_note_bug_claim_in_truncated_file_flagged(self):
+    def test_grounding_note_execution_claim_in_truncated_file_flagged(self):
         # File content includes truncation marker — indicates the file was cut off
         truncated_content = "\n".join(f"line {i}" for i in range(1, 301))
         truncated_content += "\n\n[TRUNCATED — only lines 1–300 of 800 shown.]"
@@ -797,6 +797,22 @@ class TestValidateExploreOutput:
         file_contents = {"analyzer.py": truncated_content}
         s, o, g = _validate_explore_output([], [], notes, file_contents, max_lines_shown=300)
         assert "[unverified" in g[0]
+
+    def test_execution_claim_in_non_truncated_file_flagged(self):
+        """Execution-layer claims get flagged even when file is fully visible."""
+        content = "\n".join(f"line {i}" for i in range(1, 101))
+        notes = ["validate_token is NOT called in the auth flow"]
+        file_contents = {"auth.py": content}
+        s, o, g = _validate_explore_output([], [], notes, file_contents, max_lines_shown=300)
+        assert "[unverified" in g[0]
+        assert "explore provides context, not audit" in g[0]
+
+    def test_navigational_note_not_flagged(self):
+        """Pure navigational intelligence notes should pass through unflagged."""
+        notes = ["The auth flow spans github_auth.py, github_service.py, and github_client.py"]
+        file_contents = {"github_auth.py": "code"}
+        s, o, g = _validate_explore_output([], [], notes, file_contents, max_lines_shown=300)
+        assert "[unverified" not in g[0]
 
     def test_snippet_for_unknown_file_flagged(self):
         snippets = [{"file": "nonexistent.py", "lines": "1-5", "context": "ghost"}]
