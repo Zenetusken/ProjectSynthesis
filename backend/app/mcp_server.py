@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.config import settings
 from app.database import async_session
@@ -88,57 +88,6 @@ async def _opt_session(
 
 # ── Module-level helpers ───────────────────────────────────────────────────────
 
-def _accumulate_event(opt: "Optimization", event_type: str, event_data: dict) -> None:
-    """Map one pipeline event to fields on the Optimization ORM object."""
-    if event_type == "codebase_context":
-        opt.model_explore = event_data.get("model")
-        _snapshot = json.dumps(event_data)
-        if len(_snapshot) > 65536:
-            truncated_data = {
-                k: v for k, v in event_data.items()
-                if k in ("model", "repo", "branch", "files_read_count",
-                         "explore_quality", "tech_stack", "coverage_pct")
-            }
-            truncated_data["_truncated"] = True
-            _snapshot = json.dumps(truncated_data)
-            if len(_snapshot) > 65536:
-                _snapshot = json.dumps({"_truncated": True, "model": event_data.get("model")})
-        opt.codebase_context_snapshot = _snapshot
-    elif event_type == "analysis":
-        opt.task_type = event_data.get("task_type")
-        opt.complexity = event_data.get("complexity")
-        opt.weaknesses = json.dumps(event_data.get("weaknesses", []))
-        opt.strengths = json.dumps(event_data.get("strengths", []))
-        opt.model_analyze = event_data.get("model")
-        opt.analysis_quality = event_data.get("analysis_quality")
-    elif event_type == "strategy":
-        opt.primary_framework = event_data.get("primary_framework")
-        opt.secondary_frameworks = json.dumps(event_data.get("secondary_frameworks", []))
-        opt.approach_notes = event_data.get("approach_notes")
-        opt.strategy_rationale = event_data.get("rationale")
-        opt.strategy_source = event_data.get("strategy_source")
-        opt.model_strategy = event_data.get("model")
-    elif event_type == "optimization":
-        opt.optimized_prompt = event_data.get("optimized_prompt")
-        opt.changes_made = json.dumps(event_data.get("changes_made", []))
-        opt.framework_applied = event_data.get("framework_applied")
-        opt.optimization_notes = event_data.get("optimization_notes")
-        opt.model_optimize = event_data.get("model")
-    elif event_type == "validation":
-        scores = event_data.get("scores", {})
-        opt.clarity_score = scores.get("clarity_score")
-        opt.specificity_score = scores.get("specificity_score")
-        opt.structure_score = scores.get("structure_score")
-        opt.faithfulness_score = scores.get("faithfulness_score")
-        opt.conciseness_score = scores.get("conciseness_score")
-        opt.overall_score = scores.get("overall_score")
-        opt.is_improvement = event_data.get("is_improvement")
-        opt.verdict = event_data.get("verdict")
-        opt.issues = json.dumps(event_data.get("issues", []))
-        opt.model_validate = event_data.get("model")
-        opt.validation_quality = event_data.get("validation_quality")
-
-
 async def _run_and_persist(
     provider,
     prompt: str,
@@ -152,51 +101,68 @@ async def _run_and_persist(
     instructions=None,
     url_fetched=None,
     retry_of=None,
-) -> tuple[dict, "Optimization"]:
-    """Create Optimization record, run pipeline, persist results. Returns (events, opt)."""
+    project=None,
+    title=None,
+) -> dict:
+    """Create Optimization record, run pipeline, persist results. Returns stage events dict."""
     import time
 
+    from app.services.optimization_service import accumulate_pipeline_event
     from app.services.pipeline import run_pipeline
 
-    opt = Optimization(
-        id=opt_id,
-        raw_prompt=prompt,
-        status="running",
-        linked_repo_full_name=repo_full_name,
-        linked_repo_branch=repo_branch,
-        retry_of=retry_of,
-    )
     async with async_session() as s:
-        s.add(opt)
+        s.add(Optimization(
+            id=opt_id,
+            raw_prompt=prompt,
+            status="running",
+            linked_repo_full_name=repo_full_name,
+            linked_repo_branch=repo_branch,
+            retry_of=retry_of,
+            project=project,
+            title=title,
+        ))
         await s.commit()
 
+    updates: dict = {}
     results: dict = {}
     start = time.time()
-    async for event_type, event_data in run_pipeline(
-        provider=provider,
-        raw_prompt=prompt,
-        optimization_id=opt_id,
-        strategy_override=strategy,
-        repo_full_name=repo_full_name,
-        repo_branch=repo_branch,
-        github_token=github_token,
-        file_contexts=file_contexts,
-        instructions=instructions,
-        url_fetched_contexts=url_fetched,
-    ):
-        _accumulate_event(opt, event_type, event_data)
-        if event_type in ("analysis", "strategy", "optimization", "validation"):
-            results[event_type] = event_data
 
-    opt.status = "completed"
-    opt.duration_ms = int((time.time() - start) * 1000)
-    opt.provider_used = provider.name
+    try:
+        async for event_type, event_data in run_pipeline(
+            provider=provider,
+            raw_prompt=prompt,
+            optimization_id=opt_id,
+            strategy_override=strategy,
+            repo_full_name=repo_full_name,
+            repo_branch=repo_branch,
+            github_token=github_token,
+            file_contexts=file_contexts,
+            instructions=instructions,
+            url_fetched_contexts=url_fetched,
+        ):
+            updates.update(accumulate_pipeline_event(event_type, event_data))
+            if event_type in ("analysis", "strategy", "optimization", "validation"):
+                results[event_type] = event_data
+
+        updates["status"] = "completed"
+    except Exception as e:
+        logger.exception("MCP pipeline error for %s: %s", opt_id, e)
+        updates["status"] = "failed"
+        updates["error_message"] = str(e)
+
+    updates["duration_ms"] = int((time.time() - start) * 1000)
+    updates["provider_used"] = provider.name
+    updates["updated_at"] = datetime.now(timezone.utc)
 
     async with async_session() as s:
-        await s.merge(opt)
+        await s.execute(
+            update(Optimization)
+            .where(Optimization.id == opt_id)
+            .values(**updates)
+        )
         await s.commit()
 
-    return results, opt
+    return results
 
 
 # ── Server factory ────────────────────────────────────────────────────────────
@@ -339,11 +305,12 @@ def create_mcp_server(provider=None) -> FastMCP:
         prov = ctx.request_context.lifespan_context.provider
         url_fetched = await fetch_url_contexts(url_contexts)
         opt_id = _new_run_id("mcp")
-        results, opt = await _run_and_persist(
+        results = await _run_and_persist(
             prov, prompt, opt_id=opt_id, strategy=strategy,
             repo_full_name=repo_full_name, repo_branch=repo_branch,
             github_token=github_token, file_contexts=file_contexts,
             instructions=instructions, url_fetched=url_fetched,
+            project=project, title=title,
         )
         return json.dumps({"optimization_id": opt_id, **results}, default=str, indent=2)
 
@@ -860,7 +827,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         prov = ctx.request_context.lifespan_context.provider
         url_fetched = await fetch_url_contexts(url_contexts)
         opt_id = _new_run_id("mcp-retry")
-        results, opt = await _run_and_persist(
+        results = await _run_and_persist(
             prov, raw_prompt, opt_id=opt_id, strategy=strategy,
             repo_full_name=repo_full_name, repo_branch=repo_branch,
             github_token=github_token, file_contexts=file_contexts,

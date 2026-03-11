@@ -17,6 +17,7 @@ from app.dependencies.auth import get_current_user
 from app.models.optimization import Optimization
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.optimization import OptimizeRequest, PatchOptimizationRequest, RetryRequest
+from app.services.optimization_service import accumulate_pipeline_event
 from app.services.url_fetcher import fetch_url_contexts
 
 logger = logging.getLogger(__name__)
@@ -116,64 +117,12 @@ async def optimize_prompt(
                         pipeline_error_message = event_data.get("error", "Unknown stage failure")
 
                     # Accumulate DB field updates from pipeline events
-                    if event_type == "codebase_context":
-                        _snapshot = json.dumps(event_data)
-                        if len(_snapshot) > 65536:
-                            logger.warning(
-                                "codebase_context_snapshot truncated from %d to 65536 chars for opt %s",
-                                len(_snapshot), opt_id,
-                            )
-                            truncated_data = {
-                                k: v for k, v in event_data.items()
-                                if k in ("model", "repo", "branch", "files_read_count",
-                                         "explore_quality", "tech_stack", "coverage_pct")
-                            }
-                            truncated_data["_truncated"] = True
-                            _snapshot = json.dumps(truncated_data)
-                            if len(_snapshot) > 65536:
-                                _snapshot = json.dumps({"_truncated": True, "model": event_data.get("model")})
-                        updates["codebase_context_snapshot"] = _snapshot
-                        updates["model_explore"] = event_data.get("model")
-                    elif event_type == "analysis":
-                        updates["task_type"] = event_data.get("task_type")
-                        updates["complexity"] = event_data.get("complexity")
-                        updates["weaknesses"] = json.dumps(event_data.get("weaknesses", []))
-                        updates["strengths"] = json.dumps(event_data.get("strengths", []))
-                        updates["model_analyze"] = event_data.get("model")
-                        updates["analysis_quality"] = event_data.get("analysis_quality")
-                    elif event_type == "strategy":
-                        updates["primary_framework"] = event_data.get("primary_framework")
-                        updates["secondary_frameworks"] = json.dumps(
-                            event_data.get("secondary_frameworks", [])
+                    if event_type == "validation" and "scores" not in event_data:
+                        logger.error(
+                            "Validation event missing 'scores' sub-dict for opt %s; keys: %s",
+                            opt_id, list(event_data.keys())
                         )
-                        updates["approach_notes"] = event_data.get("approach_notes")
-                        updates["strategy_rationale"] = event_data.get("rationale")
-                        updates["strategy_source"] = event_data.get("strategy_source")
-                        updates["model_strategy"] = event_data.get("model")
-                    elif event_type == "optimization":
-                        updates["optimized_prompt"] = event_data.get("optimized_prompt")
-                        updates["changes_made"] = json.dumps(event_data.get("changes_made", []))
-                        updates["framework_applied"] = event_data.get("framework_applied")
-                        updates["optimization_notes"] = event_data.get("optimization_notes")
-                        updates["model_optimize"] = event_data.get("model")
-                    elif event_type == "validation":
-                        if "scores" not in event_data:
-                            logger.error(
-                                "Validation event missing 'scores' sub-dict for opt %s; keys: %s",
-                                opt_id, list(event_data.keys())
-                            )
-                        scores = event_data.get("scores", {})
-                        updates["clarity_score"] = scores.get("clarity_score")
-                        updates["specificity_score"] = scores.get("specificity_score")
-                        updates["structure_score"] = scores.get("structure_score")
-                        updates["faithfulness_score"] = scores.get("faithfulness_score")
-                        updates["conciseness_score"] = scores.get("conciseness_score")
-                        updates["overall_score"] = scores.get("overall_score")
-                        updates["is_improvement"] = event_data.get("is_improvement")
-                        updates["verdict"] = event_data.get("verdict")
-                        updates["issues"] = json.dumps(event_data.get("issues", []))
-                        updates["model_validate"] = event_data.get("model")
-                        updates["validation_quality"] = event_data.get("validation_quality")
+                    updates.update(accumulate_pipeline_event(event_type, event_data))
 
                 # Finalize — success or partial failure
                 duration_ms = int((time.time() - start_time) * 1000)

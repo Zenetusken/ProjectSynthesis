@@ -109,3 +109,66 @@ async def test_list_optimizations_with_user_id_filter(tmp_path):
     assert total == 1
     assert items[0]["id"] == "opt-a"
     await eng.dispose()
+
+
+def test_accumulate_pipeline_event_analysis():
+    """accumulate_pipeline_event returns correct dict for analysis events."""
+    from app.services.optimization_service import accumulate_pipeline_event
+
+    result = accumulate_pipeline_event("analysis", {
+        "task_type": "coding",
+        "complexity": "medium",
+        "weaknesses": ["vague"],
+        "strengths": ["clear goal"],
+        "model": "haiku",
+        "analysis_quality": "full",
+    })
+    assert result["task_type"] == "coding"
+    assert result["complexity"] == "medium"
+    assert result["weaknesses"] == json.dumps(["vague"])
+    assert result["strengths"] == json.dumps(["clear goal"])
+    assert result["model_analyze"] == "haiku"
+    assert result["analysis_quality"] == "full"
+
+
+def test_accumulate_pipeline_event_validation_extracts_scores():
+    """accumulate_pipeline_event unpacks scores sub-dict for validation events."""
+    from app.services.optimization_service import accumulate_pipeline_event
+
+    result = accumulate_pipeline_event("validation", {
+        "scores": {"clarity_score": 8, "overall_score": 7},
+        "is_improvement": True,
+        "verdict": "improved",
+        "issues": ["minor"],
+        "model": "sonnet",
+        "validation_quality": "full",
+    })
+    assert result["clarity_score"] == 8
+    assert result["overall_score"] == 7
+    assert result["is_improvement"] is True
+    assert result["issues"] == json.dumps(["minor"])
+    assert result["model_validate"] == "sonnet"
+
+
+def test_accumulate_pipeline_event_unknown_type_returns_empty():
+    """accumulate_pipeline_event returns empty dict for unrecognized event types."""
+    from app.services.optimization_service import accumulate_pipeline_event
+
+    assert accumulate_pipeline_event("unknown_event", {"data": 1}) == {}
+    assert accumulate_pipeline_event("stage", {"status": "complete"}) == {}
+
+
+def test_accumulate_pipeline_event_strategy_maps_rationale_key():
+    """accumulate_pipeline_event maps event_data 'rationale' to 'strategy_rationale' column."""
+    from app.services.optimization_service import accumulate_pipeline_event
+
+    result = accumulate_pipeline_event("strategy", {
+        "primary_framework": "CO-STAR",
+        "secondary_frameworks": ["RISEN"],
+        "rationale": "Best fit for coding tasks",
+        "strategy_source": "llm",
+        "model": "haiku",
+    })
+    assert result["primary_framework"] == "CO-STAR"
+    assert result["strategy_rationale"] == "Best fit for coding tasks"
+    assert result["secondary_frameworks"] == json.dumps(["RISEN"])
