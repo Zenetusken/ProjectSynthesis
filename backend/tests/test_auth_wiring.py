@@ -212,10 +212,9 @@ async def test_github_token_cross_validation_passes_matching_user():
 
 def test_weak_secret_auto_generated(tmp_path, monkeypatch):
     """Settings with a weak JWT_SECRET auto-generates a strong replacement."""
-    from app.config import Settings
-
     # Point _SECRETS_FILE to a temp location so it doesn't pollute real data/
     import app.config as config_mod
+    from app.config import Settings
 
     monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
 

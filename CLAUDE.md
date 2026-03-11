@@ -25,7 +25,9 @@ Logs: `data/backend.log`, `data/frontend.log`, `data/mcp.log`
 - **Framework**: FastAPI + uvicorn with `--reload` (watches `backend/app/`)
 - **Database**: SQLite via SQLAlchemy async + aiosqlite (`data/synthesis.db`)
 - **Config**: `backend/app/config.py` — reads from `.env` via pydantic-settings
-- **Key env vars**: `ANTHROPIC_API_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_TOKEN_ENCRYPTION_KEY`, `SECRET_KEY`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD`, `TRUSTED_PROXIES`
+- **Key env vars**: `ANTHROPIC_API_KEY` (optional — configurable via UI), `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_TOKEN_ENCRYPTION_KEY`, `SECRET_KEY`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD`, `TRUSTED_PROXIES`
+- **Auto-generated secrets**: `SECRET_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET` are auto-generated on first startup and persisted to `data/.app_secrets` (0o600). Env vars take precedence if set.
+- **Encrypted credential files**: `data/.api_credentials` (Fernet-encrypted Anthropic API key), `data/github_credentials.json` (Fernet-encrypted GitHub App credentials with legacy plaintext auto-migration)
 
 ### Layer rules
 - `routers/` → `services/` → `models/` only. Services must never import from routers.
@@ -38,6 +40,7 @@ Logs: `data/backend.log`, `data/frontend.log`, `data/mcp.log`
 - `github_repos.py` — repo listing, branch info, repo link (triggers background embedding index), manual reindex
 - `github.py` — repo link/unlink on an optimization
 - `providers.py` — active provider info
+- `provider_config.py` — in-app API key management (GET/PATCH/DELETE `/api/provider/config` and `/api/provider/api-key`)
 - `settings.py` — app settings read/write
 - `health.py` — liveness check
 
@@ -51,6 +54,7 @@ Logs: `data/backend.log`, `data/frontend.log`, `data/mcp.log`
 - `optimizer.py` — Stage 3 (Optimize): prompt rewrite
 - `validator.py` — Stage 4 (Validate): scoring and feedback
 - `optimization_service.py` — CRUD + sort/filter against the DB
+- `api_credentials_service.py` — Fernet-encrypted Anthropic API key persistence + hot-reload
 - `github_service.py` — token encryption/decryption (Fernet)
 - `github_client.py` — raw GitHub API calls; token always resolved here
 - `redis_service.py` — Redis connection singleton with graceful degradation
@@ -140,6 +144,35 @@ curl -s -X POST http://127.0.0.1:8001/mcp \
   -d '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":2}'
 ```
 
+## Changelog
+
+`CHANGELOG.md` follows the [Anthropic Claude Code format](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md): flat bullet list per version, no categorical sub-headings, past-tense prefix verb.
+
+**When to update:** Add an entry to the `## Unreleased` section for every user-facing or architecturally significant change. Internal refactors, lint fixes, and test-only changes do not need entries unless they change observable behavior.
+
+**Format:** `- {Verb} {what changed}` — one line, no trailing period. Use inline code for settings, paths, endpoints, commands.
+
+| Verb | Use for |
+|------|---------|
+| Added | New feature, endpoint, tool, config, UI element |
+| Fixed | Bug fix, data correction, crash resolution |
+| Changed | Behavioral change to existing functionality |
+| Removed | Deleted feature, deprecated code cleanup |
+| Improved | Performance, UX, or quality enhancement to existing feature |
+
+**Releasing:** When cutting a release, move all `## Unreleased` entries under a new `## X.Y.Z` heading. Bump minor for features, patch for fixes only.
+
+## Versioning
+
+Single source of truth: `backend/app/_version.py`. All backend consumers import `__version__` from there.
+
+**When bumping the version:**
+1. Update `__version__` in `backend/app/_version.py`
+2. Update `version` in `frontend/package.json` to match (npm requires it)
+3. Move `## Unreleased` entries in `CHANGELOG.md` under the new `## X.Y.Z` heading
+
+Convention: `X.Y.Z` for releases, `X.Y.Z-dev` on main between releases. The frontend reads the version from the health endpoint at runtime — no build-time injection needed.
+
 ## Key architectural decisions
 
 - **Explore gate** (`pipeline.py`): runs when `repo_full_name AND (session_id OR github_token)`. MCP callers pass `github_token` directly since they have no session.
@@ -193,12 +226,13 @@ The explore phase uses **semantic retrieval + single-shot synthesis**, not an ag
 
 ## Docker deployment
 
-Production deployment via Docker Compose. All traffic routes through nginx; only ports 80 (HTTP) and 8001 (standalone MCP) are exposed to the host.
+Production deployment via Docker Compose. All traffic routes through nginx; port 80 (HTTP) is exposed to all interfaces and port 8001 (standalone MCP) is bound to localhost only.
 
 ### Quick start
 ```bash
 cp .env.docker.example .env.docker
-# Edit .env.docker — at minimum set ANTHROPIC_API_KEY and change all CHANGE-ME secrets
+# Edit .env.docker — set REDIS_PASSWORD at minimum. All other secrets are auto-generated.
+# ANTHROPIC_API_KEY is optional here — configurable via the in-app setup flow.
 docker compose up --build -d
 ```
 
@@ -222,11 +256,11 @@ Routing: `/` → frontend, `/api/*` + `/auth/*` → backend, `/mcp` + `/mcp/ws` 
 
 | Service | Image | Host port | Health check |
 |---------|-------|-----------|-------------|
-| nginx | nginx:1.27-alpine (custom) | 80, 8001 | wget /api/health |
+| nginx | nginx:1.27-alpine (custom) | 80, 127.0.0.1:8001 | wget /api/health |
 | backend | python:3.14-slim (custom) | none | curl /api/health |
 | frontend | node:24-slim (custom) | none | curl / |
 | mcp | reuses backend image | none | TCP :8001 |
-| redis | redis:7-alpine | none | redis-cli ping |
+| redis | redis:8-alpine | none | redis-cli ping |
 
 ### Volumes
 - `db-data` — SQLite database (shared by backend + mcp)
@@ -247,10 +281,15 @@ Routing: `/` → frontend, `/api/*` + `/auth/*` → backend, `/mcp` + `/mcp/ws` 
 4. Set `FRONTEND_URL=https://your-domain.com`, `CORS_ORIGINS=https://your-domain.com`, `ORIGIN=https://your-domain.com`, `JWT_COOKIE_SECURE=true`
 
 ### Container hardening
-- All containers: `no-new-privileges`, `restart: unless-stopped`, JSON log rotation (10 MB / 3 files)
+- All containers: `no-new-privileges`, `cap_drop: [ALL]`, `restart: unless-stopped`, JSON log rotation (10 MB / 3 files)
+- nginx: `cap_add: [CHOWN, SETUID, SETGID, NET_BIND_SERVICE]` (master process needs these; all others need zero extra caps)
 - nginx, frontend, redis: `read_only: true` with tmpfs for writable paths
 - All services run as non-root users (UID 10001)
+- All services have `pids_limit` to prevent fork bombs (64–256 depending on workload)
 - Resource limits: backend 2 GB / 2 CPU, others capped lower
+- Redis requires authentication via `REDIS_PASSWORD` (defense-in-depth, even on internal network)
+- MCP port (8001) bound to `127.0.0.1` only — not reachable from external interfaces
+- nginx `server_tokens off` — suppresses version disclosure in response headers
 
 ### Troubleshooting
 - **Frontend returns HTML for /api calls**: nginx is not routing — check `docker compose logs nginx`

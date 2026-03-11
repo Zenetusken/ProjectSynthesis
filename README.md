@@ -1,72 +1,66 @@
 # Project Synthesis
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+> **This project is in its early days.** The foundation is real and working, but there's a long road ahead — and that's the exciting part.
 
-**AI-powered prompt optimization with a 5-stage analysis pipeline.**
+Your prompts carry intent, but most of it gets lost in translation. Project Synthesis closes that gap. It takes a raw prompt and runs it through a multi-stage pipeline that understands what you're actually trying to accomplish, then rewrites it so the AI on the other end gets the full picture.
 
-Project Synthesis runs your prompts through a structured pipeline — **Explore → Analyze → Strategy → Optimize → Validate** — producing a measurably improved result with per-dimension scoring, diff view, and full trace visibility.
+Link a GitHub repository and it goes deeper: it reads your codebase, maps the architecture, and bakes that context directly into the prompt. The result reads like it was written by someone who already knows your code.
 
-## Features
+Every optimization streams in real time, scores across multiple quality dimensions, and gives you a diff so you can see exactly what changed and why.
 
-- **5-stage pipeline** — each stage streams results in real time with full trace visibility
-- **GitHub integration** — link a repository so the Explore stage reads your codebase as context
-- **Branch-aware** — browse and select branches directly from the repo picker
-- **Scoring** — Validate stage returns per-dimension scores (0–10) with actionable feedback
-- **Diff view** — side-by-side comparison of original vs optimized prompt
-- **History** — all optimization runs stored locally with sort and filter
-- **MCP server** — 13 tools exposing the full API to Claude Code and other MCP clients
-- **Two LLM providers** — Claude Code CLI (Max subscription, zero cost) or Anthropic API key
-
-## Prerequisites
-
-- Python 3.14.0+ and Node.js 24.0.0+
-- At least one LLM provider — Claude Code CLI (`claude login`) or an Anthropic API key
-
-## Installation
+## Getting Started
 
 ```bash
-cp .env.example .env   # fill in API keys and secrets
-./init.sh              # install dependencies and start all services
+cp .env.docker.example .env.docker
+docker compose up --build -d
 ```
 
-See `.env.example` for all configuration options and [CLAUDE.md](CLAUDE.md) for full architecture details.
+Open **http://localhost** — the in-app setup flow walks you through API key configuration and optional GitHub integration. No manual secret generation required; crypto secrets are auto-generated on first startup.
 
-## Usage
+## How It Works
 
-```bash
-./init.sh          # start all services
-./init.sh status   # check service status
-./init.sh restart  # restart (required after changing Python packages)
-./init.sh stop     # stop all services
-```
+Your prompt moves through five stages — **Explore, Analyze, Strategy, Optimize, Validate** — each one building on the last. Explore reads your linked repo for architectural context. Analyze classifies the task. Strategy picks the right optimization framework. Optimize rewrites the prompt. Validate scores the result and tells you if it's actually better.
 
-| Service | URL |
-|---|---|
-| Frontend | http://localhost:5199 |
-| API docs | http://localhost:8000/api/docs |
-| MCP server | http://127.0.0.1:8001/mcp |
+There's also an [MCP server](docs/MCP.md) that exposes the full API as tools, so you can run optimizations directly from Claude Code without touching the browser.
 
-## Pipeline
+## Where This Is Going
 
-| Stage | What it does |
-|---|---|
-| **Explore** | Reads linked GitHub repository context (file tree, key files) |
-| **Analyze** | Classifies prompt type, task domain, and complexity |
-| **Strategy** | Selects the optimal optimization framework |
-| **Optimize** | Rewrites the prompt using the chosen strategy |
-| **Validate** | Scores the result across multiple dimensions (0–10) |
+What exists today is a working core — a five-stage pipeline, codebase-aware context injection, real-time streaming, GitHub integration, and an MCP interface. It works, and it works well for what it does. But it's a fraction of what we have in mind.
 
-## MCP Server
+The roadmap is wide open and growing. Some of the directions we're exploring:
 
-13 tools accessible directly from Claude Code when this directory is open. See [docs/MCP.md](docs/MCP.md) for the full tool reference.
+- **Prompt chains and composition** — multi-step prompt workflows where one optimization feeds into the next, building compound instructions that handle complex tasks no single prompt can
+- **Team workspaces** — shared optimization history, collective strategy refinement, and organizational prompt libraries that get smarter as your team uses them
+- **Custom strategy authoring** — define your own optimization frameworks tuned to your domain, your codebase, your way of thinking
+- **Provider flexibility** — support for additional LLM providers beyond Anthropic, so you can optimize prompts for the model that will actually run them
+- **Deeper codebase understanding** — richer semantic indexing, cross-repository awareness, dependency graph analysis, and architectural pattern recognition that makes context injection even more precise
+- **Quality feedback loops** — track how optimized prompts perform in practice and feed that signal back into the optimization pipeline itself
+- **Plugin and extension system** — open the pipeline to community-built stages, custom validators, and domain-specific analyzers
 
-## Contributing
+Some of these are closer than others. Some will change shape as we learn what matters most. That's the nature of building something in the open — the path reveals itself as you walk it.
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. Found a security issue? See [SECURITY.md](SECURITY.md) — do not open a public issue.
+If any of this resonates with you, come build with us. The architecture is designed to grow, and there's room for ideas we haven't thought of yet.
 
-## License
+## Current Status
 
-Copyright 2026 Project Synthesis Contributors.
-Licensed under the [Apache License, Version 2.0](LICENSE).
-Free for personal and organizational use. See [TERMS.md](TERMS.md).
+Project Synthesis is under **active development**. The core pipeline is stable and functional, but you should expect rough edges, evolving APIs, and occasional breaking changes. We're iterating fast and prioritizing substance over polish.
+
+What you can count on today:
+- Five-stage optimization pipeline with real-time SSE streaming
+- GitHub repository integration with semantic codebase indexing
+- MCP server for CLI-native workflows
+- Encrypted credential storage with in-app configuration
+- Docker deployment with auto-generated secrets
+
+What's still taking shape:
+- API stability (endpoints may shift as the architecture matures)
+- Documentation depth (improving steadily)
+- Test coverage (515+ tests and growing, targeting 90%+)
+
+We tag releases when meaningful milestones land. Watch the repo if you want to follow along.
+
+---
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) &nbsp; [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Terms](TERMS.md) · [Architecture](CLAUDE.md)
