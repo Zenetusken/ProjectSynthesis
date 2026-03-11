@@ -1,6 +1,6 @@
 [project]
 name = "project-synthesis-backend"
-version = "2.0.0"
+dynamic = ["version"]
 description = "Project Synthesis — Multi-Agent Development Platform"
 requires-python = ">=3.14"
 license = {text = "Apache-2.0"}
@@ -11,6 +11,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.dynamic]
+version = {attr = "app._version.__version__"}
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

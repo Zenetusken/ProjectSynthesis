@@ -39,6 +39,7 @@ class WorkbenchStore {
   redisConnected = $state(false);
   githubOAuthEnabled = $state(false);
   showOnboarding = $state(false);
+  appVersion = $state('');
 
   get navCssWidth() {
     return this.navigatorCollapsed ? '0px' : `${this.navigatorWidth}px`;

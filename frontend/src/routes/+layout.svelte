@@ -352,6 +352,7 @@
         workbench.provider = (data.provider as 'anthropic' | 'openai' | 'claude_cli' | 'anthropic_api') || 'unknown';
         workbench.providerModel = data.model_routing?.optimize || '';
         workbench.githubOAuthEnabled = !!data.github_oauth_enabled;
+        workbench.appVersion = data.version || '';
       } catch {
         workbench.isConnected = false;
         workbench.mcpConnected = false;

@@ -22,6 +22,7 @@ from typing import Optional
 import httpx
 from sqlalchemy import func, select, update
 
+from app._version import __version__
 from app.config import settings
 from app.database import async_session
 from app.models.optimization import Optimization
@@ -195,6 +196,9 @@ def create_mcp_server(provider=None) -> FastMCP:
         json_response=True,    # Streamable HTTP: return JSON (no SSE overhead)
         stateless_http=False,  # Keep sessions for multi-turn tool interactions
     )
+    # FastMCP doesn't expose version in its constructor, but the low-level
+    # Server does — set it directly so MCP initialize responses include it.
+    mcp._mcp_server.version = __version__
 
     # Whitelisted sort columns — prevents getattr on arbitrary user input (B5)
     from app.services.optimization_service import VALID_SORT_COLUMNS as _SORT_COLUMNS

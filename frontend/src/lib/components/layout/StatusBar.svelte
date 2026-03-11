@@ -217,5 +217,10 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15M3 8.25h18M3 15.75h18" />
       </svg>
     </button>
+
+    {#if workbench.appVersion}
+      <span class="h-3 w-px bg-border-subtle/50 shrink-0"></span>
+      <span class="h-full flex items-center px-2 text-text-dim/50">v{workbench.appVersion}</span>
+    {/if}
   </div>
 </footer>

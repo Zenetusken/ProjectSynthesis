@@ -3,6 +3,7 @@ import logging
 
 from fastapi import APIRouter, Request
 
+from app._version import __version__
 from app.config import settings
 from app.database import check_db_connection
 from app.providers.base import MODEL_ROUTING
@@ -76,5 +77,5 @@ async def health_check(request: Request):
         "mcp_connected": mcp_ok,
         "redis_connected": redis_ok,
         "mcp_url": mcp_url,
-        "version": "2.0.0",
+        "version": __version__,
     }
