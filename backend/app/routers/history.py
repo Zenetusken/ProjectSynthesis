@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,24 @@ router = APIRouter(tags=["history"])
 
 # Valid status values for the status filter query parameter.
 VALID_STATUSES: frozenset[str] = frozenset({"running", "completed", "failed", "pending"})
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[str]
+
+    @field_validator("ids")
+    @classmethod
+    def validate_ids(cls, v: list[str]) -> list[str]:
+        if len(v) < 1:
+            raise ValueError("At least one ID is required")
+        if len(v) > 50:
+            raise ValueError("Maximum 50 IDs per batch delete request")
+        return v
+
+
+class BatchDeleteResponse(BaseModel):
+    deleted_count: int
+    ids: list[str]
 
 
 @router.get("/api/history")
@@ -110,6 +129,25 @@ async def list_history(
         "has_more": has_more,
         "next_offset": offset + fetched if has_more else None,
     }
+
+
+@router.post("/api/history/batch-delete", response_model=BatchDeleteResponse)
+async def batch_delete_optimizations(
+    request: Request,
+    body: BatchDeleteRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    _rl: None = Depends(RateLimit(lambda: settings.RATE_LIMIT_HISTORY_BATCH_DELETE)),
+):
+    """Batch soft-delete optimization records (user-scoped, all-or-nothing)."""
+    from app.services.optimization_service import batch_delete_optimizations as svc_batch_delete
+
+    deleted_ids = await svc_batch_delete(session, current_user.id, body.ids)
+    logger.info(
+        "Batch-deleted %d optimizations by user %s",
+        len(deleted_ids), current_user.id,
+    )
+    return BatchDeleteResponse(deleted_count=len(deleted_ids), ids=deleted_ids)
 
 
 @router.delete("/api/history/{optimization_id}")

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     GITHUB_APP_INSTALLATION_ID: str = ""
     SECRET_KEY: str = "synthesis-dev-secret-key"
     GITHUB_TOKEN_ENCRYPTION_KEY: str = ""
+    GITHUB_TOKEN_ENCRYPTION_KEY_OLD: str = ""  # Comma-separated previous keys for rotation
     FRONTEND_URL: str = "http://localhost:5199"
     MCP_PORT: int = 8001
     MCP_HOST: str = "127.0.0.1"
@@ -63,8 +64,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_LOGIN: str = "20/minute"
     RATE_LIMIT_AUTH_CALLBACK: str = "10/minute"
     RATE_LIMIT_JWT_REFRESH: str = "60/minute"
+    RATE_LIMIT_AUTH_TOKEN: str = "30/minute"
+    RATE_LIMIT_AUTH_LOGOUT: str = "30/minute"
     RATE_LIMIT_HISTORY: str = "60/minute"
     RATE_LIMIT_HISTORY_WRITE: str = "20/minute"
+    RATE_LIMIT_HISTORY_BATCH_DELETE: str = "10/minute"
     RATE_LIMIT_OPTIMIZE: str = "10/minute"
     RATE_LIMIT_GITHUB_REPOS: str = "30/minute"
     RATE_LIMIT_GITHUB_REPOS_WRITE: str = "10/minute"

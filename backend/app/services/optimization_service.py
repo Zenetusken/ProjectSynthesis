@@ -431,3 +431,69 @@ async def delete_optimization(
     await session.flush()
     logger.info("Soft-deleted optimization %s", optimization_id)
     return True
+
+
+async def batch_delete_optimizations(
+    session: AsyncSession,
+    user_id: str,
+    ids: list[str],
+) -> list[str]:
+    """Batch soft-delete optimizations by setting deleted_at.
+
+    All-or-nothing semantics: validates existence and ownership of every ID
+    before mutating any rows. Raises HTTPException on validation failure.
+
+    Args:
+        session: Async database session (transaction-scoped).
+        user_id: Authenticated user's ID — all records must belong to this user.
+        ids: List of optimization UUIDs to soft-delete (1–50 items).
+
+    Returns:
+        List of deleted optimization IDs.
+
+    Raises:
+        HTTPException 404: If any ID does not exist (or is already deleted).
+        HTTPException 403: If any record belongs to a different user.
+    """
+    from fastapi import HTTPException
+
+    from app.schemas.auth import ERR_INSUFFICIENT_PERMISSIONS
+
+    # Fetch all records matching the provided IDs (including other users' records
+    # so we can distinguish 404 vs 403).
+    result = await session.execute(
+        select(Optimization).where(
+            Optimization.id.in_(ids),
+            Optimization.deleted_at.is_(None),
+        )
+    )
+    records = {opt.id: opt for opt in result.scalars().all()}
+
+    # Validate: every requested ID must exist
+    missing = [oid for oid in ids if oid not in records]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Optimization(s) not found: {', '.join(missing)}",
+        )
+
+    # Validate: every record must belong to the authenticated user
+    unauthorized = [oid for oid, opt in records.items() if opt.user_id != user_id]
+    if unauthorized:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": ERR_INSUFFICIENT_PERMISSIONS,
+                "message": "Not authorized to delete one or more optimizations",
+            },
+        )
+
+    # All checks passed — mutate
+    now = datetime.now(timezone.utc)
+    for opt in records.values():
+        opt.deleted_at = now
+    await session.flush()
+
+    deleted_ids = list(records.keys())
+    logger.info("Batch soft-deleted %d optimizations for user %s", len(deleted_ids), user_id)
+    return deleted_ids
