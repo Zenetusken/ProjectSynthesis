@@ -145,9 +145,9 @@ async def test_schema_additions_migrated(tmp_path):
 
 async def test_migrate_adds_composite_user_listing_index(tmp_path):
     """_migrate_add_missing_indexes creates idx_optimizations_user_listing."""
+    import app.models.auth  # noqa: F401
+    import app.models.github  # noqa: F401
     import app.models.optimization  # noqa: F401
-    import app.models.auth          # noqa: F401
-    import app.models.github        # noqa: F401
 
     eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/idx_user_listing.db")
     from app.database import Base, _migrate_add_missing_indexes
