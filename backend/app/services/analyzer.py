@@ -48,7 +48,7 @@ async def run_analyze(
         )
         prompt_hash = cache.hash_content(raw_prompt)
         flags_hash = cache.hash_content(context_flags)
-        analyze_cache_key = cache.make_key("analyze", prompt_hash, flags_hash)
+        analyze_cache_key = cache.make_key("analyze_v2", prompt_hash, flags_hash)
         cached = await cache.get(analyze_cache_key)
         if cached is not None:
             cached["analysis_quality"] = "cached"
@@ -142,7 +142,7 @@ async def run_analyze(
                 "weaknesses": ["Analysis failed - using defaults"],
                 "strengths": [],
                 "complexity": "moderate",
-                "recommended_frameworks": ["CO-STAR"],
+                "recommended_frameworks": [],
                 "analysis_quality": "fallback",
             }
             # codebase_informed will be set by the setdefault block below

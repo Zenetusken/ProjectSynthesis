@@ -7,16 +7,16 @@ def get_strategy_prompt() -> str:
 
 Available frameworks (choose 1 primary + 0-2 secondary):
 
-1. CO-STAR: Context, Objective, Style, Tone, Audience, Response format. Best for general-purpose prompts needing full structural overhaul.
-2. RISEN: Role, Instructions, Steps, End goal, Narrowing. Best for task-oriented prompts in professional/technical domains.
-3. chain-of-thought: Explicit reasoning chain. Best for complex logic, analysis, or multi-step reasoning tasks.
-4. few-shot-scaffolding: Example-based learning. Best for classification, formatting, or pattern-matching tasks.
-5. role-task-format: Simple role + task + format structure. Best for straightforward tasks that need clarity.
-6. structured-output: Explicit output schema definition. Best for data extraction, API responses, or structured generation.
-7. step-by-step: Sequential decomposition. Best for procedural tasks, tutorials, or multi-stage processes.
-8. constraint-injection: Explicit boundary and rule injection. Best for safety-critical, compliance, or precision tasks.
-9. context-enrichment: Background information augmentation. Best for domain-specific tasks lacking context.
-10. persona-assignment: Expert persona creation. Best for creative, educational, or advisory tasks.
+1. chain-of-thought: Explicit reasoning chain. Best for complex logic, analysis, or multi-step reasoning tasks.
+2. constraint-injection: Explicit boundary and rule injection. Best for safety-critical, compliance, or precision tasks.
+3. context-enrichment: Background information augmentation. Best for domain-specific tasks lacking context.
+4. CO-STAR: Context, Objective, Style, Tone, Audience, Response format. Best for audience-aware writing and communication tasks.
+5. few-shot-scaffolding: Example-based learning. Best for classification, formatting, or pattern-matching tasks.
+6. persona-assignment: Expert persona creation. Best for creative, educational, or advisory tasks.
+7. RISEN: Role, Instructions, Steps, End goal, Narrowing. Best for task-oriented prompts in professional/technical domains.
+8. role-task-format: Simple role + task + format structure. Best for straightforward tasks that need clarity.
+9. step-by-step: Sequential decomposition. Best for procedural tasks, tutorials, or multi-stage processes.
+10. structured-output: Explicit output schema definition. Best for data extraction, API responses, or structured generation.
 
 Consider:
 - The task type and complexity from the analysis
@@ -30,11 +30,11 @@ Consider:
 - Whether user output constraints (labeled "User-specified output constraints")
   narrow the valid framework choices — e.g. bullet-point instructions favour step-by-step
 
-If `analysis.recommended_frameworks` is non-empty, treat the first item as the **strongly preferred primary framework** unless a more specific framework better addresses the highest-severity weakness identified in the analysis.
+If `analysis.recommended_frameworks` is non-empty, use them as candidate starting points. Evaluate each against the identified weaknesses — the framework that directly addresses the most severe weakness should take priority, regardless of list position.
 
 When choosing secondary frameworks: if two candidate secondary frameworks give contradictory structural directives (e.g., chain-of-thought and structured-output both impose competing document layouts), keep only the one that addresses more weaknesses. Note the conflict in `approach_notes`.
 
-If the analysis_quality indicator shows 'fallback' or 'failed', treat all recommended_frameworks as unverified suggestions and prefer well-established frameworks (CO-STAR for general tasks, chain-of-thought for complex reasoning) over novel combinations.
+If the analysis_quality indicator shows 'fallback' or 'failed', treat all recommended_frameworks as unverified suggestions and rely on the task type and weaknesses to guide selection rather than defaulting to any single framework.
 
 Respond with a JSON object:
 {

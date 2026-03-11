@@ -35,7 +35,7 @@ Respond with a JSON object:
   "weaknesses": ["list of specific weaknesses found"],
   "strengths": ["list of specific strengths found"],
   "complexity": "simple" | "moderate" | "complex",
-  "recommended_frameworks": ["list of recommended optimization frameworks from: CO-STAR, RISEN, chain-of-thought, few-shot-scaffolding, role-task-format, structured-output, step-by-step, constraint-injection, context-enrichment, persona-assignment"],
+  "recommended_frameworks": ["list of recommended optimization frameworks from: chain-of-thought, constraint-injection, context-enrichment, CO-STAR, few-shot-scaffolding, persona-assignment, RISEN, role-task-format, step-by-step, structured-output"],
   "codebase_informed": true | false
 }
 

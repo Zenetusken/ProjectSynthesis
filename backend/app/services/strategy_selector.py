@@ -42,7 +42,7 @@ TASK_FRAMEWORK_MAP: dict[str, tuple[str, list[str], str]] = {
     ),
     "creative": (
         "persona-assignment",
-        ["CO-STAR", "few-shot-scaffolding"],
+        ["few-shot-scaffolding", "CO-STAR"],
         "Creative tasks benefit from a strong persona combined with structural guidance "
         "and examples to inspire while maintaining quality.",
     ),
@@ -80,15 +80,16 @@ TASK_FRAMEWORK_MAP: dict[str, tuple[str, list[str], str]] = {
         "pedagogical step-by-step progression and examples.",
     ),
     "general": (
-        "CO-STAR",
+        "role-task-format",
         ["structured-output"],
-        "General tasks benefit from the versatile CO-STAR framework which ensures all key "
-        "dimensions of the prompt are addressed.",
+        "General tasks benefit from clear role + task + format structure without imposing "
+        "heavyweight framework scaffolding.",
     ),
     "other": (
-        "CO-STAR",
+        "role-task-format",
         [],
-        "Default to CO-STAR as a universal framework for unclassified tasks.",
+        "Default to lightweight role-task-format for unclassified tasks to avoid "
+        "over-engineering with framework-heavy approaches.",
     ),
 }
 

@@ -156,7 +156,7 @@ For EDUCATION prompts specifically:
     "general": """
 
 For GENERAL prompts:
-- Apply CO-STAR structure (Context, Objective, Style, Tone, Audience, Response format)
+- Apply the selected framework as specified by the Strategy stage
 - Ensure the objective is unambiguous
 - Specify the expected response format explicitly
 - Define the intended audience and appropriate expertise level""",

@@ -56,7 +56,7 @@ async def run_strategy(
             f"{','.join(analysis.get('weaknesses', [])[:5])}:"
             f"{','.join(analysis.get('recommended_frameworks', []))}"
         )
-        cache_key = CacheService.make_key("strategy", prompt_hash, analysis_hash)
+        cache_key = CacheService.make_key("strategy_v2", prompt_hash, analysis_hash)
 
     if cache and cache_key and not strategy_override:
         cached = await cache.get(cache_key)
@@ -145,8 +145,11 @@ async def run_strategy(
             result = heuristic_strategy_fallback(analysis.get("task_type", "general"))
             result["strategy_source"] = "heuristic"
 
-    # Ensure required fields
-    result.setdefault("primary_framework", "CO-STAR")
+    # Ensure required fields — derive default from task_type heuristic
+    # rather than hardcoding a single framework
+    if "primary_framework" not in result or not result["primary_framework"]:
+        fallback = heuristic_strategy_fallback(task_type)
+        result["primary_framework"] = fallback["primary_framework"]
     result.setdefault("secondary_frameworks", [])
     result.setdefault("rationale", "")
     result.setdefault("approach_notes", "")
