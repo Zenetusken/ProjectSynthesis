@@ -10,11 +10,11 @@
   import { history } from '$lib/stores/history.svelte';
 
   const providerLabels: Record<string, string> = {
-    anthropic: 'CLI', claude_cli: 'CLI', openai: 'API', anthropic_api: 'API'
+    claude_cli: 'CLI', anthropic_api: 'API'
   };
-  let providerLabel = $derived(!workbench.isConnected ? 'OFF' : (providerLabels[workbench.provider] ?? '???'));
+  let providerLabel = $derived(!workbench.isConnected ? 'OFF' : (providerLabels[workbench.provider] ?? '--'));
   let providerDotClass = $derived(!workbench.isConnected ? 'bg-neon-red' :
-    (['anthropic', 'claude_cli'].includes(workbench.provider) ? 'bg-neon-green' : 'bg-neon-yellow'));
+    (workbench.provider === 'claude_cli' ? 'bg-neon-green' : workbench.provider === 'anthropic_api' ? 'bg-neon-yellow' : 'bg-neon-red'));
 
   let setupSteps = $derived(
     (workbench.isConnected ? 1 : 0) +

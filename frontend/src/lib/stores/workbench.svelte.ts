@@ -32,7 +32,7 @@ class WorkbenchStore {
   inspectorCollapsed = $state(loadBool('pf_inspectorCollapsed', false));
   navigatorWidth = $state(Math.max(160, Math.min(480, loadNumber('pf_navigatorWidth', 240))));
   inspectorWidth = $state(Math.max(180, Math.min(480, loadNumber('pf_inspectorWidth', 280))));
-  provider = $state<'anthropic' | 'openai' | 'claude_cli' | 'anthropic_api' | 'unknown'>('unknown');
+  provider = $state<'claude_cli' | 'anthropic_api' | 'unknown'>('unknown');
   providerModel = $state('');
   isConnected = $state(false);
   mcpConnected = $state(false);

@@ -474,10 +474,10 @@
       onclick={() => toggleSection('provider')}
       aria-expanded={openSections.provider}
     >
-      <span class="w-1.5 h-1.5 shrink-0 {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'bg-neon-green' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'bg-neon-yellow' : 'bg-neon-red'}"></span>
+      <span class="w-1.5 h-1.5 shrink-0 {workbench.provider === 'claude_cli' ? 'bg-neon-green' : workbench.provider === 'anthropic_api' ? 'bg-neon-yellow' : 'bg-neon-red'}"></span>
       <span class="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-text-dim">Provider</span>
       <span class="flex-1 text-right font-mono text-[9px] text-text-dim/40 truncate ml-1">
-        {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'CLI (Claude)' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'API (Paid)' : 'Not detected'}
+        {workbench.provider === 'claude_cli' ? 'CLI (Claude)' : workbench.provider === 'anthropic_api' ? 'API (Paid)' : 'Not detected'}
       </span>
       <svg class="w-3 h-3 text-text-dim/30 shrink-0 transition-transform duration-200" class:rotate-90={openSections.provider} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
     </button>
