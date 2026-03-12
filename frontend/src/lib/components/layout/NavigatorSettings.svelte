@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { slide } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { fetchSettings, updateSettings, fetchProviderStatus, fetchProviderDetect, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, logoutDevice, fetchGitHubAppConfig, saveGitHubAppConfig, fetchAuthMe, patchAuthMe, refreshGitHubToken, getProviderConfig, saveApiKey, deleteApiKey, type AppSettings, type GitHubAppConfig, type ProviderDetectResponse, type ProviderStatusResponse, type ProviderConfigResponse } from '$lib/api/client';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { github } from '$lib/stores/github.svelte';
@@ -69,7 +71,6 @@
           toast.success('API key saved');
         }
       } else {
-        // Provider failed to initialize — keep form open so user can correct
         apiKeyError = result.validation_warning || 'Key saved but provider could not be initialized. Check the key.';
       }
     } catch (err) {
@@ -135,7 +136,6 @@
       workbench.setGithubOAuthEnabled(true);
       toast.success('GitHub credentials updated');
       if (github.isConnected) {
-        // User must reconnect for the new credentials to take effect.
         showReconnect = true;
       } else {
         window.location.href = getGitHubLoginUrl();
@@ -163,12 +163,12 @@
   async function handleDisconnectGitHub() {
     try {
       await disconnectGitHub();
-      await unlinkRepo().catch(() => {}); // best-effort — local selection already cleared
+      await unlinkRepo().catch(() => {});
       toast.success('GitHub disconnected');
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
-      github.disconnect(); // always clear local state, even on API failure
+      github.disconnect();
     }
   }
 
@@ -204,10 +204,9 @@
   let loggingOutAll = $state(false);
   let loggingOut = $state(false);
   let reconnecting = $state(false);
-  let reconnectError = $state('');   // actual failures — shown in neon-red
-  let reconnectInfo = $state('');    // informational skipped-reason — shown in text-dim
+  let reconnectError = $state('');
+  let reconnectInfo = $state('');
 
-  // Informational "skipped" reasons — not errors, shown in neutral colour.
   const _reconnectInfoReasons = new Set(['not_expiring_soon']);
   const _reconnectReasonMessages: Record<string, string> = {
     not_expiring_soon: 'Token is still valid — no refresh needed',
@@ -257,7 +256,6 @@
     try {
       const result = await logoutAllDevices();
       toast.success(`Logged out of ${result.revoked_sessions} device${result.revoked_sessions !== 1 ? 's' : ''}`);
-      // auth.clearToken() is called inside logoutAllDevices() — UI will reflect logout
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -289,7 +287,6 @@
     if (savedFieldTimer) clearTimeout(savedFieldTimer);
   });
 
-  // Svelte action: focuses the element when it mounts into the DOM.
   function focusEl(node: HTMLElement) {
     node.focus();
   }
@@ -341,158 +338,171 @@
     await saveField(field);
   }
 
+  // ── Accordion state ────────────────────────────────────────────────────────
+  type SectionId = 'provider' | 'apiKey' | 'github' | 'githubApp' | 'onboarding' | 'session';
+
+  let openSections = $state<Record<SectionId, boolean>>({
+    provider: false,
+    apiKey: false,
+    github: false,
+    githubApp: false,
+    onboarding: false,
+    session: false,
+  });
+
+  function toggleSection(id: SectionId) {
+    openSections[id] = !openSections[id];
+    if (!openSections[id]) {
+      if (id === 'apiKey') cancelApiKeyEdit();
+      if (id === 'githubApp') cancelConfig();
+    }
+  }
+
+  // Slide transition config
+  const slideIn = { duration: 200, easing: cubicOut };
+
   $effect(() => {
     loadSettings();
   });
 </script>
 
-<div class="p-2 space-y-3">
-  <div class="flex items-center justify-between px-1">
-    <span class="font-display text-[11px] font-bold uppercase text-text-dim">Settings</span>
-    {#if saving}
-      <span class="text-[10px] text-neon-cyan">Saving...</span>
-    {/if}
-  </div>
+<div class="p-2">
+  {#if saving}
+    <div class="flex justify-end px-1 pb-1">
+      <span class="font-mono text-[9px] text-neon-cyan">saving</span>
+    </div>
+  {/if}
 
   {#if loading}
-    <div class="text-xs text-text-secondary px-2 py-4 text-center">Loading settings...</div>
+    <div class="text-xs text-text-secondary px-2 py-8 text-center">Loading...</div>
   {:else if error}
-    <div class="text-xs text-neon-red bg-neon-red/10 px-2 py-1.5 border border-neon-red/20">
-      {error}
-    </div>
+    <div class="text-xs text-neon-red bg-neon-red/10 px-2 py-1.5 border border-neon-red/20">{error}</div>
   {:else if settings}
-    <div class="space-y-2 px-1">
-      {#if auth.isAuthenticated}
-        <!-- Profile -->
-        <div class="space-y-1.5 mb-3 p-2 bg-bg-card border border-border-subtle">
-          <div class="font-display text-[11px] font-bold uppercase text-text-dim mb-1.5">Profile</div>
-          <div class="flex items-start gap-2">
-            <!-- Avatar: 64×64 flat square, NO rounded corners -->
-            <div class="w-16 h-16 border border-neon-cyan/30 overflow-hidden shrink-0 bg-bg-input">
-              {#if user.avatarUrl}
-                <img src={user.avatarUrl} class="w-full h-full object-cover" alt="" />
-              {:else}
-                <div class="w-full h-full flex items-center justify-center text-text-dim/30">
-                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1"><path stroke-linecap="square" stroke-linejoin="miter" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-                </div>
-              {/if}
-            </div>
-            <div class="flex-1 min-w-0 space-y-1">
-              <!-- github_login: immutable, monospace, dimmed -->
-              {#if user.githubLogin}
-                <div class="font-mono text-[10px] text-text-dim truncate">{user.githubLogin}</div>
-              {/if}
-              <!-- display_name: click-to-edit -->
-              <div>
-                {#if editField === 'display_name'}
-                  <input
-                    type="text"
-                    bind:value={editValue}
-                    maxlength="128"
-                    placeholder="Display name"
-                    use:focusEl
-                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveField('display_name'); } if (e.key === 'Escape') { cancelEdit(); } }}
-                    onblur={() => handleFieldBlur('display_name')}
-                    class="w-full bg-bg-input border border-[1px] border-neon-cyan/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none focus:border-neon-cyan"
-                  />
-                  {#if savingField}
-                    <span class="font-mono text-[9px] text-text-dim">…</span>
-                  {/if}
-                {:else}
-                  <div class="flex items-center gap-1 group">
-                    <button
-                      onclick={() => startEdit('display_name')}
-                      class="text-[10px] text-text-secondary hover:text-text-primary text-left truncate flex-1"
-                    >{#if user.displayName}{user.displayName}{:else}<span class="text-text-dim/40 italic">Display name</span>{/if}</button>
-                    {#if savedField === 'display_name'}
-                      <span class="font-mono text-[9px] text-neon-green shrink-0">Saved ✓</span>
-                    {:else}
-                      <button
-                        onclick={() => startEdit('display_name')}
-                        class="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-text-dim hover:text-neon-cyan"
-                        aria-label="Edit display name"
-                      >
-                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                          <path stroke-linecap="square" stroke-linejoin="miter" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
-                        </svg>
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-              <!-- email: click-to-edit -->
-              <div>
-                {#if editField === 'email'}
-                  <input
-                    type="email"
-                    bind:value={editValue}
-                    maxlength="255"
-                    placeholder="email@example.com"
-                    use:focusEl
-                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveField('email'); } if (e.key === 'Escape') { cancelEdit(); } }}
-                    onblur={() => handleFieldBlur('email')}
-                    class="w-full bg-bg-input border border-[1px] border-neon-cyan/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none focus:border-neon-cyan"
-                  />
-                  {#if savingField}
-                    <span class="font-mono text-[9px] text-text-dim">…</span>
-                  {/if}
-                {:else}
-                  <div class="flex items-center gap-1 group">
-                    <button
-                      onclick={() => startEdit('email')}
-                      class="text-[10px] text-text-dim hover:text-text-secondary text-left truncate flex-1"
-                    >{#if user.email}{user.email}{:else}<span class="text-text-dim/40 italic">Email</span>{/if}</button>
-                    {#if savedField === 'email'}
-                      <span class="font-mono text-[9px] text-neon-green shrink-0">Saved ✓</span>
-                    {:else}
-                      <button
-                        onclick={() => startEdit('email')}
-                        class="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-text-dim hover:text-neon-cyan"
-                        aria-label="Edit email"
-                      >
-                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                          <path stroke-linecap="square" stroke-linejoin="miter" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
-                        </svg>
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-            </div>
-          </div>
-        </div>
-      {/if}
 
-      <!-- Provider Info -->
-      <div class="space-y-1 mb-3 p-2 bg-bg-card border border-border-subtle">
-        <div class="font-display text-[11px] font-bold uppercase text-text-dim mb-1">Provider</div>
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'bg-neon-green' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'bg-neon-yellow' : 'bg-neon-red'}"></span>
-          <span class="text-xs text-text-primary font-medium">
-            {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'CLI (Claude)' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'API (Paid)' : 'Not detected'}
-          </span>
+    <!-- ═══ PROFILE ═══════════════════════════════════════════════════════ -->
+    {#if auth.isAuthenticated}
+      <div class="flex items-start gap-2.5 px-2 py-2 bg-bg-card border border-border-subtle">
+        <div class="w-9 h-9 border border-neon-cyan/20 overflow-hidden shrink-0 bg-bg-input">
+          {#if user.avatarUrl}
+            <img src={user.avatarUrl} class="w-full h-full object-cover" alt="" />
+          {:else}
+            <div class="w-full h-full flex items-center justify-center text-text-dim/20">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+                <path stroke-linecap="square" stroke-linejoin="miter" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+              </svg>
+            </div>
+          {/if}
         </div>
+        <div class="flex-1 min-w-0 -mt-0.5 space-y-0.5">
+          <!-- Display name -->
+          {#if editField === 'display_name'}
+            <input
+              type="text" bind:value={editValue} maxlength="128" placeholder="Display name"
+              use:focusEl
+              onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveField('display_name'); } if (e.key === 'Escape') cancelEdit(); }}
+              onblur={() => handleFieldBlur('display_name')}
+              class="w-full bg-bg-input border border-neon-cyan/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none focus:border-neon-cyan"
+            />
+          {:else}
+            <div class="flex items-center gap-1 group">
+              <button
+                onclick={() => startEdit('display_name')}
+                class="text-[11px] text-text-primary hover:text-neon-cyan text-left truncate flex-1 font-medium leading-tight"
+              >{user.displayName || user.githubLogin || 'Set name'}</button>
+              {#if savedField === 'display_name'}
+                <span class="font-mono text-[8px] text-neon-green shrink-0">saved</span>
+              {:else}
+                <button
+                  onclick={() => startEdit('display_name')}
+                  class="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-text-dim hover:text-neon-cyan"
+                  aria-label="Edit display name"
+                >
+                  <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="square" stroke-linejoin="miter" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+                  </svg>
+                </button>
+              {/if}
+            </div>
+          {/if}
+          {#if user.githubLogin}
+            <div class="font-mono text-[9px] text-text-dim/50 truncate leading-tight">@{user.githubLogin}</div>
+          {/if}
+          <!-- Email -->
+          {#if editField === 'email'}
+            <input
+              type="email" bind:value={editValue} maxlength="255" placeholder="email@example.com"
+              use:focusEl
+              onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveField('email'); } if (e.key === 'Escape') cancelEdit(); }}
+              onblur={() => handleFieldBlur('email')}
+              class="w-full bg-bg-input border border-neon-cyan/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none focus:border-neon-cyan"
+            />
+          {:else}
+            <div class="flex items-center gap-1 group">
+              <button
+                onclick={() => startEdit('email')}
+                class="font-mono text-[9px] text-text-dim/60 hover:text-text-secondary text-left truncate flex-1 leading-tight"
+              >{user.email || 'Set email'}</button>
+              {#if savedField === 'email'}
+                <span class="font-mono text-[8px] text-neon-green shrink-0">saved</span>
+              {:else}
+                <button
+                  onclick={() => startEdit('email')}
+                  class="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-text-dim hover:text-neon-cyan"
+                  aria-label="Edit email"
+                >
+                  <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="square" stroke-linejoin="miter" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+                  </svg>
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    <!-- ═══ CONNECTIONS ═══════════════════════════════════════════════════ -->
+    <div class="flex items-center gap-2 px-1 pt-3 pb-1">
+      <span class="font-display text-[9px] font-bold uppercase tracking-[0.12em] text-text-dim/30">Connections</span>
+      <div class="flex-1 h-px bg-border-subtle/30"></div>
+    </div>
+
+    <!-- ── Provider ──────────────────────────────────────────────────── -->
+    <button
+      class="w-full flex items-center gap-2 px-2 py-1.5
+             hover:bg-bg-hover/30 transition-colors duration-150"
+      onclick={() => toggleSection('provider')}
+      aria-expanded={openSections.provider}
+    >
+      <span class="w-1.5 h-1.5 shrink-0 {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'bg-neon-green' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'bg-neon-yellow' : 'bg-neon-red'}"></span>
+      <span class="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-text-dim">Provider</span>
+      <span class="flex-1 text-right font-mono text-[9px] text-text-dim/40 truncate ml-1">
+        {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'CLI (Claude)' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'API (Paid)' : 'Not detected'}
+      </span>
+      <svg class="w-3 h-3 text-text-dim/30 shrink-0 transition-transform duration-200" class:rotate-90={openSections.provider} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+
+    {#if openSections.provider}
+      <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
         {#if workbench.providerModel}
-          <div class="text-[10px] text-text-dim font-mono ml-4">{workbench.providerModel}</div>
+          <div class="text-[10px] text-text-dim font-mono">{workbench.providerModel}</div>
         {/if}
-        <div class="flex items-center gap-1.5 mt-0.5">
+        <div class="flex items-center gap-1.5">
           <span class="w-1.5 h-1.5 {workbench.isConnected ? 'bg-neon-green' : 'bg-neon-red'}"></span>
           <span class="text-[10px] text-text-dim">{workbench.isConnected ? 'Backend connected' : 'Backend disconnected'}</span>
         </div>
-        <div class="flex items-center gap-1.5 mt-0.5">
+        <div class="flex items-center gap-1.5">
           <span class="w-1.5 h-1.5 {workbench.mcpConnected ? 'bg-neon-cyan' : 'bg-neon-red/70'}"></span>
           <span class="text-[10px] text-text-dim">MCP {workbench.mcpConnected ? 'online' : 'offline'}</span>
         </div>
-        <!-- Test Connection button -->
         <button
           onclick={handleTestConnection}
           disabled={testingProvider}
-          class="font-mono text-[10px] text-neon-cyan/60 hover:text-neon-cyan uppercase mt-1 disabled:opacity-40 transition-colors"
-        >
-          {testingProvider ? '…' : 'Test connection'}
-        </button>
+          class="font-mono text-[10px] text-neon-cyan/60 hover:text-neon-cyan uppercase mt-1
+                 disabled:opacity-40 transition-colors"
+        >{testingProvider ? '...' : 'Test connection'}</button>
         {#if providerTestResult}
-          <div class="mt-1 space-y-0.5">
+          <div class="space-y-0.5">
             <div class="flex items-center gap-1.5">
               <span class="w-1.5 h-1.5 {providerTestResult.healthy ? 'bg-neon-green' : 'bg-neon-red'}"></span>
               <span class="font-mono text-[9px] {providerTestResult.healthy ? 'text-neon-green' : 'text-neon-red'} leading-snug">{providerTestResult.message}</span>
@@ -503,76 +513,77 @@
           </div>
         {/if}
       </div>
+    {/if}
 
-      <!-- LLM Provider API Key -->
-      <div class="space-y-1 mb-3 p-2 bg-bg-card border border-border-subtle">
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="font-display text-[11px] font-bold uppercase text-text-dim">LLM Provider</span>
-            {#if providerCfg}
-              <span class="font-mono text-[9px] text-text-dim/60 truncate">
-                {#if providerCfg.api_key.source === 'environment'}
-                  via env var
-                {:else if providerCfg.api_key.source === 'app'}
-                  via app
-                {:else if !providerCfg.api_key.configured}
-                  Not configured
-                {/if}
-              </span>
-            {/if}
-          </div>
-          {#if providerCfg?.api_key.source !== 'environment'}
-            <button
-              class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan shrink-0
-                     transition-colors duration-150"
-              onclick={() => { if (expandApiKey) cancelApiKeyEdit(); else { expandApiKey = true; apiKeyError = ''; } }}
-            >
-              {expandApiKey ? 'CANCEL' : (providerCfg?.api_key.configured ? 'UPDATE' : 'CONFIGURE')}
-            </button>
-          {/if}
-        </div>
+    <!-- ── API Key ───────────────────────────────────────────────────── -->
+    <button
+      class="w-full flex items-center gap-2 px-2 py-1.5
+             hover:bg-bg-hover/30 transition-colors duration-150"
+      onclick={() => toggleSection('apiKey')}
+      aria-expanded={openSections.apiKey}
+    >
+      <span class="w-1.5 h-1.5 shrink-0 {providerCfg?.api_key.configured ? 'bg-neon-green' : 'bg-neon-red'}"></span>
+      <span class="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-text-dim">API Key</span>
+      <span class="flex-1 text-right font-mono text-[9px] text-text-dim/40 truncate ml-1">
+        {providerCfg ? (providerCfg.api_key.configured ? (providerCfg.api_key.source === 'environment' ? 'via env' : providerCfg.api_key.masked) : 'Not configured') : ''}
+      </span>
+      <svg class="w-3 h-3 text-text-dim/30 shrink-0 transition-transform duration-200" class:rotate-90={openSections.apiKey} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
 
+    {#if openSections.apiKey}
+      <div class="px-4 pb-2 pt-0.5 space-y-1.5" transition:slide={slideIn}>
+        <!-- Status -->
         {#if providerCfg?.api_key.configured}
-          <div class="flex items-center gap-1.5 mt-0.5">
-            <span class="w-1.5 h-1.5 bg-neon-green"></span>
+          <div class="flex items-center gap-1.5">
             <span class="font-mono text-[10px] text-text-dim truncate">{providerCfg.api_key.masked}</span>
           </div>
           {#if providerCfg.api_key.source === 'environment'}
-            <span class="font-mono text-[9px] text-text-dim/50 ml-3">Read-only (set via environment variable)</span>
+            <span class="font-mono text-[9px] text-text-dim/50">Read-only (set via environment variable)</span>
           {/if}
         {:else}
-          <div class="flex items-center gap-1.5 mt-0.5">
-            <span class="w-1.5 h-1.5 bg-neon-red"></span>
-            <span class="font-mono text-[10px] text-text-dim">No API key configured</span>
+          <div class="font-mono text-[10px] text-text-dim">No API key configured</div>
+        {/if}
+
+        <!-- Actions -->
+        {#if providerCfg?.api_key.source !== 'environment'}
+          <div class="flex items-center gap-2">
+            <button
+              class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan
+                     transition-colors duration-150 uppercase"
+              onclick={() => { if (expandApiKey) cancelApiKeyEdit(); else { expandApiKey = true; apiKeyError = ''; } }}
+            >{expandApiKey ? 'Cancel' : (providerCfg?.api_key.configured ? 'Update' : 'Configure')}</button>
+            {#if providerCfg?.api_key.configured && providerCfg.api_key.source === 'app' && !expandApiKey}
+              <button
+                onclick={handleDeleteApiKey}
+                disabled={deletingApiKey}
+                class="font-mono text-[9px] text-neon-red/50 hover:text-neon-red
+                       disabled:opacity-40 transition-colors duration-150"
+              >{deletingApiKey ? '...' : 'Remove'}</button>
+            {/if}
           </div>
         {/if}
 
+        <!-- Edit form -->
         {#if expandApiKey}
-          <div class="mt-2 space-y-1.5">
+          <div class="space-y-1.5 pt-1" transition:slide={slideIn}>
             <div>
-              <label
-                for="nav-api-key"
-                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5"
-              >Anthropic API Key</label>
+              <label for="nav-api-key" class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5">Anthropic API Key</label>
               <div class="relative">
                 <input
                   id="nav-api-key"
                   type={showApiKeyInput ? 'text' : 'password'}
                   placeholder="sk-ant-..."
                   bind:value={apiKeyInput}
-                  autocomplete="off"
-                  spellcheck="false"
+                  autocomplete="off" spellcheck="false"
                   class="w-full bg-bg-input border border-border-subtle px-2 py-1 pr-7
                          font-mono text-[10px] text-text-primary
                          focus:outline-none focus:border-neon-cyan/30
-                         placeholder:text-text-dim/40
-                         transition-colors duration-150"
+                         placeholder:text-text-dim/40 transition-colors duration-150"
                 />
                 <button
                   type="button"
                   class="absolute right-1.5 top-1/2 -translate-y-1/2
-                         text-text-dim hover:text-text-secondary
-                         transition-colors duration-150"
+                         text-text-dim hover:text-text-secondary transition-colors duration-150"
                   onclick={() => { showApiKeyInput = !showApiKeyInput; }}
                   aria-label={showApiKeyInput ? 'Hide key' : 'Show key'}
                 >
@@ -589,159 +600,139 @@
                 </button>
               </div>
             </div>
-
-            <div class="flex items-center gap-1.5 pt-0.5">
+            <div class="flex items-center gap-1.5">
               <button
                 class="flex-1 px-2 py-1 bg-neon-cyan text-bg-primary border border-neon-cyan
-                       hover:bg-[#00cce6] active:bg-[#00b8cf]
-                       transition-colors duration-150
+                       hover:bg-[#00cce6] active:bg-[#00b8cf] transition-colors duration-150
                        font-mono text-[9px] tracking-[0.07em] uppercase
                        disabled:opacity-40 disabled:cursor-not-allowed"
                 onclick={handleSaveApiKey}
                 disabled={savingApiKey || !apiKeyInput.trim()}
-              >
-                {savingApiKey ? 'SAVING...' : 'SAVE'}
-              </button>
+              >{savingApiKey ? 'SAVING...' : 'SAVE'}</button>
               <button
                 class="px-2 py-1 border border-border-subtle text-text-dim
                        hover:border-neon-cyan/25 hover:text-text-secondary
-                       transition-colors duration-150
-                       font-mono text-[9px] uppercase"
+                       transition-colors duration-150 font-mono text-[9px] uppercase"
                 onclick={cancelApiKeyEdit}
-              >
-                CANCEL
-              </button>
+              >CANCEL</button>
             </div>
-
             {#if apiKeyError}
               <p class="font-mono text-[9px] text-neon-red leading-snug">{apiKeyError}</p>
             {/if}
           </div>
         {/if}
-
-        {#if providerCfg?.api_key.configured && providerCfg.api_key.source === 'app' && !expandApiKey}
-          <button
-            onclick={handleDeleteApiKey}
-            disabled={deletingApiKey}
-            class="font-mono text-[9px] text-neon-red/50 hover:text-neon-red mt-1
-                   disabled:opacity-40 transition-colors duration-150"
-          >
-            {deletingApiKey ? '...' : 'Remove saved key'}
-          </button>
-        {/if}
       </div>
+    {/if}
 
-      <!-- GitHub Connection -->
-      <div class="space-y-1 mb-3 p-2 bg-bg-card border border-border-subtle">
-        <div class="font-display text-[11px] font-bold uppercase text-text-dim mb-1">GitHub</div>
+    <!-- ── GitHub ────────────────────────────────────────────────────── -->
+    <button
+      class="w-full flex items-center gap-2 px-2 py-1.5
+             hover:bg-bg-hover/30 transition-colors duration-150"
+      onclick={() => toggleSection('github')}
+      aria-expanded={openSections.github}
+    >
+      <span class="w-1.5 h-1.5 shrink-0 {github.isConnected ? 'bg-neon-green' : 'bg-text-dim/30'}"></span>
+      <span class="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-text-dim">GitHub</span>
+      <span class="flex-1 text-right font-mono text-[9px] text-text-dim/40 truncate ml-1">
+        {github.isConnected ? github.username : (workbench.githubOAuthEnabled ? 'Not connected' : 'Not configured')}
+      </span>
+      <svg class="w-3 h-3 text-text-dim/30 shrink-0 transition-transform duration-200" class:rotate-90={openSections.github} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+
+    {#if openSections.github}
+      <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
         {#if github.isConnected}
           <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="w-2 h-2 bg-neon-green shrink-0"></span>
-              <span class="text-xs text-text-primary font-medium truncate">{github.username}</span>
-            </div>
+            <span class="text-[10px] text-text-dim">OAuth App</span>
             <button
-              class="text-[10px] text-neon-red/80 hover:text-neon-red shrink-0"
+              class="font-mono text-[9px] text-neon-red/60 hover:text-neon-red
+                     transition-colors duration-150"
               onclick={handleDisconnectGitHub}
             >Disconnect</button>
           </div>
-          <div class="text-[10px] text-text-dim ml-4">OAuth App</div>
           <button
             onclick={handleReconnectGitHub}
             disabled={reconnecting}
-            class="text-[10px] text-neon-cyan/60 hover:text-neon-cyan ml-4 mt-0.5 disabled:opacity-40"
-          >
-            {reconnecting ? '…' : 'Refresh token'}
-          </button>
+            class="font-mono text-[10px] text-neon-cyan/60 hover:text-neon-cyan
+                   disabled:opacity-40 transition-colors"
+          >{reconnecting ? '...' : 'Refresh token'}</button>
           {#if reconnectError}
-            <p class="font-mono text-[9px] text-neon-red ml-4">{reconnectError}</p>
+            <p class="font-mono text-[9px] text-neon-red">{reconnectError}</p>
           {:else if reconnectInfo}
-            <p class="font-mono text-[9px] text-text-dim ml-4">{reconnectInfo}</p>
+            <p class="font-mono text-[9px] text-text-dim">{reconnectInfo}</p>
           {/if}
         {:else if workbench.githubOAuthEnabled}
-          <div class="flex items-center gap-2 mb-1">
-            <span class="w-2 h-2 bg-text-dim/30 shrink-0"></span>
-            <span class="text-xs text-text-dim">Not connected</span>
-          </div>
           <button
-            class="text-[10px] text-neon-cyan hover:text-neon-cyan/80 ml-4"
+            class="font-mono text-[10px] text-neon-cyan hover:text-neon-cyan/80
+                   transition-colors duration-150"
             onclick={() => { window.location.href = getGitHubLoginUrl(); }}
-          >Connect via GitHub →</button>
+          >Connect via GitHub</button>
         {:else}
           <span class="text-[10px] text-text-dim">GitHub App not configured</span>
         {/if}
       </div>
+    {/if}
 
-      <!-- GitHub App Credentials -->
-      <div class="space-y-1 mb-3 p-2 rounded bg-bg-card border border-border-subtle">
-        <!-- Collapsed header row -->
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="font-display text-[11px] font-bold uppercase text-text-dim">GitHub App</span>
-            {#if appConfig}
-              <span class="font-mono text-[9px] text-text-dim/60 truncate">
-                {appConfig.configured ? appConfig.client_id_masked : 'Not configured'}
-              </span>
-            {/if}
-          </div>
-          <button
-            class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan shrink-0
-                   transition-colors duration-150"
-            onclick={() => { if (expandConfig) cancelConfig(); else { expandConfig = true; configError = ''; } }}
-          >
-            {expandConfig ? 'CANCEL' : (appConfig?.configured ? 'UPDATE' : 'CONFIGURE')}
-          </button>
-        </div>
+    <!-- ── GitHub App ────────────────────────────────────────────────── -->
+    <button
+      class="w-full flex items-center gap-2 px-2 py-1.5
+             hover:bg-bg-hover/30 transition-colors duration-150"
+      onclick={() => toggleSection('githubApp')}
+      aria-expanded={openSections.githubApp}
+    >
+      <span class="w-1.5 h-1.5 shrink-0 {appConfig?.configured ? 'bg-neon-green' : 'bg-text-dim/30'}"></span>
+      <span class="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-text-dim">GitHub App</span>
+      <span class="flex-1 text-right font-mono text-[9px] text-text-dim/40 truncate ml-1">
+        {appConfig?.configured ? appConfig.client_id_masked : 'Not configured'}
+      </span>
+      <svg class="w-3 h-3 text-text-dim/30 shrink-0 transition-transform duration-200" class:rotate-90={openSections.githubApp} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+
+    {#if openSections.githubApp}
+      <div class="px-4 pb-2 pt-0.5 space-y-1.5" transition:slide={slideIn}>
+        <!-- Actions -->
+        <button
+          class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan
+                 transition-colors duration-150 uppercase"
+          onclick={() => { if (expandConfig) cancelConfig(); else { expandConfig = true; configError = ''; } }}
+        >{expandConfig ? 'Cancel' : (appConfig?.configured ? 'Update credentials' : 'Configure')}</button>
 
         {#if expandConfig}
-          <!-- Expanded form -->
-          <div class="mt-2 space-y-1.5">
+          <div class="space-y-1.5 pt-1" transition:slide={slideIn}>
             <!-- Client ID -->
             <div>
-              <label
-                for="nav-config-cid"
-                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5"
-              >Client ID</label>
+              <label for="nav-config-cid" class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5">Client ID</label>
               <input
                 id="nav-config-cid"
                 type="text"
                 placeholder="Iv1.xxxxxxxxxxxxxxxxxxxx"
                 bind:value={configClientId}
-                autocomplete="off"
-                spellcheck="false"
+                autocomplete="off" spellcheck="false"
                 class="w-full bg-bg-input border border-border-subtle px-2 py-1
                        font-mono text-[10px] text-text-primary
                        focus:outline-none focus:border-neon-cyan/30
-                       placeholder:text-text-dim/40
-                       transition-colors duration-150"
+                       placeholder:text-text-dim/40 transition-colors duration-150"
               />
             </div>
-
             <!-- Client Secret -->
             <div>
-              <label
-                for="nav-config-sec"
-                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5"
-              >Client Secret</label>
+              <label for="nav-config-sec" class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5">Client Secret</label>
               <div class="relative">
                 <input
                   id="nav-config-sec"
                   type={showConfigSecret ? 'text' : 'password'}
                   placeholder="••••••••••••••••••••••••••••••••"
                   bind:value={configSecret}
-                  autocomplete="new-password"
-                  spellcheck="false"
+                  autocomplete="new-password" spellcheck="false"
                   class="w-full bg-bg-input border border-border-subtle px-2 py-1 pr-7
                          font-mono text-[10px] text-text-primary
                          focus:outline-none focus:border-neon-cyan/30
-                         placeholder:text-text-dim/40
-                         transition-colors duration-150"
+                         placeholder:text-text-dim/40 transition-colors duration-150"
                 />
                 <button
                   type="button"
                   class="absolute right-1.5 top-1/2 -translate-y-1/2
-                         text-text-dim hover:text-text-secondary
-                         transition-colors duration-150"
+                         text-text-dim hover:text-text-secondary transition-colors duration-150"
                   onclick={() => { showConfigSecret = !showConfigSecret; }}
                   aria-label={showConfigSecret ? 'Hide secret' : 'Show secret'}
                 >
@@ -758,40 +749,32 @@
                 </button>
               </div>
             </div>
-
             <!-- Action row -->
             <div class="flex items-center gap-1.5 pt-0.5">
               <button
                 class="flex-1 px-2 py-1 bg-neon-cyan text-bg-primary border border-neon-cyan
-                       hover:bg-[#00cce6] active:bg-[#00b8cf]
-                       transition-colors duration-150
+                       hover:bg-[#00cce6] active:bg-[#00b8cf] transition-colors duration-150
                        font-mono text-[9px] tracking-[0.07em] uppercase
                        disabled:opacity-40 disabled:cursor-not-allowed"
                 onclick={handleSaveAppConfig}
                 disabled={configSaving || !configClientId.trim() || !configSecret.trim()}
-              >
-                {configSaving ? 'SAVING…' : 'SAVE'}
-              </button>
+              >{configSaving ? 'SAVING...' : 'SAVE'}</button>
               <button
                 class="px-2 py-1 border border-border-subtle text-text-dim
                        hover:border-neon-cyan/25 hover:text-text-secondary
-                       transition-colors duration-150
-                       font-mono text-[9px] uppercase"
+                       transition-colors duration-150 font-mono text-[9px] uppercase"
                 onclick={cancelConfig}
-              >
-                CANCEL
-              </button>
+              >CANCEL</button>
             </div>
-
             {#if configError}
               <p class="font-mono text-[9px] text-neon-red leading-snug">{configError}</p>
             {/if}
           </div>
         {/if}
 
-        <!-- Reconnect prompt — visible after save while already connected to GitHub -->
+        <!-- Reconnect prompt -->
         {#if showReconnect}
-          <div class="mt-1 pt-1.5 border-t border-border-subtle">
+          <div class="pt-1.5 border-t border-border-subtle">
             <p class="font-mono text-[9px] text-text-dim leading-snug">
               Credentials updated. Reconnect to apply:
               <button
@@ -806,13 +789,21 @@
           </div>
         {/if}
       </div>
+    {/if}
 
-      <!-- Default Model -->
+    <!-- ═══ PIPELINE ═════════════════════════════════════════════════════ -->
+    <div class="flex items-center gap-2 px-1 pt-3 pb-1">
+      <span class="font-display text-[9px] font-bold uppercase tracking-[0.12em] text-text-dim/30">Pipeline</span>
+      <div class="flex-1 h-px bg-border-subtle/30"></div>
+    </div>
+
+    <div class="px-2 space-y-1.5">
+      <!-- Model -->
       <div class="space-y-0.5">
-        <label class="text-[10px] text-text-dim block" for="setting-model">Default Model</label>
+        <label class="font-mono text-[8px] text-text-dim/50 uppercase tracking-wider block" for="s-model">Model</label>
         <select
-          id="setting-model"
-          class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-xs text-text-primary
+          id="s-model"
+          class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-[11px] text-text-primary font-sans
                  focus:outline-none focus:border-neon-cyan/30 cursor-pointer appearance-none"
           style="background-image: url(data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238b8ba8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;"
           value={settings.default_model}
@@ -825,79 +816,90 @@
         </select>
       </div>
 
-      <!-- Pipeline Timeout -->
-      <div class="space-y-0.5">
-        <label class="text-[10px] text-text-dim block" for="setting-timeout">Pipeline Timeout (s)</label>
-        <input
-          id="setting-timeout"
-          type="number"
-          min="10"
-          max="600"
-          class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-neon-cyan/30"
-          value={settings.pipeline_timeout}
-          onchange={(e) => handleNumberChange('pipeline_timeout', parseInt((e.target as HTMLInputElement).value))}
-        />
+      <!-- Timeout + Retries in 2-col grid -->
+      <div class="grid grid-cols-2 gap-2">
+        <div class="space-y-0.5">
+          <label class="font-mono text-[8px] text-text-dim/50 uppercase tracking-wider block" for="s-timeout">Timeout (s)</label>
+          <input
+            id="s-timeout"
+            type="number" min="10" max="600"
+            class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-[11px] text-text-primary font-mono
+                   focus:outline-none focus:border-neon-cyan/30"
+            value={settings.pipeline_timeout}
+            onchange={(e) => handleNumberChange('pipeline_timeout', parseInt((e.target as HTMLInputElement).value))}
+          />
+        </div>
+        <div class="space-y-0.5">
+          <label class="font-mono text-[8px] text-text-dim/50 uppercase tracking-wider block" for="s-retries">Max Retries</label>
+          <input
+            id="s-retries"
+            type="number" min="0" max="5"
+            class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-[11px] text-text-primary font-mono
+                   focus:outline-none focus:border-neon-cyan/30"
+            value={settings.max_retries}
+            onchange={(e) => handleNumberChange('max_retries', parseInt((e.target as HTMLInputElement).value))}
+          />
+        </div>
       </div>
 
-      <!-- Max Retries -->
-      <div class="space-y-0.5">
-        <label class="text-[10px] text-text-dim block" for="setting-retries">Max Retries</label>
-        <input
-          id="setting-retries"
-          type="number"
-          min="0"
-          max="5"
-          class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-neon-cyan/30"
-          value={settings.max_retries}
-          onchange={(e) => handleNumberChange('max_retries', parseInt((e.target as HTMLInputElement).value))}
-        />
+      <!-- Toggles side by side -->
+      <div class="flex items-center gap-4 pt-0.5">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <div class="relative w-7 h-3.5 shrink-0">
+            <input
+              type="checkbox" class="sr-only peer"
+              checked={settings.auto_validate}
+              onchange={() => handleToggle('auto_validate', !settings!.auto_validate)}
+            />
+            <div class="absolute inset-0 border border-border-subtle bg-bg-input
+                        peer-checked:border-neon-cyan/40 peer-checked:bg-neon-cyan/[0.08] transition-colors duration-200"></div>
+            <div class="absolute left-0.5 top-0.5 w-2.5 h-2.5 bg-text-dim/40
+                        peer-checked:translate-x-3.5 peer-checked:bg-neon-cyan transition-all duration-200"></div>
+          </div>
+          <span class="text-[10px] text-text-secondary">Auto-validate</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <div class="relative w-7 h-3.5 shrink-0">
+            <input
+              type="checkbox" class="sr-only peer"
+              checked={settings.stream_optimize}
+              onchange={() => handleToggle('stream_optimize', !settings!.stream_optimize)}
+            />
+            <div class="absolute inset-0 border border-border-subtle bg-bg-input
+                        peer-checked:border-neon-cyan/40 peer-checked:bg-neon-cyan/[0.08] transition-colors duration-200"></div>
+            <div class="absolute left-0.5 top-0.5 w-2.5 h-2.5 bg-text-dim/40
+                        peer-checked:translate-x-3.5 peer-checked:bg-neon-cyan transition-all duration-200"></div>
+          </div>
+          <span class="text-[10px] text-text-secondary">Stream optimize</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- ═══ APP ═══════════════════════════════════════════════════════════ -->
+    {#if auth.isAuthenticated}
+      <div class="flex items-center gap-2 px-1 pt-3 pb-1">
+        <span class="font-display text-[9px] font-bold uppercase tracking-[0.12em] text-text-dim/30">App</span>
+        <div class="flex-1 h-px bg-border-subtle/30"></div>
       </div>
 
-      <!-- Auto Validate -->
-      <label class="flex items-center gap-2 py-0.5 cursor-pointer">
-        <div class="relative w-7 h-3.5 shrink-0">
-          <input
-            id="setting-auto-validate"
-            name="auto_validate"
-            type="checkbox"
-            class="sr-only peer"
-            checked={settings.auto_validate}
-            onchange={() => handleToggle('auto_validate', !settings!.auto_validate)}
-          />
-          <div class="absolute inset-0 border border-border-subtle bg-bg-input
-                      peer-checked:border-neon-cyan/40 peer-checked:bg-neon-cyan/[0.08] transition-colors duration-200"></div>
-          <div class="absolute left-0.5 top-0.5 w-2.5 h-2.5 bg-text-dim/40
-                      peer-checked:translate-x-3.5 peer-checked:bg-neon-cyan transition-all duration-200"></div>
-        </div>
-        <span class="text-xs text-text-secondary">Auto-validate</span>
-      </label>
+      <!-- ── Onboarding ──────────────────────────────────────────────── -->
+      <button
+        class="w-full flex items-center gap-2 px-2 py-1.5
+               hover:bg-bg-hover/30 transition-colors duration-150"
+        onclick={() => toggleSection('onboarding')}
+        aria-expanded={openSections.onboarding}
+      >
+        <span class="w-1.5 shrink-0"></span>
+        <span class="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-text-dim">Onboarding</span>
+        <span class="flex-1"></span>
+        <svg class="w-3 h-3 text-text-dim/30 shrink-0 transition-transform duration-200" class:rotate-90={openSections.onboarding} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
 
-      <!-- Stream Optimize -->
-      <label class="flex items-center gap-2 py-0.5 cursor-pointer">
-        <div class="relative w-7 h-3.5 shrink-0">
-          <input
-            id="setting-stream-optimize"
-            name="stream_optimize"
-            type="checkbox"
-            class="sr-only peer"
-            checked={settings.stream_optimize}
-            onchange={() => handleToggle('stream_optimize', !settings!.stream_optimize)}
-          />
-          <div class="absolute inset-0 border border-border-subtle bg-bg-input
-                      peer-checked:border-neon-cyan/40 peer-checked:bg-neon-cyan/[0.08] transition-colors duration-200"></div>
-          <div class="absolute left-0.5 top-0.5 w-2.5 h-2.5 bg-text-dim/40
-                      peer-checked:translate-x-3.5 peer-checked:bg-neon-cyan transition-all duration-200"></div>
-        </div>
-        <span class="text-xs text-text-secondary">Stream optimization</span>
-      </label>
-
-      <!-- Onboarding -->
-      {#if auth.isAuthenticated}
-        <div class="space-y-1.5 mt-3 pt-3 border-t border-border-subtle">
-          <div class="font-display text-[11px] font-bold uppercase text-text-dim mb-2">Onboarding</div>
+      {#if openSections.onboarding}
+        <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
           <button
             onclick={() => { workbench.showOnboarding = true; }}
-            class="w-full flex items-center justify-between px-2 py-1.5
+            class="w-full flex items-center justify-between px-2 py-1
                    border border-border-subtle text-text-secondary
                    hover:border-neon-cyan/30 hover:text-text-primary
                    transition-colors font-mono text-[10px] uppercase tracking-[0.05em]"
@@ -906,7 +908,7 @@
           </button>
           <button
             onclick={() => { import('$lib/stores/walkthrough.svelte').then(m => m.walkthrough.start()); }}
-            class="w-full flex items-center justify-between px-2 py-1.5
+            class="w-full flex items-center justify-between px-2 py-1
                    border border-border-subtle text-text-secondary
                    hover:border-neon-cyan/30 hover:text-text-primary
                    transition-colors font-mono text-[10px] uppercase tracking-[0.05em]"
@@ -915,7 +917,7 @@
           </button>
           <button
             onclick={() => { user.resetTips(); toast.success('Tips reset — they will appear again for new users'); }}
-            class="w-full flex items-center justify-between px-2 py-1.5
+            class="w-full flex items-center justify-between px-2 py-1
                    border border-border-subtle text-text-secondary
                    hover:border-neon-cyan/30 hover:text-text-primary
                    transition-colors font-mono text-[10px] uppercase tracking-[0.05em]"
@@ -926,14 +928,25 @@
         </div>
       {/if}
 
-      <!-- Session Security -->
-      {#if auth.isAuthenticated}
-        <div class="space-y-1 mt-3 pt-3 border-t border-border-subtle">
-          <div class="font-display text-[11px] font-bold uppercase text-text-dim mb-2">Session</div>
+      <!-- ── Session ─────────────────────────────────────────────────── -->
+      <button
+        class="w-full flex items-center gap-2 px-2 py-1.5
+               hover:bg-bg-hover/30 transition-colors duration-150"
+        onclick={() => toggleSection('session')}
+        aria-expanded={openSections.session}
+      >
+        <span class="w-1.5 shrink-0"></span>
+        <span class="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-text-dim">Session</span>
+        <span class="flex-1"></span>
+        <svg class="w-3 h-3 text-text-dim/30 shrink-0 transition-transform duration-200" class:rotate-90={openSections.session} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+      {#if openSections.session}
+        <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
           <button
             onclick={handleLogoutDevice}
             disabled={loggingOut}
-            class="w-full flex items-center justify-between px-2 py-1.5
+            class="w-full flex items-center justify-between px-2 py-1
                    border border-border-subtle text-text-secondary
                    hover:border-neon-cyan/30 hover:text-text-primary
                    disabled:opacity-40 disabled:cursor-not-allowed
@@ -945,17 +958,17 @@
           <button
             onclick={handleLogoutAllDevices}
             disabled={loggingOutAll}
-            class="w-full flex items-center justify-between px-2 py-1.5
+            class="w-full flex items-center justify-between px-2 py-1
                    border border-neon-red/30 text-neon-red/70
                    hover:border-neon-red hover:text-neon-red
                    disabled:opacity-40 disabled:cursor-not-allowed
                    transition-colors font-mono text-[10px] uppercase tracking-[0.05em]"
           >
-            <span>{loggingOutAll ? 'Revoking…' : 'Logout all devices'}</span>
+            <span>{loggingOutAll ? 'Revoking...' : 'Logout all devices'}</span>
             <span class="text-[9px] text-text-dim/60">revokes all sessions</span>
           </button>
         </div>
       {/if}
-    </div>
+    {/if}
   {/if}
 </div>
