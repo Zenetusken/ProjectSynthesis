@@ -132,6 +132,26 @@
       .finally(() => { _historyStatsFetching = false; });
   });
 
+  // Refresh history and sync editor tab after forge completion (normal or retry).
+  $effect(() => {
+    const seq = forge.completionSeq;
+    if (seq === 0) return; // skip initial mount
+
+    // Sync active tab's optimizationId when a retry produces a new record.
+    const tab = editor.activeTab;
+    if (tab && forge.optimizationId && tab.optimizationId && tab.optimizationId !== forge.optimizationId) {
+      tab.optimizationId = forge.optimizationId;
+    }
+
+    // Refresh history list so NavigatorHistory shows the new entry.
+    history.loadHistory();
+
+    // Refresh stats (total count, avg score, framework breakdown)
+    fetchHistoryStats()
+      .then(s => { history.totalCount = s.total_optimizations; })
+      .catch(() => {});
+  });
+
   // Hydrate User profile (display_name, avatar_url, email) when authenticated.
   $effect(() => {
     if (!auth.isAuthenticated) { user.clearProfile(); _profileFetching = false; return; }

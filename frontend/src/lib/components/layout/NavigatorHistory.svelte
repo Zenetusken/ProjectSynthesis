@@ -38,12 +38,14 @@
     if (newTitle === original) { editingId = null; return; }
     // Optimistic update
     history.updateEntryTitle(entry.id, newTitle);
+    forge.invalidateRecord(entry.id);
     editingId = null;
     try {
       await patchOptimization(entry.id, { title: newTitle });
     } catch {
       // Revert on error
       history.updateEntryTitle(entry.id, original);
+      forge.invalidateRecord(entry.id);
       toast.error('Failed to save title');
     }
   }
@@ -72,6 +74,12 @@
     const ids = Array.from(selectedIds);
     const success = await history.batchDelete(ids);
     if (success) {
+      // Invalidate cache for every deleted record
+      for (const id of ids) forge.invalidateRecord(id);
+      // If the currently shown record was in the batch, reset forge
+      if (forge.optimizationId && ids.includes(forge.optimizationId) && !forge.isForging) {
+        forge.resetPipeline();
+      }
       selectedIds = new Set();
       await loadStats();
     }
@@ -149,6 +157,11 @@
     e.stopPropagation();
     // Optimistic removal
     history.removeEntry(id);
+    forge.invalidateRecord(id);
+    // If the deleted record is currently shown in forge, reset to avoid ghost artifact
+    if (forge.optimizationId === id && !forge.isForging) {
+      forge.resetPipeline();
+    }
     try {
       await deleteOptimization(id);
       await loadStats();
@@ -165,6 +178,7 @@
 
   async function handleRestore(e: MouseEvent, id: string) {
     e.stopPropagation();
+    forge.invalidateRecord(id);
     await history.restoreItem(id);
     await loadStats();
   }
@@ -213,6 +227,13 @@
 
   onMount(() => {
     loadHistory();
+    loadStats();
+  });
+
+  // Re-fetch stats when a forge completes
+  $effect(() => {
+    const seq = forge.completionSeq;
+    if (seq === 0) return;
     loadStats();
   });
 </script>

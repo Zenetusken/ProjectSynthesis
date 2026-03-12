@@ -82,6 +82,7 @@
         await patchOptimization(id, { tags });
         // also update history store if this entry exists there
         history.updateEntryTags(id, tags);
+        forge.invalidateRecord(id);
       } catch {
         // revert
         pendingTags = snapshot;
@@ -129,6 +130,9 @@
     try {
       await patchOptimization(forge.optimizationId, { title: titleInput.trim() });
       displayTitle = titleInput.trim();
+      // Keep history list and record cache in sync
+      history.updateEntryTitle(forge.optimizationId!, titleInput.trim());
+      forge.invalidateRecord(forge.optimizationId!);
       toast.success('Title saved');
     } catch {
       toast.error('Failed to save title');

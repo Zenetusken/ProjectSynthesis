@@ -1,14 +1,13 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onMount } from 'svelte';
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { github } from '$lib/stores/github.svelte';
-  import { fetchHistory } from '$lib/api/client';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import StrategyBadge from '$lib/components/shared/StrategyBadge.svelte';
   import { formatRelativeTime } from '$lib/utils/format';
 
-  let isLoading = $state(false);
+  let isLoading = $derived(history.isLoading);
   let expandedId = $state<string | null>(null);
   let reforgingId = $state<string | null>(null);
 
@@ -37,22 +36,13 @@
     }
   }
 
-  // Load history entries on mount
-  $effect(() => {
-    loadHistory();
-  });
-
-  async function loadHistory() {
-    isLoading = true;
-    try {
-      const resp = await fetchHistory({ offset: 0, limit: 100, sort: 'created_at', order: 'desc' });
-      history.setEntries(resp.items, resp.total);
-    } catch {
-      // silently handle
-    } finally {
-      isLoading = false;
+  // Only fetch if history store hasn't been populated yet (NavigatorHistory
+  // or the completion effect in +layout may have already loaded entries).
+  onMount(() => {
+    if (history.entries.length === 0) {
+      history.loadHistory();
     }
-  }
+  });
 
   // Filter entries to show only runs matching the current prompt
   let promptRuns = $derived.by(() => {
@@ -93,7 +83,7 @@
     <h3 class="section-heading">Prompt History</h3>
     <button
       class="text-[10px] text-text-dim hover:text-neon-cyan transition-colors"
-      onclick={loadHistory}
+      onclick={() => history.loadHistory()}
       disabled={isLoading}
     >
       {isLoading ? 'Loading...' : 'Refresh'}

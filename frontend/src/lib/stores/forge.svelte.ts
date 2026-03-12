@@ -42,6 +42,7 @@ export interface ForgeRecord {
   model_validate?: string | null;
   // Timing
   duration_ms?: number | null;
+  stage_durations?: Record<string, { duration_ms?: number; token_count?: number }> | null;
   total_tokens?: number | null;
   // Metadata
   tags?: string[] | null;
@@ -85,8 +86,10 @@ class ForgeStore {
   });
   stageResults = $state<Record<string, StageResult>>({});
   streamingText = $state('');
+  optimizeStreaming = $state<boolean | null>(null);
   rawPrompt = $state('');
   optimizationId = $state<string | null>(null);
+  completionSeq = $state(0);
   overallScore = $state<number | null>(null);
   pipelineEvents = $state<PipelineEvent[]>([]);
   totalDuration = $state<number | null>(null);
@@ -146,6 +149,7 @@ class ForgeStore {
     };
     this.stageResults = {};
     this.streamingText = '';
+    this.optimizeStreaming = null;
     this.rawPrompt = '';
     this.optimizationId = null;
     this.overallScore = null;
@@ -172,6 +176,7 @@ class ForgeStore {
     // Clear streaming text so retries / re-runs start fresh
     if (stage === 'optimize') {
       this.streamingText = '';
+      this.optimizeStreaming = null;
     }
     if (this.liveStageText[stage] !== undefined) {
       this.liveStageText = { ...this.liveStageText, [stage]: '' };
@@ -242,6 +247,7 @@ class ForgeStore {
       this.totalTokens = tokens;
     }
     this.addEvent({ type: 'forge_complete', timestamp: Date.now() });
+    this.completionSeq++;
   }
 
   loadFromRecord(record: ForgeRecord) {
@@ -345,6 +351,19 @@ class ForgeStore {
           model: record.model_validate ?? undefined,
         }
       };
+    }
+
+    // Restore per-stage durations from persisted stage_durations
+    if (record.stage_durations) {
+      for (const [stage, timing] of Object.entries(record.stage_durations)) {
+        if (this.stageResults[stage]) {
+          this.stageResults[stage] = {
+            ...this.stageResults[stage],
+            duration: timing.duration_ms ?? this.stageResults[stage].duration,
+            tokenCount: timing.token_count ?? this.stageResults[stage].tokenCount,
+          };
+        }
+      }
     }
   }
 
@@ -462,6 +481,9 @@ class ForgeStore {
         const stageName = data.stage as string;
         if (data.status === 'started') {
           this.setStageRunning(stageName);
+          if (stageName === 'optimize' && data.streaming != null) {
+            this.optimizeStreaming = data.streaming as boolean;
+          }
         } else if (data.status === 'complete') {
           if (this.stageResults[stageName]) {
             this.stageResults[stageName] = {
@@ -587,6 +609,10 @@ class ForgeStore {
 
   getRecord(id: string): ForgeRecord | undefined {
     return this._recordCache.get(id);
+  }
+
+  invalidateRecord(id: string) {
+    this._recordCache.delete(id);
   }
 
   private addEvent(event: PipelineEvent) {
