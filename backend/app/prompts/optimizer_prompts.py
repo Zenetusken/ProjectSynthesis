@@ -39,15 +39,22 @@ Instead: Use codebase knowledge to make every instruction precise. The output sh
 as if written by someone with deep codebase knowledge — not as a report about exploration.
 Where you lack specific data, write clear general instructions — never homework assignments.
 
-You MUST respond with ONLY a JSON object (no markdown, no explanation outside JSON):
-{{
-  "optimized_prompt": "The full rewritten prompt text",
-  "changes_made": ["List of specific changes made and why"],
-  "framework_applied": "Name of the primary framework applied",
-  "optimization_notes": "Brief notes on the optimization approach"
-}}
+Write the optimized prompt directly as plain text. Output ONLY the prompt itself — no preamble, no commentary, no markdown fences, no JSON wrapping. The text you write IS the prompt the user will copy and use.
 
-The optimized_prompt should be the complete, ready-to-use prompt. It should be significantly better than the original while remaining faithful to the user's intent."""
+After the complete prompt, output metadata using these EXACT delimiters:
+
+<optimization_meta>
+{"changes_made": ["change 1", "change 2"], "framework_applied": "Framework Name", "optimization_notes": "Brief notes"}
+</optimization_meta>
+
+Formatting rules:
+- The prompt text comes FIRST, starting immediately (no leading text)
+- Do NOT wrap the prompt in quotes, code blocks, or containers
+- The <optimization_meta> block must appear AFTER the full prompt
+- The JSON inside must be valid, compact JSON
+- Never use <optimization_meta> tags inside the prompt text itself
+
+The optimized prompt should be the complete, ready-to-use prompt. It should be significantly better than the original while remaining faithful to the user's intent."""
 
 
 _TASK_SPECIFIC_ADDITIONS = {
@@ -58,7 +65,12 @@ For CODING prompts specifically:
 - Specify error handling expectations
 - Define input/output types and formats
 - Include code style and best practice requirements
-- Add testing or validation criteria where appropriate""",
+- Add testing or validation criteria where appropriate
+- When codebase context is available, construct a prioritized Scope section that maps
+  observations to ordered priorities with specific file paths and function names. Use
+  quantitative metrics (coverage %, file counts) to calibrate effort levels in any
+  estimation guidance. Extract layer rules or architectural constraints from observations
+  and make them explicit constraints the executor must respect.""",
 
     "analysis": """
 
@@ -67,7 +79,10 @@ For ANALYSIS prompts specifically:
 - Request specific evidence and data points
 - Define the scope and boundaries of the analysis
 - Specify the desired depth and format of insights
-- Include comparison frameworks where relevant""",
+- Include comparison frameworks where relevant
+- When codebase context is available, use architectural observations to define analysis
+  dimensions. Reference specific data flow patterns and module relationships to bound
+  the scope. Turn cross-cutting observations into explicit review criteria.""",
 
     "reasoning": """
 
@@ -76,7 +91,10 @@ For REASONING prompts specifically:
 - Request justification for each conclusion
 - Include consideration of alternative perspectives
 - Specify the logical framework to use
-- Define what constitutes a complete answer""",
+- Define what constitutes a complete answer
+- When codebase context is available, reference specific functions, data structures, and
+  module relationships to make reasoning steps concrete. Use architectural observations
+  to frame the reasoning scope.""",
 
     "math": """
 
@@ -164,14 +182,18 @@ For GENERAL prompts:
 - Apply the selected framework as specified by the Strategy stage
 - Ensure the objective is unambiguous
 - Specify the expected response format explicitly
-- Define the intended audience and appropriate expertise level""",
+- Define the intended audience and appropriate expertise level
+- When codebase context is available, use file paths, function names, and data shapes
+  to make instructions precise wherever the observations provide specifics.""",
 
     "other": """
 
 For OTHER/UNKNOWN task types:
 - Use your best judgment about the most appropriate structure
 - Explain your structural choices in `optimization_notes`
-- Prioritize clarity and specificity above all else""",
+- Prioritize clarity and specificity above all else
+- When codebase context is available, use file paths, function names, and data shapes
+  to make instructions precise wherever the observations provide specifics.""",
 }
 
 
