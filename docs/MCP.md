@@ -20,7 +20,7 @@ Three endpoints are available. Use the one that matches your client's capabiliti
 
 The **standalone process** (port 8001) runs independently of the FastAPI app. This means it can be connected to from Claude Code without running the full web UI. It detects the LLM provider at startup via its own lifespan.
 
-The **FastAPI-mounted transports** (port 8000) share the same provider instance and database connection as the REST API. They are used when the full app is running and you want a single origin.
+The **FastAPI-mounted transports** (port 8000) share the same dynamic provider reference and database connection as the REST API. When an API key is configured or changed via the UI, tools pick up the new provider immediately without a restart. They are used when the full app is running and you want a single origin.
 
 ---
 
@@ -313,12 +313,16 @@ Every tool is decorated with MCP tool annotations to help clients understand sid
 
 ## Provider detection
 
-The MCP server detects the LLM provider once at startup, in order of preference:
+The MCP server resolves the LLM provider in order of preference:
 
 1. **Claude CLI** (`claude` on PATH with Max subscription) — zero API cost
-2. **Anthropic API** (`ANTHROPIC_API_KEY` env var) — pay-per-token
+2. **Anthropic API** (`ANTHROPIC_API_KEY` env var or in-app key) — pay-per-token
 
-The detected provider is injected into all tool calls via the FastMCP lifespan context. Tools never call detect_provider() on each invocation.
+**Standalone mode** (port 8001): detects the provider once at startup via the FastMCP lifespan. Restart to pick up new keys.
+
+**FastAPI-mounted** (port 8000): uses a dynamic provider getter that resolves to `app.state.provider` on each tool call. API keys configured via the UI take effect immediately — no restart needed.
+
+If no provider is available, `optimize` and `retry_optimization` return a JSON error with a configuration hint instead of crashing.
 
 ---
 
@@ -326,6 +330,7 @@ The detected provider is injected into all tool calls via the FastMCP lifespan c
 
 All tools return actionable error messages as JSON strings. Common cases:
 
+- **No LLM provider**: `optimize` and `retry_optimization` return `{"error": "No LLM provider configured", "hint": "..."}` when no API key is set
 - **Optimization not found**: includes the ID that was looked up and a suggestion to call `list_optimizations`
 - **GitHub API error**: includes HTTP status and response body
 - **Missing token/session**: raised at the explore stage if a repo is linked but no GitHub token is available

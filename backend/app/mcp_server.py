@@ -4,7 +4,8 @@ Supports two transports:
   - Streamable HTTP (primary, modern): mounted at /mcp on the FastAPI app
   - WebSocket (secondary, backward-compat): mounted at /mcp/ws on the FastAPI app
 
-Provider is injected via FastMCP lifespan — no re-detection on each tool call.
+Provider is resolved dynamically when mounted in FastAPI (via provider_getter), so
+hot-reloaded API keys take effect immediately. Standalone mode detects once at startup.
 GitHub tools accept explicit token parameter — no shared mutable session state.
 """
 from __future__ import annotations
@@ -13,9 +14,8 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -45,9 +45,28 @@ except ImportError:
 
 # ── Lifespan context ──────────────────────────────────────────────────────────
 
-@dataclass
 class MCPAppContext:
-    provider: object  # LLMProvider
+    """Lifespan context with dynamic provider resolution.
+
+    When ``provider_getter`` is supplied, the ``provider`` property resolves
+    live on each access so MCP tools always see the current app.state.provider
+    (updated by hot-reload).  When a static provider is given (standalone mode),
+    it is returned directly.
+    """
+
+    def __init__(
+        self,
+        provider: object | None = None,
+        provider_getter: Callable[[], object | None] | None = None,
+    ):
+        self._static_provider = provider
+        self._provider_getter = provider_getter
+
+    @property
+    def provider(self) -> object | None:  # type: ignore[override]
+        if self._provider_getter is not None:
+            return self._provider_getter()
+        return self._static_provider
 
 
 @asynccontextmanager
@@ -168,20 +187,32 @@ async def _run_and_persist(
 
 # ── Server factory ────────────────────────────────────────────────────────────
 
-def create_mcp_server(provider=None) -> FastMCP:
+def create_mcp_server(
+    provider=None,
+    provider_getter: Callable[[], object | None] | None = None,
+) -> FastMCP:
     """Create and configure the MCP server.
 
     Args:
-        provider: Optional pre-detected LLMProvider. If None, the lifespan
-                  will detect one at startup (suitable for standalone runs).
+        provider: Optional pre-detected LLMProvider (static). Ignored when
+                  ``provider_getter`` is supplied.
+        provider_getter: Callable returning the current LLMProvider (dynamic).
+                         When supplied, MCP tools resolve the provider on each
+                         call so hot-reloaded providers are picked up immediately.
     """
     if not HAS_MCP:
         raise ImportError("mcp package is required. Install with: pip install mcp")
 
-    if provider is not None:
-        # Provider already known (called from FastAPI lifespan) — skip re-detection.
+    if provider_getter is not None:
+        # B4: Dynamic provider — resolves live on each tool call.
         @asynccontextmanager
         async def _injected_lifespan(server: FastMCP) -> AsyncIterator[MCPAppContext]:
+            yield MCPAppContext(provider_getter=provider_getter)
+        lifespan_fn = _injected_lifespan
+    elif provider is not None:
+        # Provider already known (called from FastAPI lifespan) — skip re-detection.
+        @asynccontextmanager
+        async def _injected_lifespan(server: FastMCP) -> AsyncIterator[MCPAppContext]:  # type: ignore[no-redef]
             yield MCPAppContext(provider=provider)
         lifespan_fn = _injected_lifespan
     else:
@@ -309,6 +340,11 @@ def create_mcp_server(provider=None) -> FastMCP:
         """
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
+        if prov is None:
+            return json.dumps({
+                "error": "No LLM provider configured",
+                "hint": "Configure an API key via the UI (Settings > Provider) or set ANTHROPIC_API_KEY.",
+            })
         url_fetched = await fetch_url_contexts(url_contexts)
         opt_id = _new_run_id("mcp")
         results = await _run_and_persist(
@@ -881,6 +917,11 @@ def create_mcp_server(provider=None) -> FastMCP:
 
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
+        if prov is None:
+            return json.dumps({
+                "error": "No LLM provider configured",
+                "hint": "Configure an API key via the UI (Settings > Provider) or set ANTHROPIC_API_KEY.",
+            })
         url_fetched = await fetch_url_contexts(url_contexts)
         opt_id = _new_run_id("mcp-retry")
         results = await _run_and_persist(

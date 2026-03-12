@@ -174,9 +174,12 @@ async def lifespan(app: FastAPI):
     app.state.cleanup_task = cleanup_task
     logger.info("Background cleanup task started")
 
-    # B2: Mount MCP server — provider injected so tools never call detect_provider()
-    if HAS_MCP and provider is not None:
-        mcp = create_mcp_server(provider)
+    # B4: Always mount MCP when the package is available — tools resolve the
+    # provider dynamically so hot-reloaded keys are picked up immediately.
+    if HAS_MCP:
+        mcp = create_mcp_server(
+            provider_getter=lambda: getattr(app.state, "provider", None),
+        )
         _mcp_http_app = mcp.streamable_http_app()
         _mcp_ws_asgi = make_websocket_asgi(mcp)
         app.state.mcp = mcp
@@ -190,16 +193,10 @@ async def lifespan(app: FastAPI):
         async with mcp.session_manager.run():
             logger.info("Project Synthesis ready")
             yield
-    elif not HAS_MCP:
+    else:
         logger.info(
             "Project Synthesis ready (MCP not available — "
             "install fastmcp to enable)"
-        )
-        yield
-    else:
-        logger.info(
-            "Project Synthesis ready (MCP disabled — "
-            "no LLM provider configured)"
         )
         yield
 
