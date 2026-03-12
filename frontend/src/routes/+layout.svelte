@@ -233,85 +233,73 @@
     }
   }
 
-  // F6 zone cycling per spec: cycle focus through Activity Bar, Navigator, Editor, Inspector, Status Bar
-  const zoneSelectors = [
-    'nav[aria-label="Activity Bar"]',
-    'nav[aria-label="Navigator"]',
-    'main[aria-label="Editor"]',
-    'aside[aria-label="Inspector"]',
-    'footer[aria-label="Status Bar"]'
-  ];
-  let currentZoneIndex = $state(-1);
-
   // Global keyboard shortcuts:
-  //   Ctrl+Tab / Ctrl+Shift+Tab  — cycle through open tabs
-  //   Ctrl+Shift+E/H/L/T/G       — switch Activity Bar panel
-  //   Ctrl+,                     — open Settings panel
-  //   Ctrl+W                     — close active tab
-  //   Ctrl+S                     — save active tab
-  //   Ctrl+1–8                   — switch to Nth open tab
-  //   Escape                     — cancel active forge
+  //   Alt+↑/↓         — cycle through open tabs
+  //   Alt+←/→         — focus Navigator / Inspector panel
+  //   Alt+1–8         — switch to Nth open tab
+  //   Alt+N           — new prompt (via command palette)
+  //   Alt+W           — close tab (via command palette)
+  //   Ctrl+Shift+E/H/L/Y/G — switch Activity Bar panel
+  //   Ctrl+S/,/K/B/I  — actions (via command palette)
+  //   Escape          — cancel active forge
   function handleKeyboard(e: KeyboardEvent) {
-    if (e.ctrlKey && e.key === 'Tab') {
-      e.preventDefault();
-      const tabs = editor.openTabs;
-      if (tabs.length > 1) {
-        const idx = tabs.findIndex(t => t.id === editor.activeTabId);
-        editor.activeTabId = tabs[e.shiftKey ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length].id;
+    // Alt+↑/↓ — tab cycling
+    if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const tabs = editor.openTabs;
+        if (tabs.length > 1) {
+          const idx = tabs.findIndex(t => t.id === editor.activeTabId);
+          const next = e.key === 'ArrowUp'
+            ? (idx - 1 + tabs.length) % tabs.length
+            : (idx + 1) % tabs.length;
+          editor.activeTabId = tabs[next].id;
+        }
+        return;
       }
-    } else if (e.key === 'Escape' && forge.isForging) {
+      // Alt+← — focus Navigator panel
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (workbench.navigatorCollapsed) workbench.setNavigatorCollapsed(false);
+        const nav = document.querySelector('nav[aria-label="Navigator"]') as HTMLElement;
+        if (nav) {
+          const focusable = nav.querySelector<HTMLElement>('button, a, input, select, textarea, [tabindex="0"]');
+          (focusable ?? nav).focus();
+        }
+        return;
+      }
+      // Alt+→ — focus Inspector panel
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (workbench.inspectorCollapsed) workbench.setInspectorCollapsed(false);
+        const inspector = document.querySelector('aside[aria-label="Inspector"]') as HTMLElement;
+        if (inspector) {
+          const focusable = inspector.querySelector<HTMLElement>('button, a, input, select, textarea, [tabindex="0"]');
+          (focusable ?? inspector).focus();
+        }
+        return;
+      }
+      // Alt+1–8: switch to Nth open tab
+      const num = parseInt(e.key);
+      if (num >= 1 && num <= 8) {
+        e.preventDefault();
+        const tab = editor.openTabs[num - 1];
+        if (tab) editor.activeTabId = tab.id;
+        return;
+      }
+    }
+    // Escape — cancel active forge
+    if (e.key === 'Escape' && forge.isForging) {
       forge.cancel();
-    } else if (e.ctrlKey && e.shiftKey) {
-      // Activity Bar shortcuts (Ctrl+Shift+*)
+      return;
+    }
+    // Ctrl+Shift+* — Activity Bar panel shortcuts
+    if (e.ctrlKey && e.shiftKey) {
       if (e.key === 'E') { e.preventDefault(); workbench.setActivity('files'); }
       else if (e.key === 'H') { e.preventDefault(); workbench.setActivity('history'); }
       else if (e.key === 'L') { e.preventDefault(); workbench.setActivity('chains'); }
-      else if (e.key === 'T') { e.preventDefault(); workbench.setActivity('templates'); }
+      else if (e.key === 'Y') { e.preventDefault(); workbench.setActivity('templates'); }
       else if (e.key === 'G') { e.preventDefault(); workbench.setActivity('github'); }
-    } else if (e.ctrlKey && !e.shiftKey && !e.altKey) {
-      if (e.key === ',') {
-        e.preventDefault();
-        workbench.setActivity('settings');
-      } else if (e.key === 'w') {
-        e.preventDefault();
-        if (editor.activeTabId) editor.closeTab(editor.activeTabId);
-      } else if (e.key === 's') {
-        e.preventDefault();
-        editor.saveActiveTab();
-      } else {
-        // Ctrl+1–8: switch to Nth open tab (1-indexed)
-        const num = parseInt(e.key);
-        if (num >= 1 && num <= 8) {
-          e.preventDefault();
-          const tab = editor.openTabs[num - 1];
-          if (tab) editor.activeTabId = tab.id;
-        }
-      }
-    }
-  }
-
-  function handleF6(e: KeyboardEvent) {
-    if (e.key === 'F6') {
-      e.preventDefault();
-      // Advance to next zone (wrap around)
-      currentZoneIndex = (currentZoneIndex + 1) % zoneSelectors.length;
-      const zone = document.querySelector(zoneSelectors[currentZoneIndex]) as HTMLElement;
-      if (zone) {
-        // Remove focus outline from previous zone
-        document.querySelectorAll('[data-zone-focused]').forEach(el => {
-          el.removeAttribute('data-zone-focused');
-          (el as HTMLElement).style.outline = '';
-        });
-        // Focus the zone
-        zone.setAttribute('tabindex', '-1');
-        zone.focus();
-        zone.setAttribute('data-zone-focused', 'true');
-        zone.style.outline = '1px solid rgba(0, 229, 255, 0.3)';
-        zone.style.outlineOffset = '-1px';
-        // Try to focus the first focusable element inside the zone
-        const firstFocusable = zone.querySelector<HTMLElement>('button, a, input, select, textarea, [tabindex="0"]');
-        if (firstFocusable) firstFocusable.focus();
-      }
     }
   }
 
@@ -358,7 +346,6 @@
     // Initial responsive check
     handleResize();
     window.addEventListener('resize', handleResize);
-    document.addEventListener('keydown', handleF6);
     document.addEventListener('keydown', handleKeyboard);
 
     // Health polling — runs immediately, then every 15 s.
@@ -398,7 +385,7 @@
     commandPalette.registerCommand({
       id: 'new-prompt',
       label: 'New Prompt',
-      shortcut: 'Ctrl+N',
+      shortcut: 'Alt+N',
       group: 'File',
       action: () => {
         editor.openTab({
@@ -420,7 +407,7 @@
     commandPalette.registerCommand({
       id: 'close-tab',
       label: 'Close Tab',
-      shortcut: 'Ctrl+W',
+      shortcut: 'Alt+W',
       group: 'File',
       action: () => {
         if (editor.activeTabId) editor.closeTab(editor.activeTabId);
@@ -573,7 +560,6 @@
     return () => {
       clearInterval(healthTimer);
       window.removeEventListener('resize', handleResize);
-      document.removeEventListener('keydown', handleF6);
       document.removeEventListener('keydown', handleKeyboard);
     };
   });

@@ -2,12 +2,23 @@
 
 ## Unreleased
 
+- Changed keyboard shortcuts to avoid browser conflicts — `Alt` modifier for navigation (`Alt+N`, `Alt+W`, `Alt+↑↓`, `Alt+←→`, `Alt+1-8`), `Ctrl` reserved for actions
+- Changed Templates panel shortcut from `Ctrl+Shift+T` to `Ctrl+Shift+Y` (browser conflict with reopen-closed-tab)
+- Added `Alt+←` / `Alt+→` directional focus shortcuts for Navigator and Inspector panels
+- Removed `F6` zone cycling (replaced by `Alt+←→` directional focus)
+- Fixed double-fire bug where `Ctrl+S`, `Ctrl+W`, and `Ctrl+,` were handled by both `handleKeyboard` and the command palette dispatch
 - Added DNA helix brand mark component (`HelixMark.svelte`) with Canvas 2D parametric rendering, organic animations, and adaptive level-of-detail
 - Changed ActivityBar brand mark from "PS" text to animated DNA helix
 - Changed empty editor watermark from "PF" text to animated DNA helix
 - Changed favicon from fire emoji to DNA emoji
 - Added DNA emoji to README header
 - Removed phantom `anthropic` and `openai` provider values from workbench store type, StatusBar, NavigatorSettings, and health polling cast — backend only returns `claude_cli` or `anthropic_api`
+- Fixed Settings panel `$effect` infinite fetch loop — replaced with `onMount` for single load
+- Fixed Settings panel toggle/number save errors replacing entire UI with error box — now shows toast notification
+- Added JS-side clamping on pipeline timeout (10–600) and max retries (0–5) number inputs in Settings panel
+- Added `.catch()` error handler to walkthrough dynamic import in Settings panel
+- Fixed `unlinkRepo()` silently swallowing errors during GitHub disconnect — now shows toast warning
+- Removed unnecessary `as any` typecast on strategy setting update
 - Fixed StatusBar provider fallback label from `???` to `--` and dot from yellow to red when provider is unknown
 - Fixed SSE parser in `forge.svelte.ts` `_consumeSSEResponse` to concatenate multi-line `data:` fields (parity with `client.ts` fix — retry streams could silently drop data)
 - Fixed `save_settings` to use atomic temp-file + `os.replace` pattern (prevents settings corruption on crash)

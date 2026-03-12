@@ -34,9 +34,11 @@
       if (needsCtrl !== hasCtrl) return false;
       if (needsShift !== e.shiftKey) return false;
       if (needsAlt !== e.altKey) return false;
-      // Match the key (case-insensitive, handle special keys)
-      const eventKey = e.key === ' ' ? 'Space' : e.key;
-      return eventKey.toLowerCase() === key.toLowerCase() ||
+      // Arrow symbol map — lets shortcut strings like "Alt+↑" match e.key === "ArrowUp"
+      const arrowMap: Record<string, string> = { '↑': 'arrowup', '↓': 'arrowdown', '←': 'arrowleft', '→': 'arrowright' };
+      const normalizedKey = arrowMap[key] ?? key.toLowerCase();
+      const eventKey = (e.key === ' ' ? 'Space' : e.key).toLowerCase();
+      return eventKey === normalizedKey ||
         (key === 'Enter' && e.key === 'Enter') ||
         (key === 'Escape' && e.key === 'Escape');
     }

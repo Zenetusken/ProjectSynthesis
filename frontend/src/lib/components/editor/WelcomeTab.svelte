@@ -30,21 +30,21 @@
   const shortcuts = {
     General: [
       { keys: 'Ctrl+K', action: 'Command Palette' },
-      { keys: 'Ctrl+N', action: 'New Prompt' },
-      { keys: 'Ctrl+W', action: 'Close Tab' },
+      { keys: 'Alt+N', action: 'New Prompt' },
+      { keys: 'Alt+W', action: 'Close Tab' },
       { keys: 'Ctrl+S', action: 'Save' },
     ],
     Navigation: [
       { keys: 'Ctrl+B', action: 'Toggle Navigator' },
       { keys: 'Ctrl+I', action: 'Toggle Inspector' },
-      { keys: 'F6', action: 'Cycle Zones' },
-      { keys: 'Ctrl+Tab', action: 'Next Tab' },
+      { keys: 'Alt+↑↓', action: 'Prev / Next Tab' },
+      { keys: 'Alt+←→', action: 'Focus Nav / Inspector' },
     ],
     Forge: [
       { keys: 'Ctrl+Enter', action: 'Synthesize' },
       { keys: 'Escape', action: 'Cancel Forge' },
       { keys: '@', action: 'Context Sources' },
-      { keys: 'Ctrl+1-8', action: 'Switch to Tab N' },
+      { keys: 'Alt+1-8', action: 'Switch to Tab N' },
     ],
   };
 
