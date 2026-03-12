@@ -893,6 +893,16 @@ async def run_explore(
         )
         return
 
+    # ── Phase 2.5: Intent classification ──────────────────────────────
+    intent = await _classify_prompt_intent(provider, raw_prompt)
+
+    yield ("tool_call", {
+        "tool": "intent_classification",
+        "input": {"prompt_length": len(raw_prompt)},
+        "output": {"intent": intent["intent_category"], "depth": intent.get("depth", "")},
+        "status": "complete",
+    })
+
     # ── Phase 3: Single-shot LLM synthesis ────────────────────────────
     yield ("agent_text", {"content": "Synthesizing codebase analysis..."})
     yield ("tool_call", {
@@ -918,8 +928,28 @@ async def run_explore(
             removed = paths_by_priority.pop()
             del file_contents[removed]
             context_payload = _format_files_for_llm(file_contents)
+
+    # Build directive section from intent classification
+    directive_section = ""
+    if intent.get("observation_directives") or intent.get("snippet_priorities"):
+        parts = [
+            "\nObservation directives (adapt your analysis accordingly):",
+            f"  Intent: {intent.get('intent_category', 'general')}",
+            f"  Depth: {intent.get('depth', 'structural')}",
+        ]
+        if intent.get("observation_directives"):
+            parts.append("  Focus areas:")
+            for d in intent["observation_directives"]:
+                parts.append(f"    - {d}")
+        if intent.get("snippet_priorities"):
+            parts.append("  Snippet priorities:")
+            for p in intent["snippet_priorities"]:
+                parts.append(f"    - {p}")
+        directive_section = "\n".join(parts) + "\n"
+
     user_message = (
-        f"User's prompt to optimize:\n{raw_prompt}\n\n"
+        f"User's prompt to optimize:\n---\n{raw_prompt}\n---\n"
+        f"{directive_section}\n"
         f"Repository: {repo_full_name} (branch: {used_branch})\n"
         f"Total files in repo: {total_in_tree}\n"
         f"Files provided below: {len(file_contents)}\n\n"
@@ -991,6 +1021,8 @@ async def run_explore(
         coverage_pct=min(100, round(len(file_contents) / max(1, total_in_tree) * 100)),
         duration_ms=duration_ms,
         explore_quality="complete" if parsed else "partial",
+        intent_category=intent["intent_category"],
+        depth=intent.get("depth", ""),
     )
 
     ctx_dict = asdict(context)
