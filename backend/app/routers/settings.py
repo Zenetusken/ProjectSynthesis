@@ -8,10 +8,11 @@ Settings are stored in a JSON file to persist across restarts.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
 from app.dependencies.auth import get_current_user
+from app.errors import internal_server_error
 from app.schemas.auth import AuthenticatedUser
 from app.services.settings_service import load_settings, save_settings
 from app.services.strategy_selector import KNOWN_FRAMEWORKS
@@ -106,7 +107,7 @@ async def update_settings(
         save_settings(current)
     except OSError as e:
         logger.error("Failed to save settings: %s", e)
-        raise HTTPException(status_code=500, detail=f"Failed to save settings: {e}")
+        raise internal_server_error(f"Failed to save settings: {e}")
 
     logger.info("Settings updated: %s", list(update_data.keys()))
     return current

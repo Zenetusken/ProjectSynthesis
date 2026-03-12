@@ -10,11 +10,12 @@ Repository list, link, and unlink are handled by github_repos.py.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.dependencies.auth import get_current_user
+from app.errors import not_found, unauthorized
 from app.schemas.auth import AuthenticatedUser
 from app.services.github_service import (
     get_repo_tree,
@@ -52,11 +53,11 @@ async def get_repo_tree_endpoint(
     """
     session_id = _get_session_id(request)
     if not session_id:
-        raise HTTPException(status_code=401, detail="GitHub not connected")
+        raise unauthorized("GitHub not connected")
 
     token = await get_token_for_session(session, session_id)
     if not token:
-        raise HTTPException(status_code=401, detail="GitHub not connected")
+        raise unauthorized("GitHub not connected")
 
     full_name = f"{owner}/{repo}"
     tree = await get_repo_tree(token, full_name, branch)
@@ -83,17 +84,17 @@ async def read_file(
     """
     session_id = _get_session_id(request)
     if not session_id:
-        raise HTTPException(status_code=401, detail="GitHub not connected")
+        raise unauthorized("GitHub not connected")
 
     token = await get_token_for_session(session, session_id)
     if not token:
-        raise HTTPException(status_code=401, detail="GitHub not connected")
+        raise unauthorized("GitHub not connected")
 
     full_name = f"{owner}/{repo}"
 
     content = await read_file_by_path(token, full_name, path, branch)
     if content is None:
-        raise HTTPException(status_code=404, detail=f"File not found or unreadable: {path}")
+        raise not_found(f"File not found or unreadable: {path}")
 
     return {
         "path": path,

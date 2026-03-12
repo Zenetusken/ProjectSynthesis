@@ -12,7 +12,7 @@ import logging
 import os
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.config import settings
 from app.database import get_session
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import RateLimit
+from app.errors import conflict
 from app.providers.detector import ProviderNotAvailableError, detect_provider
 from app.services.api_credentials_service import (
     delete_api_key,
@@ -81,13 +82,10 @@ def _provider_status_response(request: Request, **extra: object) -> dict:
 def _check_env_var_conflict() -> None:
     """Raise 409 if the API key is pinned via environment variable."""
     if os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "API key is configured via environment variable and "
-                "cannot be changed from the UI. Update the "
-                "ANTHROPIC_API_KEY env var instead."
-            ),
+        raise conflict(
+            "API key is configured via environment variable and "
+            "cannot be changed from the UI. Update the "
+            "ANTHROPIC_API_KEY env var instead."
         )
 
 

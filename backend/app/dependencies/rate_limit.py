@@ -23,11 +23,12 @@ from functools import lru_cache
 from ipaddress import ip_address, ip_network
 from typing import TYPE_CHECKING, Callable
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from limits import parse as limits_parse
 from limits.storage import MemoryStorage
 
 from app.config import settings as _settings
+from app.errors import rate_limited
 
 if TYPE_CHECKING:
     from app.services.redis_service import RedisService
@@ -156,10 +157,4 @@ class RateLimit:
             allowed = _limiter.hit(parsed, key)
 
         if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "code": "RATE_LIMIT_EXCEEDED",
-                    "message": f"Too many requests. Limit: {rate_string}",
-                },
-            )
+            raise rate_limited(f"Too many requests. Limit: {rate_string}")

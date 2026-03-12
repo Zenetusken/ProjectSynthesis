@@ -172,7 +172,10 @@ async def test_github_token_cross_validation_rejects_wrong_user():
         await _get_github_token(mock_request, mock_session, current_user)
 
     assert exc_info.value.status_code == 403
-    assert "does not belong" in exc_info.value.detail
+    detail = exc_info.value.detail
+    # Error factories return structured detail: {"code": "...", "message": "..."}
+    message = detail["message"] if isinstance(detail, dict) else detail
+    assert "does not belong" in message
 
 
 async def test_github_token_cross_validation_passes_matching_user():
