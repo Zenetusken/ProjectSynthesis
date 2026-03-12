@@ -21,6 +21,7 @@ class UserStore {
   githubLogin  = $state<string | null>(null);
   email        = $state<string | null>(null);
   onboardingCompleted = $state(false);
+  profileFetchFailed = $state(false);
   preferences = $state<UserPreferences>({ ...defaultPreferences });
   loading = $state(false);
   error   = $state<string | null>(null);
@@ -52,6 +53,7 @@ class UserStore {
       this.preferences = { ...defaultPreferences };
     }
     this.error = null;
+    this.profileFetchFailed = false;
   }
 
   clearProfile(): void {
@@ -60,6 +62,7 @@ class UserStore {
     this.githubLogin = null;
     this.email       = null;
     this.onboardingCompleted = false;
+    this.profileFetchFailed = false;
     this.preferences = { ...defaultPreferences };
     this.loading = false;
     this.error = null;

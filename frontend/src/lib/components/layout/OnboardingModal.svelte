@@ -4,11 +4,12 @@
   interface Props {
     onComplete: () => void;
     githubConnected?: boolean;
+    repoLinked?: boolean;
   }
-  const { onComplete, githubConnected = false }: Props = $props();
+  const { onComplete, githubConnected = false, repoLinked = false }: Props = $props();
 </script>
 
 <!-- Full-screen onboarding overlay -->
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-bg-primary/90">
-  <OnboardingWizard {onComplete} {githubConnected} />
+  <OnboardingWizard {onComplete} {githubConnected} {repoLinked} />
 </div>

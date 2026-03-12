@@ -46,6 +46,7 @@ class GitHubStore {
 
   // Command palette trigger — set true to open the repo picker modal from outside
   showRepoPicker = $state(false);
+  reposFetchError = $state<string | null>(null);
 
   // File tree state
   fileTree = $state<TreeNode[] | null>(null);
@@ -63,6 +64,7 @@ class GitHubStore {
     this.username = username;
     this.repos = repos;
     this.error = null;
+    this.reposFetchError = null;
   }
 
   disconnect() {
@@ -73,6 +75,7 @@ class GitHubStore {
     this.selectedBranch = null;
     this.files = [];
     this.error = null;
+    this.reposFetchError = null;
     this.fileTree = null;
     this.treeLoading = false;
     this.treeError = null;

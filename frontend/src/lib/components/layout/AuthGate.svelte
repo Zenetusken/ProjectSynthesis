@@ -34,17 +34,23 @@
   let apiKeyError = $state('');
   let apiKeySaved = $state(false);
 
+  let apiKeyWarning = $state('');
+
   async function handleSaveApiKey() {
     apiKeyError = '';
+    apiKeyWarning = '';
     savingApiKey = true;
     try {
       const result = await saveApiKey(apiKey.trim());
       if (result.provider_available) {
         apiKeySaved = true;
+        if (result.validation_warning) {
+          apiKeyWarning = result.validation_warning;
+        }
         // Refresh provider config
         providerConfig = await getProviderConfig();
       } else {
-        apiKeyError = 'Key saved but provider could not be initialized. Check the key.';
+        apiKeyError = result.validation_warning || 'Key saved but provider could not be initialized. Check the key.';
       }
     } catch (err) {
       apiKeyError = (err as Error).message;
@@ -143,6 +149,9 @@
                 <span class="w-2 h-2 bg-neon-green shrink-0"></span>
                 <span class="font-mono text-[9px] text-neon-green">API key configured</span>
               </div>
+              {#if apiKeyWarning}
+                <p class="font-mono text-[9px] text-neon-yellow mt-1 leading-snug">{apiKeyWarning}</p>
+              {/if}
             {:else}
               <div class="relative">
                 <input

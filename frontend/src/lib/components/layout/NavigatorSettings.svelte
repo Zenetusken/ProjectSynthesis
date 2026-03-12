@@ -57,14 +57,20 @@
         api_key: result.api_key,
         bootstrap_mode: false,
       };
-      expandApiKey = false;
-      apiKeyInput = '';
-      showApiKeyInput = false;
-      toast.success('API key saved');
-      // Update workbench provider state
       if (result.provider_available) {
+        expandApiKey = false;
+        apiKeyInput = '';
+        showApiKeyInput = false;
         workbench.provider = result.provider_active as typeof workbench.provider;
         workbench.isConnected = true;
+        if (result.validation_warning) {
+          toast.warning(result.validation_warning);
+        } else {
+          toast.success('API key saved');
+        }
+      } else {
+        // Provider failed to initialize — keep form open so user can correct
+        apiKeyError = result.validation_warning || 'Key saved but provider could not be initialized. Check the key.';
       }
     } catch (err) {
       apiKeyError = (err as Error).message;

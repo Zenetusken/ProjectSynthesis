@@ -10,8 +10,9 @@
   interface Props {
     onComplete: () => void;
     githubConnected?: boolean;
+    repoLinked?: boolean;
   }
-  const { onComplete, githubConnected = false }: Props = $props();
+  const { onComplete, githubConnected = false, repoLinked = false }: Props = $props();
 
   const STEP_KEY = 'pf_onboarding_step';
 
@@ -98,7 +99,8 @@
       }
       try { user.setProfile(await fetchAuthMe()); } catch { /* non-fatal */ }
     } catch (err) {
-      // Non-fatal — proceed with onComplete anyway
+      // Non-fatal — mark completed locally so wizard doesn't re-show
+      user.onboardingCompleted = true;
     }
 
     trackOnboardingEvent('wizard_completed', { action }).catch(() => {});
@@ -319,18 +321,20 @@
         </svg>
         <div>
           <div class="font-display text-[10px] uppercase text-text-primary flex items-center gap-1.5">
-            {#if githubConnected}
+            {#if repoLinked}
               Explore your codebase
+              <span class="font-mono text-[8px] text-neon-cyan/60 normal-case tracking-normal">(recommended)</span>
+            {:else if githubConnected}
+              Link a repository
             {:else}
               Connect GitHub first
             {/if}
-            {#if githubConnected}
-              <span class="font-mono text-[8px] text-neon-cyan/60 normal-case tracking-normal">(recommended)</span>
-            {/if}
           </div>
           <div class="font-mono text-[9px] text-text-dim mt-0.5">
-            {#if githubConnected}
+            {#if repoLinked}
               Your repo is linked — optimize with full codebase context
+            {:else if githubConnected}
+              GitHub connected — select a repo for codebase-aware optimization
             {:else}
               Link a repo for codebase-aware optimization
             {/if}

@@ -6,7 +6,7 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { github } from '$lib/stores/github.svelte';
-  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe, unlinkRepo, trackOnboardingEvent } from '$lib/api/client';
+  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe, unlinkRepo, trackOnboardingEvent, notifyAuthReady } from '$lib/api/client';
   import { toast } from '$lib/stores/toast.svelte';
   import type { RepoInfo } from '$lib/api/client';
   import { user } from '$lib/stores/user.svelte';
@@ -106,9 +106,10 @@
             if (linked && linked.full_name) {
               github.selectRepo(linked.full_name, linked.branch);
             }
-          } catch {
+          } catch (repoErr) {
             // Repos fetch failed — mark connected but without repos
             github.setConnected(authStatus.login, []);
+            github.reposFetchError = (repoErr as Error).message || 'Failed to fetch repositories';
           }
         }
       })
@@ -127,23 +128,29 @@
     user.loading = true;
     fetchAuthMe()
       .then(p => user.setProfile(p))
-      .catch(e => { user.error = (e as Error).message; })
+      .catch(e => { user.error = (e as Error).message; user.profileFetchFailed = true; })
       .finally(() => { user.loading = false; _profileFetching = false; });
   });
 
   // Auto-resume onboarding wizard for users who haven't completed it.
   // Only triggers on return visits (not initial auth callback — that's handled in onMount).
+  // F4: Skip if profile fetch failed — avoids re-showing wizard to returning users.
+  // F2: Also trigger when backend says not completed (not just localStorage).
   $effect(() => {
     if (
       authChecked
       && auth.isAuthenticated
       && !user.onboardingCompleted
+      && !user.profileFetchFailed
       && !user.loading  // Wait for profile hydration
       && !workbench.showOnboarding  // Don't double-trigger
     ) {
       // Check if there's a persisted wizard step (user was mid-wizard)
       const storedStep = typeof window !== 'undefined' ? localStorage.getItem('pf_onboarding_step') : null;
       if (storedStep) {
+        workbench.showOnboarding = true;
+      } else if (!user.preferences.dismissedTips.includes('wizard-auto-dismissed')) {
+        // F2: Backend says not completed and user hasn't explicitly dismissed — show wizard
         workbench.showOnboarding = true;
       }
     }
@@ -325,10 +332,12 @@
         url.searchParams.delete('new');
         replaceState(url.toString(), {});
         authChecked = true;
+        if (auth.isAuthenticated) notifyAuthReady();
       } else {
         // Attempt silent refresh from httponly cookie (restores returning sessions)
         auth.refresh().finally(() => {
           authChecked = true;
+          if (auth.isAuthenticated) notifyAuthReady();
         });
       }
     })();
@@ -668,6 +677,6 @@
     <SpotlightOverlay />
   {/if}
   {#if workbench.showOnboarding}
-    <OnboardingModal onComplete={() => { workbench.showOnboarding = false; }} githubConnected={github.isConnected} />
+    <OnboardingModal onComplete={() => { workbench.showOnboarding = false; }} githubConnected={github.isConnected} repoLinked={github.selectedRepo != null} />
   {/if}
 {/if}

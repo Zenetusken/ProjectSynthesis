@@ -52,6 +52,7 @@ export interface HealthResponse {
   redis_connected: boolean;
   mcp_url: string;
   version: string;
+  credential_error?: string;
 }
 
 export interface OptimizeRequest {
@@ -518,6 +519,7 @@ export interface SaveApiKeyResponse {
   ok: boolean;
   provider_active: string;
   provider_available: boolean;
+  validation_warning?: string;
   api_key: {
     configured: boolean;
     source: 'environment' | 'app' | 'none';
@@ -713,17 +715,16 @@ interface QueuedEvent {
 class OnboardingEventQueue {
   private queue: QueuedEvent[] = [];
   private flushing = false;
+  private _authReady = false;
 
   constructor() {
-    // Restore persisted queue on init
+    // Restore persisted queue on init — do NOT flush yet (auth token not set)
     if (typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem(_EVENT_QUEUE_KEY);
         if (stored) {
           this.queue = JSON.parse(stored);
           localStorage.removeItem(_EVENT_QUEUE_KEY);
-          // Flush restored events
-          this.flush();
         }
       } catch { /* ignore corrupt data */ }
 
@@ -739,12 +740,20 @@ class OnboardingEventQueue {
     }
   }
 
+  /** Signal that JWT auth is ready — flushes any queued events. */
+  onAuthReady(): void {
+    this._authReady = true;
+    this.flush();
+  }
+
   enqueue(eventType: string, metadata?: Record<string, unknown>): void {
     if (this.queue.length >= _MAX_QUEUE_SIZE) {
       this.queue.shift(); // drop oldest
     }
     this.queue.push({ eventType, metadata, retries: 0, queuedAt: Date.now() });
-    this.flush();
+    if (this._authReady) {
+      this.flush();
+    }
   }
 
   private async flush(): Promise<void> {
@@ -777,6 +786,11 @@ class OnboardingEventQueue {
 }
 
 const _eventQueue = new OnboardingEventQueue();
+
+/** Signal that auth is ready — flushes any queued events that were waiting. */
+export function notifyAuthReady(): void {
+  _eventQueue.onAuthReady();
+}
 
 /** Queue an onboarding event with automatic retry (3 attempts, exponential backoff).
  * Falls back to navigator.sendBeacon on page unload. */
