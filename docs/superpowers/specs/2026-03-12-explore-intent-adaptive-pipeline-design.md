@@ -479,7 +479,7 @@ None. `pipeline.py` passes `CodebaseContext` as a dict — new fields propagate 
 
 **Medium risk:**
 - Explore synthesis prompt rewrite — LLM output quality depends on prompt clarity. The enhanced instructions are more prescriptive, which could overconstrain Haiku on unfamiliar codebases. Mitigation: the intent directives are injected via user message (not system prompt), so they're soft guidance.
-- Intent classification failure path — must not block or slow the pipeline. Mitigation: 15s timeout + silent fallback.
+- Intent classification failure path — must not block or slow the pipeline. Mitigation: 8s timeout + silent fallback.
 
 **No risk:**
 - Pipeline.py — zero changes
