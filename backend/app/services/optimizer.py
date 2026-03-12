@@ -24,6 +24,142 @@ from app.services.context_builders import (
 
 logger = logging.getLogger(__name__)
 
+# ── Intent-specific weaving guidance ──────────────────────────────────
+# Maps explore intent_category to positive instructions telling the
+# optimizer HOW to integrate codebase intelligence into the final prompt.
+_WEAVING_GUIDANCE: dict[str, str] = {
+    "refactoring": (
+        "- Construct a prioritized Scope section mapping observations to specific files/functions\n"
+        "- Use coverage % and test file counts to calibrate effort estimates\n"
+        "- Extract architectural constraints from project docs and make them explicit"
+    ),
+    "api_design": (
+        "- Use endpoint observations to define the API surface\n"
+        "- Reference data contracts and integration points as explicit interface requirements"
+    ),
+    "feature_build": (
+        "- Reference existing patterns the executor should follow\n"
+        "- Name extension points and module boundaries"
+    ),
+    "testing": (
+        "- Use coverage signals and testability observations to scope what needs testing\n"
+        "- Reference mock patterns and test infrastructure"
+    ),
+    "debugging": (
+        "- Map error paths and state mutations into a structured investigation plan\n"
+        "- Reference specific functions and their behavioral characteristics"
+    ),
+    "architecture_review": (
+        "- Use dependency and coupling observations to define review dimensions\n"
+        "- Reference layer violations and cross-cutting concerns as explicit review criteria"
+    ),
+    "performance": (
+        "- Reference hot paths, I/O boundaries, and caching patterns as profiling targets"
+    ),
+    "security": (
+        "- Map auth flows and credential handling into explicit review scope\n"
+        "- Reference input validation patterns and encryption usage"
+    ),
+}
+_DEFAULT_WEAVING = (
+    "- Use file paths, function names, and data shapes to make instructions precise\n"
+    "- Let codebase specifics inform the precision of your instructions"
+)
+
+OPTIMIZATION_META_OPEN = "<optimization_meta>"
+OPTIMIZATION_META_CLOSE = "</optimization_meta>"
+
+
+class OptimizeStreamParser:
+    """Separates prompt text from metadata during streaming.
+
+    Buffers chunks, yields only clean prompt text for SSE display.
+    The <optimization_meta> block is silently accumulated and extracted
+    after streaming completes via finalize().
+
+    Handles: cross-boundary markers, pure-JSON fallback, partial timeout.
+    """
+
+    def __init__(self) -> None:
+        self._buffer: str = ""
+        self._full_text: str = ""
+        self._prompt_text: str = ""
+        self._meta_text: str = ""
+        self._in_meta: bool = False
+        self._marker_len: int = len(OPTIMIZATION_META_OPEN)
+
+    def feed(self, chunk: str) -> str:
+        """Feed a streamed chunk. Returns text safe to yield to the user.
+
+        Returns empty string when buffering (potential partial marker)
+        or when in the metadata section.
+        """
+        self._full_text += chunk
+
+        if self._in_meta:
+            self._meta_text += chunk
+            return ""
+
+        self._buffer += chunk
+
+        marker_pos = self._buffer.find(OPTIMIZATION_META_OPEN)
+        if marker_pos != -1:
+            safe_text = self._buffer[:marker_pos]
+            self._meta_text = self._buffer[marker_pos + self._marker_len :]
+            self._buffer = ""
+            self._in_meta = True
+            self._prompt_text += safe_text
+            return safe_text
+
+        # Keep safety margin for cross-boundary marker detection
+        safety_margin = self._marker_len - 1
+        if len(self._buffer) > safety_margin:
+            safe_text = self._buffer[:-safety_margin]
+            self._buffer = self._buffer[-safety_margin:]
+            self._prompt_text += safe_text
+            return safe_text
+
+        return ""
+
+    def finalize(self) -> tuple[str, dict | None]:
+        """Extract (prompt_text, metadata_dict) after streaming completes.
+
+        Three outcomes:
+        1. Marker found + metadata parsed → (prompt, metadata_dict)
+        2. No marker, JSON fallback → (optimized_prompt from JSON, full_dict)
+        3. All parsing fails → (full_text, None)
+        """
+        if not self._in_meta and self._buffer:
+            self._prompt_text += self._buffer
+            self._buffer = ""
+
+        prompt = self._prompt_text.strip()
+
+        if self._in_meta:
+            meta_str = self._meta_text
+            close_pos = meta_str.find(OPTIMIZATION_META_CLOSE)
+            if close_pos != -1:
+                meta_str = meta_str[:close_pos]
+            meta_str = meta_str.strip()
+            if meta_str:
+                try:
+                    return prompt, json.loads(meta_str)
+                except json.JSONDecodeError:
+                    logger.warning("Metadata JSON parse failed: %r", meta_str[:200])
+            return prompt, None
+
+        # No marker → try JSON fallback (backward compat)
+        try:
+            parsed = parse_json_robust(self._full_text)
+            return parsed.get("optimized_prompt", self._full_text), parsed
+        except ValueError:
+            return prompt or self._full_text.strip(), None
+
+    @property
+    def accumulated_prompt(self) -> str:
+        """Prompt text accumulated so far (for partial-timeout recovery)."""
+        return self._prompt_text + self._buffer
+
 
 async def run_optimize(
     provider: LLMProvider,
@@ -62,21 +198,22 @@ async def run_optimize(
     if codebase_context:
         codebase_summary = build_codebase_summary(codebase_context)
         if codebase_summary:
+            intent_cat = codebase_context.get("intent_category", "general")
+            coverage = codebase_context.get("coverage_pct", 0)
+            files_read = codebase_context.get("files_read_count", 0)
+            weaving = _WEAVING_GUIDANCE.get(intent_cat, _DEFAULT_WEAVING)
+
             user_message += (
                 "\n\n--- Codebase reference (INTELLIGENCE LAYER — for YOUR understanding only) ---\n"
-                "This is navigational context from a codebase exploration phase. It tells you\n"
-                "WHERE things are and HOW components connect — it is NOT an audit or correctness\n"
-                "assessment. Absorb it to write a surgically precise prompt.\n\n"
-                "DO:\n"
-                "- Use file paths, function names, data shapes, and architectural patterns\n"
-                "  that appear explicitly below to make your prompt precise\n"
-                "- Let this context inform the precision and specificity of your instructions\n\n"
-                "DO NOT:\n"
-                "- Relay any exploration findings, observations, or context notes in the output\n"
-                "- Add 'Codebase Context' or 'Background' sections\n"
-                "- Treat any observation marked [unverified] as fact\n"
-                "- Delegate investigation or exploration tasks to the executor\n"
-                "- Invent or extrapolate specifics beyond what appears below\n"
+                f"Intent focus: {intent_cat} · Coverage: {coverage}% · {files_read} files\n\n"
+                "Weaving guidance (how to USE this context in the optimized prompt):\n"
+                f"{weaving}\n\n"
+                "Guardrails:\n"
+                "- Do NOT relay exploration findings, observations, or context notes\n"
+                "- Do NOT add 'Codebase Context' or 'Background' sections\n"
+                "- Do NOT treat observations marked [unverified] as fact\n"
+                "- Do NOT delegate investigation tasks to the executor\n"
+                "- Do NOT invent specifics beyond what appears below\n\n"
                 f"{codebase_summary}\n"
                 "--- End codebase reference ---"
             )
@@ -109,6 +246,7 @@ async def run_optimize(
     framework_applied = strategy.get("primary_framework", "")
 
     full_text = ""
+    parser: OptimizeStreamParser | None = None
 
     if not streaming:
         # Non-streaming mode: single complete() call, no step_progress events.
@@ -120,6 +258,9 @@ async def run_optimize(
         except Exception as e:
             logger.error(f"Stage 3 (Optimize) non-streaming complete() failed: {e}")
             full_text = ""
+        # Parse using same marker logic as streaming path
+        parser = OptimizeStreamParser()
+        parser.feed(full_text)
     else:
         # Stream the optimization with timeout.
         # Use asyncio.Queue + create_task (same pattern as codebase_explorer.py)
@@ -142,13 +283,16 @@ async def run_optimize(
             lambda: stream_task.cancel() if not stream_task.done() else None,
         )
 
+        parser = OptimizeStreamParser()
         try:
             while True:
                 chunk = await chunk_queue.get()
                 if chunk is None:
                     break  # Sentinel received — stream finished
                 full_text += chunk
-                yield ("step_progress", {"step": "optimize", "content": chunk})
+                safe_text = parser.feed(chunk)
+                if safe_text:
+                    yield ("step_progress", {"step": "optimize", "content": safe_text})
 
             # Re-raise any exception from the worker task
             await stream_task
@@ -159,7 +303,7 @@ async def run_optimize(
             )
             if not full_text:
                 raise  # Nothing accumulated — hard failure
-            # Partial text accumulated; fall through to JSON extraction
+            # Partial text accumulated; fall through to extraction
         except Exception as e:
             logger.error(f"Stage 3 (Optimize) streaming failed: {e}")
             stream_failed = True
@@ -178,44 +322,50 @@ async def run_optimize(
             except Exception as e2:
                 logger.error(f"Stage 3 (Optimize) complete() also failed: {e2}")
                 full_text = ""
+            # Re-parse with fresh parser since stream parser state is invalid
+            parser = OptimizeStreamParser()
+            parser.feed(full_text)
 
-    # 3-strategy JSON extraction via shared parse_json_robust utility
-    parsed = None
-    try:
-        parsed = parse_json_robust(full_text)
-    except ValueError:
-        # parse_json_robust already logged a warning with the input excerpt.
-        # Attempt complete_json() as a clean non-streaming retry.
-        logger.warning(
-            "Streaming output failed all JSON parse strategies; falling back to complete_json()"
+    # Extract prompt + metadata via parser (handles both marker and JSON fallback)
+    if parser is None:
+        parser = OptimizeStreamParser()
+        parser.feed(full_text)
+
+    prompt_text, metadata = parser.finalize()
+
+    optimization_failed = False
+    if metadata and isinstance(metadata, dict):
+        optimized_prompt = (
+            metadata.get("optimized_prompt", prompt_text)
+            if "optimized_prompt" in metadata
+            else prompt_text
         )
+        changes_made = metadata.get("changes_made", [])
+        framework_applied = metadata.get("framework_applied", framework_applied)
+        optimization_notes = metadata.get("optimization_notes", "")
+    elif prompt_text:
+        optimized_prompt = prompt_text
+        changes_made = []
+        optimization_notes = ""
+        logger.warning("Optimize stage: metadata extraction failed; using prompt text only")
+    elif full_text:
+        # Last resort: try complete_json() fallback
+        logger.warning("No prompt text or metadata; trying complete_json() fallback")
         try:
-            parsed = await asyncio.wait_for(
+            fallback = await asyncio.wait_for(
                 provider.complete_json(system_prompt, user_message, model),
                 timeout=settings.OPTIMIZE_TIMEOUT_SECONDS,
             )
+            optimized_prompt = fallback.get("optimized_prompt", full_text)
+            changes_made = fallback.get("changes_made", [])
+            framework_applied = fallback.get("framework_applied", framework_applied)
+            optimization_notes = fallback.get("optimization_notes", "")
         except Exception as e:
-            logger.error(f"Stage 3 (Optimize) complete_json() fallback failed: {e}")
-            parsed = None
-
-    optimization_failed = False
-    if parsed:
-        optimized_prompt = parsed.get("optimized_prompt", full_text)
-        changes_made = parsed.get("changes_made", [])
-        framework_applied = parsed.get("framework_applied", framework_applied)
-        optimization_notes = parsed.get("optimization_notes", "")
-    elif full_text:
-        # Streaming succeeded, JSON extraction failed — use raw text (degraded)
-        logger.warning(
-            "optimize stage: all provider calls and JSON extraction strategies failed; "
-            "returning %s unchanged",
-            "raw prompt" if full_text == raw_prompt else "accumulated text",
-        )
-        optimized_prompt = full_text
-        changes_made = []
-        optimization_notes = ""
+            logger.error(f"complete_json() fallback also failed: {e}")
+            optimized_prompt = full_text
+            changes_made = []
+            optimization_notes = ""
     else:
-        # ALL paths failed — signal upstream
         optimization_failed = True
         optimized_prompt = ""
         changes_made = []
