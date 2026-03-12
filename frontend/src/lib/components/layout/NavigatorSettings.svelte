@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { fetchSettings, updateSettings, fetchProviderStatus, fetchProviderDetect, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, logoutDevice, fetchGitHubAppConfig, saveGitHubAppConfig, fetchAuthMe, patchAuthMe, refreshGitHubToken, getProviderConfig, saveApiKey, deleteApiKey, type AppSettings, type GitHubAppConfig, type ProviderDetectResponse, type ProviderStatusResponse, type ProviderConfigResponse } from '$lib/api/client';
@@ -154,7 +154,7 @@
       settings = await updateSettings({ [key]: value });
       toast.success('Settings saved');
     } catch (err) {
-      error = (err as Error).message;
+      toast.error('Failed to save setting');
     } finally {
       saving = false;
     }
@@ -163,7 +163,7 @@
   async function handleDisconnectGitHub() {
     try {
       await disconnectGitHub();
-      await unlinkRepo().catch(() => {});
+      await unlinkRepo().catch(() => toast.warning('Repo unlink failed — may need manual cleanup'));
       toast.success('GitHub disconnected');
     } catch (err) {
       toast.error((err as Error).message);
@@ -264,12 +264,18 @@
   }
 
   async function handleNumberChange(key: keyof AppSettings, value: number) {
-    if (!settings) return;
+    if (!settings || isNaN(value)) return;
+    const bounds: Record<string, [number, number]> = {
+      pipeline_timeout: [10, 600],
+      max_retries: [0, 5],
+    };
+    const [min, max] = bounds[key] ?? [-Infinity, Infinity];
+    value = Math.max(min, Math.min(max, value));
     saving = true;
     try {
       settings = await updateSettings({ [key]: value });
     } catch (err) {
-      error = (err as Error).message;
+      toast.error('Failed to save setting');
     } finally {
       saving = false;
     }
@@ -361,7 +367,7 @@
   // Slide transition config
   const slideIn = { duration: 200, easing: cubicOut };
 
-  $effect(() => {
+  onMount(() => {
     loadSettings();
   });
 </script>
@@ -827,7 +833,7 @@
           value={settings.default_strategy ?? ''}
           onchange={(e) => {
             const val = (e.target as HTMLSelectElement).value;
-            updateSettings({ default_strategy: val || null } as any).then(s => settings = s);
+            updateSettings({ default_strategy: val || null }).then(s => settings = s);
           }}
         >
           <option value="">Auto (recommended)</option>
@@ -935,7 +941,7 @@
             <span>Replay welcome guide</span>
           </button>
           <button
-            onclick={() => { import('$lib/stores/walkthrough.svelte').then(m => m.walkthrough.start()); }}
+            onclick={() => { import('$lib/stores/walkthrough.svelte').then(m => m.walkthrough.start()).catch(() => toast.error('Could not load walkthrough')); }}
             class="w-full flex items-center justify-between px-2 py-1
                    border border-border-subtle text-text-secondary
                    hover:border-neon-cyan/30 hover:text-text-primary
