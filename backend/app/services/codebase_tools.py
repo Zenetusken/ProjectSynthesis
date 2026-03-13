@@ -109,7 +109,7 @@ def build_codebase_tools(
             # github_service already filters excluded files and applies size limits
             tree = await _svc_get_repo_tree(token, repo_full_name, repo_branch)
         except Exception as e:
-            logger.error(f"Failed to get repo tree: {e}")
+            logger.error("Failed to get repo tree: %s", e)
             tree = []
         _cache_set(repo_full_name, repo_branch, tree)
         return tree

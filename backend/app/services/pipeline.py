@@ -473,7 +473,7 @@ async def run_pipeline(
             "usage": usage.to_dict() if usage else None,
         })
     except Exception as e:
-        logger.error(f"Stage 2 (Strategy) failed fatally: {e}")
+        logger.error("Stage 2 (Strategy) failed fatally: %s", e)
         yield ("error", {
             "stage": "strategy",
             "error": str(e),
@@ -524,7 +524,7 @@ async def run_pipeline(
         })
         _opt_failed = bool((optimization_result or {}).get("optimization_failed", False))
     except Exception as e:
-        logger.error(f"Stage 3 (Optimize) failed fatally: {e}")
+        logger.error("Stage 3 (Optimize) failed fatally: %s", e)
         yield ("error", {
             "stage": "optimize",
             "error": str(e),
@@ -590,7 +590,7 @@ async def run_pipeline(
             "usage": usage.to_dict() if usage else None,
         })
     except Exception as e:
-        logger.error(f"Stage 4 (Validate) failed fatally: {e}")
+        logger.error("Stage 4 (Validate) failed fatally: %s", e)
         yield ("error", {
             "stage": "validate",
             "error": str(e),
@@ -609,9 +609,10 @@ async def run_pipeline(
         and not is_improvement
     ):
         logger.info(
-            f"Overall score {overall_score} < {LOW_SCORE_THRESHOLD} "
-            f"(retry {retry_count + 1}/{effective_max_retries}): "
-            "retrying optimize+validate with adjusted constraints"
+            "Overall score %s < %s (retry %d/%d): "
+            "retrying optimize+validate with adjusted constraints",
+            overall_score, LOW_SCORE_THRESHOLD,
+            retry_count + 1, effective_max_retries,
         )
         yield ("rate_limit_warning", {
             "message": (
@@ -636,7 +637,7 @@ async def run_pipeline(
             }
             lowest_dim = min(score_dims, key=score_dims.get)
             focus_areas = [lowest_dim]
-            logger.info(f"Second retry: narrowing focus to lowest dimension '{lowest_dim}'")
+            logger.info("Second retry: narrowing focus to lowest dimension '%s'", lowest_dim)
 
         try:
             ov_result = None
@@ -674,7 +675,7 @@ async def run_pipeline(
             is_improvement = validation.get("is_improvement", False)
 
         except Exception as e:
-            logger.warning(f"Retry {retry_count + 1} failed: {e}. Using previous validation result.")
+            logger.warning("Retry %d failed: %s. Using previous validation result.", retry_count + 1, e)
             yield ("error", {
                 "stage": "optimize",
                 "error": f"Retry {retry_count + 1} failed: {e}",
