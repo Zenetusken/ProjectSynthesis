@@ -1027,6 +1027,8 @@ class RetryOracle:
         # Per-dimension tracking
         self._elasticity: dict[str, list[bool]] = {d: [] for d in SCORE_DIMENSIONS}
         self._focus_history: list[list[str]] = []
+        self._last_entropy: float = 1.0  # default: assume exploring on first attempt
+        self._last_prompt: str = ""  # last prompt text for entropy computation
 
     @property
     def attempt_count(self) -> int:
@@ -1070,6 +1072,11 @@ class RetryOracle:
                 if dim in (focus_areas or []):
                     improved = deltas.get(dim, 0) > 0
                     self._elasticity[dim].append(improved)
+
+        # Compute entropy between consecutive prompts
+        if self._last_prompt:
+            self._last_entropy = compute_prompt_entropy(self._last_prompt, prompt)
+        self._last_prompt = prompt
 
         self._attempts.append(_Attempt(
             scores=scores,
@@ -1193,10 +1200,60 @@ class TestGate3CycleDetected:
         assert "cycle" in decision.reason.lower()
 
 
-class TestGate7DminishingReturns:
+class TestGate4CreativeExhaustion:
+    def test_accept_best_on_low_entropy(self):
+        oracle = RetryOracle(max_retries=5, threshold=8.0)
+        oracle.record_attempt(scores={"overall_score": 4.0}, prompt="same prompt here", focus_areas=[])
+        # Nearly identical prompt → entropy < 0.15
+        oracle.record_attempt(scores={"overall_score": 4.5}, prompt="same prompt here.", focus_areas=[])
+        decision = oracle.should_retry()
+        assert decision.action == "accept_best"
+        assert "exhaustion" in decision.reason.lower() or "cycle" in decision.reason.lower()
+
+
+class TestGate5NegativeMomentum:
+    def test_accept_best_on_declining_scores(self):
+        oracle = RetryOracle(max_retries=5, threshold=8.0)
+        oracle.record_attempt(scores={"overall_score": 6.0}, prompt="V1 prompt text", focus_areas=[])
+        oracle.record_attempt(scores={"overall_score": 5.0}, prompt="V2 very different prompt text", focus_areas=[])
+        oracle.record_attempt(scores={"overall_score": 4.0}, prompt="V3 completely new approach here", focus_areas=[])
+        decision = oracle.should_retry()
+        # Strongly negative momentum should trigger gate 5 or 7
+        assert decision.action == "accept_best"
+
+
+class TestGate6ZeroSumTrap:
+    def test_accept_best_on_consecutive_regressions(self):
+        oracle = RetryOracle(max_retries=10, threshold=8.0)
+        # Attempt 1: baseline
+        oracle.record_attempt(
+            scores={"overall_score": 5.0, "clarity_score": 5, "specificity_score": 5,
+                    "structure_score": 5, "faithfulness_score": 5, "conciseness_score": 5},
+            prompt="V1 original prompt", focus_areas=[],
+        )
+        # Attempt 2: some up, some down (>40% regressed)
+        oracle.record_attempt(
+            scores={"overall_score": 5.1, "clarity_score": 7, "specificity_score": 3,
+                    "structure_score": 3, "faithfulness_score": 7, "conciseness_score": 3},
+            prompt="V2 different approach", focus_areas=[],
+        )
+        # Attempt 3: again some up, some down (>40% regressed)
+        oracle.record_attempt(
+            scores={"overall_score": 5.0, "clarity_score": 4, "specificity_score": 6,
+                    "structure_score": 6, "faithfulness_score": 3, "conciseness_score": 6},
+            prompt="V3 yet another approach", focus_areas=[],
+        )
+        decision = oracle.should_retry()
+        # Two consecutive attempts with >40% regression ratio → gate 6
+        assert decision.action == "accept_best"
+
+
+class TestGate7DiminishingReturns:
     def test_accept_best_when_expected_gain_too_low(self):
         oracle = RetryOracle(max_retries=10, threshold=8.0)
-        # Record many attempts with tiny improvements
+        # Record many attempts with tiny improvements (0.1 each)
+        # After 5 attempts, diminishing returns threshold = 0.5 * 1.3^4 ≈ 1.43
+        # Momentum ≈ 0.1, well below 1.43 → gate 7 fires "accept_best"
         for i in range(5):
             oracle.record_attempt(
                 scores={"overall_score": 4.0 + i * 0.1},
@@ -1204,9 +1261,8 @@ class TestGate7DminishingReturns:
                 focus_areas=[],
             )
         decision = oracle.should_retry()
-        # After 5 attempts, diminishing returns threshold is 0.5 * 1.3^4 = 1.43
-        # But improvements are only 0.1 each
-        assert decision.action in ("accept_best", "retry")  # depends on momentum calc
+        assert decision.action == "accept_best"
+        assert "diminishing" in decision.reason.lower()
 
 
 class TestBestOfNSelection:
@@ -1270,22 +1326,9 @@ Expected: FAIL — `AttributeError: 'RetryOracle' object has no attribute 'shoul
 
 - [ ] **Step 3: Implement should_retry, _select_focus, build_diagnostic_message**
 
-Add to `RetryOracle` class in `backend/app/services/retry_oracle.py`:
+Add to `RetryOracle` class in `backend/app/services/retry_oracle.py` (note: `_last_entropy` and `_last_prompt` are already initialized in `__init__`, and entropy is computed in `record_attempt` from the skeleton in Task 8):
 
 ```python
-    def __init__(self, ...):
-        # ... existing init ...
-        self._last_entropy: float = 1.0  # default for first attempt
-
-    def record_attempt(self, scores, prompt, focus_areas):
-        # ... existing code ...
-        # Compute entropy between consecutive attempts
-        if len(self._attempts) >= 2:
-            prev_prompt = getattr(self, '_last_prompt', '')
-            self._last_entropy = compute_prompt_entropy(prev_prompt, prompt)
-        self._last_prompt = prompt
-        # ... rest of existing code ...
-
     def should_retry(self) -> RetryDecision:
         """7-gate decision algorithm."""
         if not self._attempts:
@@ -2144,6 +2187,8 @@ async def recompute_adaptation(
     Protected by per-user asyncio.Lock — concurrent calls for same user skip.
     """
     lock = _get_user_lock(user_id)
+    # Use try_lock pattern: acquire non-blocking, skip if already held.
+    # This avoids the check-then-act race of `if lock.locked(): return`.
     if lock.locked():
         logger.info("Adaptation recompute already in progress for user %s, skipping", user_id)
         return
@@ -2153,6 +2198,8 @@ async def recompute_adaptation(
 
         if feedbacks is None:
             feedbacks_orm = await get_all_feedbacks_for_user(user_id, db)
+            # Join with optimization to get validator scores for delta computation
+            from app.models.optimization import Optimization
             feedbacks = []
             for fb in feedbacks_orm:
                 overrides = None
@@ -2161,10 +2208,24 @@ async def recompute_adaptation(
                         overrides = json.loads(fb.dimension_overrides) if isinstance(fb.dimension_overrides, str) else fb.dimension_overrides
                     except (json.JSONDecodeError, TypeError):
                         pass
+                # Fetch optimization scores for this feedback
+                opt_stmt = sa_select(Optimization).where(Optimization.id == fb.optimization_id)
+                opt_result = await db.execute(opt_stmt)
+                opt = opt_result.scalar_one_or_none()
+                scores: dict = {}
+                if opt:
+                    for dim in SCORE_DIMENSIONS:
+                        val = getattr(opt, dim, None)
+                        if val is not None:
+                            scores[dim] = val
+                    scores["overall_score"] = opt.overall_score
                 feedbacks.append({
                     "rating": fb.rating,
                     "dimension_overrides": overrides,
-                    "scores": {},  # populated from optimization if needed
+                    "scores": scores,
+                    "overall_score": scores.get("overall_score"),
+                    "task_type": getattr(opt, "task_type", None) if opt else None,
+                    "primary_framework": getattr(opt, "primary_framework", None) if opt else None,
                     "created_at": fb.created_at,
                 })
 
@@ -2418,7 +2479,6 @@ async def submit_feedback(
         _recompute_adaptation_safe, current_user.id
     )
 
-    status_code = 201 if result["created"] else 200
     return {"id": result["id"], "status": "created" if result["created"] else "updated"}
 
 
@@ -2785,9 +2845,10 @@ In `backend/app/providers/base.py`, add after `get_last_usage()` (~line 268):
         else:
             text = await self.complete(system, user, model)
 
+        from datetime import datetime, timezone
         new_session = SC(
             provider_type=self.name,
-            created_at=session.created_at if session else None,
+            created_at=session.created_at if session else datetime.now(timezone.utc),
             turn_count=(session.turn_count + 1) if session else 1,
         )
         return text, new_session
@@ -3046,6 +3107,7 @@ async def refine(
     provider: LLMProvider,
     user_adaptation: dict | None,
     db: AsyncSession,
+    model: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """One refinement turn on a branch.
 
@@ -3085,12 +3147,15 @@ async def refine(
         protect_dimensions=protect_dimensions,
     )
 
-    # Session-aware completion
+    # Session-aware completion (use passed model or fall back to MODEL_ROUTING)
+    from app.providers.base import MODEL_ROUTING
+    refine_model = model or MODEL_ROUTING["optimize"]
+
     try:
         response_text, updated_session = await provider.complete_with_session(
             system=system_prompt,
             user=message,
-            model="claude-opus-4-6",
+            model=refine_model,
             session=session,
         )
     except Exception as e:
@@ -3519,15 +3584,11 @@ async def compare_branches(
     return {"branch_a": a, "branch_b": b, "score_deltas": deltas}
 
 
-async def _recompute_adaptation_safe(user_id: str) -> None:
-    from app.database import get_session_context
-    try:
-        async with get_session_context() as db:
-            await recompute_adaptation(user_id, db)
-            await db.commit()
-    except Exception:
-        logger.exception("Background adaptation recompute failed for user %s", user_id)
+    # Reuse the shared background task from feedback router (no duplication)
+    from app.routers.feedback import _recompute_adaptation_safe  # noqa: E402
 ```
+
+**Note:** `_recompute_adaptation_safe` is defined once in `feedback.py` and imported by `refinement.py` to avoid duplication.
 
 - [ ] **Step 4: Register router in main.py**
 
@@ -3618,21 +3679,25 @@ Expected: All PASS (these test oracle directly, not pipeline wiring)
 
 - [ ] **Step 3: Modify pipeline.py to use RetryOracle**
 
-In `backend/app/services/pipeline.py`:
+In `backend/app/services/pipeline.py`, make these concrete changes:
 
-1. Add imports:
+**3a. Add imports** (after line 24):
+
 ```python
 from app.services.retry_oracle import RetryOracle
 from app.services.adaptation_engine import load_adaptation
 from app.services.refinement_service import create_trunk_branch
-from app.services.session_context import SessionContext
 ```
 
-2. Remove `LOW_SCORE_THRESHOLD = 5.0` (line 29)
+**3b. Remove `LOW_SCORE_THRESHOLD`** — delete line 29 (`LOW_SCORE_THRESHOLD = 5.0`).
 
-3. Add `user_id: str | None = None` parameter to `run_pipeline()`
+**3c. Add `user_id` parameter to `run_pipeline()`** — add after `instructions` parameter (~line 191):
 
-4. Replace the retry loop section (where it checks `overall_score < LOW_SCORE_THRESHOLD`) with oracle-based retry:
+```python
+    user_id: str | None = None,
+```
+
+**3d. Load adaptation and initialize oracle** — insert after `codebase_context = None` / `total_tokens = 0` (~line 225):
 
 ```python
     # Load user adaptation (if authenticated)
@@ -3642,45 +3707,142 @@ from app.services.session_context import SessionContext
         async with get_session_context() as db:
             adaptation = await load_adaptation(user_id, db)
 
-    # Initialize oracle
+    # Initialize oracle (replaces LOW_SCORE_THRESHOLD)
     oracle_threshold = adaptation["retry_threshold"] if adaptation else 5.0
     oracle_weights = adaptation.get("dimension_weights") if adaptation else None
     oracle = RetryOracle(
-        max_retries=user_settings.get("max_retries", settings.MAX_PIPELINE_RETRIES),
+        max_retries=effective_max_retries,
         threshold=oracle_threshold,
         user_weights=oracle_weights,
     )
+```
 
-    # ... after first validation ...
+**3e. Replace the entire retry loop** (lines 601-686) — remove the `while` block that checks `overall_score < LOW_SCORE_THRESHOLD` and replace with:
+
+```python
+    # ---- Oracle-driven retry loop ----
+    # Record first attempt
+    validation_scores = validation.get("scores", {})
+    optimized_prompt = (optimization_result or {}).get("optimized_prompt", "")
     oracle.record_attempt(validation_scores, optimized_prompt, [])
-
-    # Emit retry diagnostics
     yield ("retry_diagnostics", oracle.get_diagnostics())
 
-    # Oracle retry loop
+    # Store all attempts for best-of-N selection
+    all_attempts = [{
+        "optimization_result": optimization_result,
+        "validation": validation,
+    }]
+
     while True:
         decision = oracle.should_retry()
         if decision.action in ("accept", "accept_best"):
+            # Best-of-N: if accept_best, swap to the highest-scoring attempt
             if decision.action == "accept_best" and decision.best_attempt is not None:
+                best = all_attempts[decision.best_attempt]
+                optimization_result = best["optimization_result"]
+                validation = best["validation"]
                 yield ("retry_best_selected", {
                     "selected_attempt": decision.best_attempt + 1,
+                    "total_attempts": len(all_attempts),
                     "reason": decision.reason,
                 })
             break
 
-        # Retry
-        yield ("stage", {"stage": "optimize", "status": "retrying", "attempt": oracle.attempt_count + 1})
+        # Retry: build diagnostic message for the optimizer
+        yield ("stage", {
+            "stage": "optimize",
+            "status": "retrying",
+            "attempt": oracle.attempt_count + 1,
+        })
         diagnostic_msg = oracle.build_diagnostic_message(decision.focus_areas)
+        yield ("rate_limit_warning", {
+            "message": diagnostic_msg,
+            "stage": "validate",
+        })
 
-        # Run optimize+validate with retry constraints
-        retry_constraints = {"focus_areas": decision.focus_areas}
-        # ... existing retry logic using _run_optimize_validate ...
+        try:
+            ov_result = None
+            async for event_type, event_data in _run_optimize_validate(
+                provider, raw_prompt, analysis, strategy_result, codebase_context,
+                file_contexts, url_fetched_contexts, instructions,
+                model_optimize, model_validate, stream_optimize,
+                retry_constraints={
+                    "focus_areas": decision.focus_areas,
+                    "min_score_target": oracle.threshold + 2,
+                    "previous_score": oracle._attempts[-1].overall_score,
+                    "retry_attempt": oracle.attempt_count,
+                },
+            ):
+                if event_type == "_ov_result":
+                    ov_result = event_data
+                else:
+                    yield (event_type, event_data)
 
-        oracle.record_attempt(new_scores, new_prompt, decision.focus_areas)
-        yield ("retry_diagnostics", oracle.get_diagnostics())
+            assert ov_result is not None
+
+            if ov_result["opt_failed"]:
+                logger.error("Retry optimizer failed; aborting retry loop")
+                yield ("stage", {"stage": "validate", "status": "skipped"})
+                yield ("error", {"stage": "optimize",
+                                 "error": "Retry optimizer failed",
+                                 "recoverable": False})
+                return
+
+            # Record new attempt
+            new_opt = ov_result["optimization_result"]
+            new_val = ov_result["validation"] or {}
+            new_scores = new_val.get("scores", {})
+            new_prompt = (new_opt or {}).get("optimized_prompt", "")
+            oracle.record_attempt(new_scores, new_prompt, decision.focus_areas)
+            yield ("retry_diagnostics", oracle.get_diagnostics())
+
+            all_attempts.append({
+                "optimization_result": new_opt,
+                "validation": new_val,
+            })
+
+            # Update running references
+            if new_opt:
+                optimization_result = new_opt
+            validation = new_val
+
+        except Exception as e:
+            logger.warning("Retry %d failed: %s", oracle.attempt_count, e)
+            yield ("error", {
+                "stage": "optimize",
+                "error": f"Retry failed: {e}",
+                "recoverable": True,
+            })
+            break
 ```
 
-5. Add `adaptation_snapshot` to the accumulator updates at pipeline end.
+**3f. Create trunk branch at pipeline end** — after the final validation is settled and before the `complete` event (insert before the yield of `("complete", ...)`):
+
+```python
+    # Create trunk branch for refinement support
+    try:
+        from app.database import get_session_context as _gs
+        async with _gs() as db:
+            final_prompt = (optimization_result or {}).get("optimized_prompt", "")
+            final_scores = validation.get("scores", {})
+            if final_prompt:
+                trunk = await create_trunk_branch(
+                    optimization_id=optimization_id,
+                    prompt=final_prompt,
+                    scores=final_scores,
+                    db=db,
+                )
+                await db.commit()
+                yield ("branch_created", {"branch": trunk})
+    except Exception as e:
+        logger.warning("Trunk branch creation failed: %s (non-fatal)", e)
+
+    # Store adaptation snapshot for transparency
+    if adaptation:
+        yield ("adaptation_snapshot", adaptation)
+```
+
+**3g. Thread `user_id` from the router** — In `backend/app/routers/optimize.py`, where `run_pipeline()` is called, add `user_id=current_user.id if current_user else None` to the call arguments. The `current_user` is already available from the `get_current_user` dependency.
 
 - [ ] **Step 4: Run all pipeline tests**
 
@@ -3734,14 +3896,48 @@ def compute_overall_score(
 
 - [ ] **Step 2: Update run_validate to pass user_weights through**
 
-Add `user_weights: dict | None = None` parameter to `run_validate()`. After computing scores, call `compute_overall_score(scores, user_weights)`.
+In `backend/app/services/validator.py`, add `user_weights: dict[str, float] | None = None` parameter to `run_validate()` (~line 78). Then change the `compute_overall_score` call (~line 170) to:
 
-- [ ] **Step 3: Run validator tests**
+```python
+    overall_score = compute_overall_score(raw, user_weights)
+```
 
-Run: `cd backend && source .venv/bin/activate && pytest tests/ -k "validator" -v`
+- [ ] **Step 3: Add strategy_affinities to run_strategy**
+
+In `backend/app/services/strategy.py`, add `strategy_affinities: dict | None = None` parameter to `run_strategy()`. Before returning the strategy result, inject soft bias:
+
+```python
+    # If user has strategy affinities, add soft bias
+    if strategy_affinities:
+        task = analysis.get("task_type", "")
+        affinities = strategy_affinities.get(task, {})
+        if affinities:
+            # Inject as advisory context in the strategy result
+            strategy_result["user_affinities"] = affinities
+```
+
+- [ ] **Step 4: Add retry context to run_optimize**
+
+In `backend/app/services/optimizer.py`, the existing `retry_constraints` parameter already handles focus areas. Add an additional field to the retry_constraints dict when called from the oracle:
+
+```python
+    # In the user message builder, if retry_constraints has "priority_dimensions":
+    if retry_constraints and retry_constraints.get("focus_areas"):
+        focus_names = [f.replace("_score", "") for f in retry_constraints["focus_areas"]]
+        user_message += (
+            f"\n\nRETRY CONTEXT: Focus on improving these dimensions: {', '.join(focus_names)}. "
+            f"Do not sacrifice other dimensions."
+        )
+```
+
+This is already partially handled by the existing retry_constraints mechanism. The oracle simply provides richer focus_areas.
+
+- [ ] **Step 5: Run validator tests**
+
+Run: `cd backend && source .venv/bin/activate && pytest tests/ -k "validator or strategy" -v`
 Expected: All PASS (existing tests pass default weights)
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add backend/app/services/validator.py backend/app/services/strategy.py backend/app/services/optimizer.py
@@ -3773,29 +3969,53 @@ In `backend/app/mcp_server.py`, add inside `create_mcp_server()`:
     annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
 )
 async def submit_feedback_tool(
+    ctx: Context,
     optimization_id: str,
     rating: int,
     dimension_overrides: dict | None = None,
     comment: str | None = None,
 ) -> str:
-    """Submit feedback (thumbs up/down) on an optimization."""
-    # Implementation uses feedback_service.upsert_feedback
+    """Submit feedback (thumbs up/down) on an optimization. Rating: -1, 0, or 1."""
+    from app.services.feedback_service import upsert_feedback
+    if rating not in (-1, 0, 1):
+        return json.dumps({"error": "Rating must be -1, 0, or 1"})
+    async with _opt_session(optimization_id) as (db, opt):
+        result = await upsert_feedback(
+            optimization_id=optimization_id,
+            user_id="mcp",  # MCP callers don't have user sessions
+            rating=rating,
+            dimension_overrides=dimension_overrides,
+            corrected_issues=None,
+            comment=comment,
+            db=db,
+        )
+        await db.commit()
+    return json.dumps(result)
 
 @mcp.tool(
     name="get_branches",
     annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
 )
-async def get_branches_tool(optimization_id: str) -> str:
+async def get_branches_tool(ctx: Context, optimization_id: str) -> str:
     """List all refinement branches for an optimization."""
-    # Implementation uses refinement_service.get_branches
+    from app.services.refinement_service import get_branches
+    async with _opt_session(optimization_id) as (db, opt):
+        branches = await get_branches(optimization_id, db)
+    return json.dumps({"branches": branches, "total": len(branches)})
 
 @mcp.tool(
     name="get_adaptation_state",
     annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
 )
-async def get_adaptation_state_tool(user_id: str) -> str:
+async def get_adaptation_state_tool(ctx: Context, user_id: str) -> str:
     """Get the current adaptation state (learned weights, threshold, affinities) for a user."""
-    # Implementation uses adaptation_engine.load_adaptation
+    from app.services.adaptation_engine import load_adaptation
+    from app.database import get_session_context
+    async with get_session_context() as db:
+        state = await load_adaptation(user_id, db)
+    if not state:
+        return json.dumps({"error": "No adaptation state found", "user_id": user_id})
+    return json.dumps(state)
 ```
 
 - [ ] **Step 3: Run existing tests**
@@ -3823,6 +4043,13 @@ New Svelte 5 runes stores for feedback and refinement, API client extensions. De
 
 - [ ] **Step 1: Add feedback API functions**
 
+**IMPORTANT:** `apiFetch` returns a `Response` object (it wraps `fetch`). Callers must:
+- Call `res.json()` on the response to parse JSON
+- Use `JSON.stringify(body)` for POST request bodies
+- Include `headers: { 'Content-Type': 'application/json' }` for POST requests
+- Prefix all URLs with `${BASE}`
+- Follow the existing pattern (see `fetchHealth`, `batchDeleteOptimizations`, `startOptimization`)
+
 ```typescript
 // Append to frontend/src/lib/api/client.ts
 
@@ -3832,13 +4059,21 @@ export async function submitFeedback(
   optimizationId: string,
   body: { rating: -1 | 0 | 1; dimension_overrides?: Record<string, number>; comment?: string }
 ): Promise<{ id: string; status: string }> {
-  return apiFetch(`/api/optimize/${optimizationId}/feedback`, { method: 'POST', body });
+  const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Submit feedback failed: ${res.status}`);
+  return res.json();
 }
 
 export async function getFeedback(
   optimizationId: string
 ): Promise<{ feedback: any | null; aggregate: any }> {
-  return apiFetch(`/api/optimize/${optimizationId}/feedback`);
+  const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/feedback`);
+  if (!res.ok) throw new Error(`Get feedback failed: ${res.status}`);
+  return res.json();
 }
 
 export async function getFeedbackHistory(
@@ -3848,15 +4083,23 @@ export async function getFeedbackHistory(
   if (params.offset) qs.set('offset', String(params.offset));
   if (params.limit) qs.set('limit', String(params.limit));
   if (params.rating !== undefined) qs.set('rating', String(params.rating));
-  return apiFetch(`/api/feedback/history?${qs}`);
+  const res = await apiFetch(`${BASE}/api/feedback/history?${qs}`);
+  if (!res.ok) throw new Error(`Feedback history failed: ${res.status}`);
+  return res.json();
 }
 
 export async function getFeedbackStats(): Promise<any> {
-  return apiFetch('/api/feedback/stats');
+  const res = await apiFetch(`${BASE}/api/feedback/stats`);
+  if (!res.ok) throw new Error(`Feedback stats failed: ${res.status}`);
+  return res.json();
 }
 
 // ── Refinement API ──────────────────────────────────────────────────
 
+/**
+ * Start a refinement turn (SSE stream). Follows the same pattern as
+ * startOptimization: get Response, check ok, iterate parseSSEStream.
+ */
 export function startRefinement(
   optimizationId: string,
   body: { message: string; protect_dimensions?: string[] },
@@ -3865,17 +4108,30 @@ export function startRefinement(
   onError?: (error: Error) => void
 ): AbortController {
   const controller = new AbortController();
-  const url = `/api/optimize/${optimizationId}/refine`;
 
-  apiFetch(url, { method: 'POST', body, signal: controller.signal, raw: true })
-    .then(async (response: Response) => {
-      if (!response.body) return;
-      await parseSSEStream(response.body, onEvent);
+  (async () => {
+    try {
+      const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/refine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Refinement failed (${res.status}): ${errorText}`);
+      }
+      if (!res.body) throw new Error('No response body for SSE stream');
+
+      for await (const sseEvent of parseSSEStream(res.body, controller.signal)) {
+        onEvent(sseEvent);
+      }
       onComplete?.();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') onError?.(err);
-    });
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') onError?.(err as Error);
+    }
+  })();
 
   return controller;
 }
@@ -3888,17 +4144,30 @@ export function startBranchFork(
   onError?: (error: Error) => void
 ): AbortController {
   const controller = new AbortController();
-  const url = `/api/optimize/${optimizationId}/branches`;
 
-  apiFetch(url, { method: 'POST', body, signal: controller.signal, raw: true })
-    .then(async (response: Response) => {
-      if (!response.body) return;
-      await parseSSEStream(response.body, onEvent);
+  (async () => {
+    try {
+      const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/branches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Branch fork failed (${res.status}): ${errorText}`);
+      }
+      if (!res.body) throw new Error('No response body for SSE stream');
+
+      for await (const sseEvent of parseSSEStream(res.body, controller.signal)) {
+        onEvent(sseEvent);
+      }
       onComplete?.();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') onError?.(err);
-    });
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') onError?.(err as Error);
+    }
+  })();
 
   return controller;
 }
@@ -3906,21 +4175,31 @@ export function startBranchFork(
 export async function listBranches(
   optimizationId: string
 ): Promise<{ branches: any[]; total: number }> {
-  return apiFetch(`/api/optimize/${optimizationId}/branches`);
+  const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/branches`);
+  if (!res.ok) throw new Error(`List branches failed: ${res.status}`);
+  return res.json();
 }
 
 export async function getBranch(
   optimizationId: string,
   branchId: string
 ): Promise<any> {
-  return apiFetch(`/api/optimize/${optimizationId}/branches/${branchId}`);
+  const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/branches/${branchId}`);
+  if (!res.ok) throw new Error(`Get branch failed: ${res.status}`);
+  return res.json();
 }
 
 export async function selectBranch(
   optimizationId: string,
   body: { branch_id: string; reason?: string }
 ): Promise<any> {
-  return apiFetch(`/api/optimize/${optimizationId}/branches/select`, { method: 'POST', body });
+  const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/branches/select`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Select branch failed: ${res.status}`);
+  return res.json();
 }
 
 export async function compareBranches(
@@ -3928,7 +4207,11 @@ export async function compareBranches(
   branchA: string,
   branchB: string
 ): Promise<any> {
-  return apiFetch(`/api/optimize/${optimizationId}/branches/compare?branch_a=${branchA}&branch_b=${branchB}`);
+  const res = await apiFetch(
+    `${BASE}/api/optimize/${optimizationId}/branches/compare?branch_a=${encodeURIComponent(branchA)}&branch_b=${encodeURIComponent(branchB)}`
+  );
+  if (!res.ok) throw new Error(`Compare branches failed: ${res.status}`);
+  return res.json();
 }
 ```
 
@@ -4318,18 +4601,24 @@ Frontend components following brand guidelines. Depends on Chunk 6 (stores + API
 
 - [ ] **Step 1: Create FeedbackInline component**
 
-32px strip below optimized prompt with thumbs up/down, dimension chips, score circle, refine trigger, and branch indicator. Uses brand-guideline colors: neon-green for positive, neon-red for negative, neon-purple for overridden dimensions. See spec Section 6 for full details.
+32px strip below optimized prompt with thumbs up/down, dimension chips, score circle, refine trigger, and branch indicator. Uses brand-guideline colors: neon-green (`--color-neon-green`) for positive, neon-red (`--color-neon-red`) for negative, neon-purple (`--color-neon-purple`) for overridden dimensions. See spec Section 6 for full details.
 
 Component must:
 - Import from `feedback` store
 - Show thumbs with active state (1px neon border + 8% fill)
-- Show dimension chips (font-mono 10px, 3-letter abbreviations)
-- Include "Refine" ghost button that expands RefinementInput
+- Show dimension chips (font-mono 10px, 3-letter abbreviations: CLR, SPC, STR, FTH, CNC)
+- Include "Refine" ghost button that triggers `refinement.openRefinement()`
 - Follow 5-state interactive lifecycle and zero-effects directive
+- Use Svelte 5 runes syntax (`$state`, `$derived`, `$effect`)
 
 Use `@brand-guidelines` skill during implementation for exact styling.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Verify TypeScript compiles**
+
+Run: `cd frontend && npx svelte-check --threshold warning 2>&1 | tail -10`
+Expected: No new errors from FeedbackInline.svelte
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add frontend/src/lib/components/editor/FeedbackInline.svelte
@@ -4351,9 +4640,14 @@ Expandable well below FeedbackInline. Uses `slide-up-in` entry (300ms). Contains
 - Turn history (reverse chronological, user=cyan, auto=indigo)
 - Streaming state indicator (border-color oscillation, NOT a glow)
 
-Use `@brand-guidelines` skill during implementation.
+Use `@brand-guidelines` skill during implementation. Use Svelte 5 runes syntax.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Verify TypeScript compiles**
+
+Run: `cd frontend && npx svelte-check --threshold warning 2>&1 | tail -10`
+Expected: No new errors from RefinementInput.svelte
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add frontend/src/lib/components/editor/RefinementInput.svelte
@@ -4375,9 +4669,14 @@ Renders inside Validate StageCard during auto-retry. Shows:
 - Focus areas as chip-rects
 - Decision line (neon-yellow=RETRY, neon-green=ACCEPT)
 
-Use `@brand-guidelines` skill during implementation.
+Use `@brand-guidelines` skill during implementation. Use Svelte 5 runes syntax.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Verify TypeScript compiles**
+
+Run: `cd frontend && npx svelte-check --threshold warning 2>&1 | tail -10`
+Expected: No new errors from RetryDiagnostics.svelte
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add frontend/src/lib/components/pipeline/RetryDiagnostics.svelte
@@ -4404,7 +4703,12 @@ Modal overlay (glass bg, 8px blur, z-index 50). Contains:
 - Turn timeline (horizontal, 12px nodes)
 - Select buttons
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Verify TypeScript compiles**
+
+Run: `cd frontend && npx svelte-check --threshold warning 2>&1 | tail -10`
+Expected: No new errors from BranchIndicator or BranchCompare
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add frontend/src/lib/components/pipeline/BranchIndicator.svelte frontend/src/lib/components/pipeline/BranchCompare.svelte
@@ -4424,28 +4728,63 @@ git commit -m "feat: add BranchIndicator and BranchCompare components"
 
 - [ ] **Step 1: Create InspectorFeedback panel**
 
-Full feedback panel: verdict thumbs, dimension override ScoreBars with steppers, issue corrections, comment textarea, save button.
+Full feedback panel (see spec Section 6.4). Contents:
+- Verdict thumbs (up/down/neutral) with active neon state
+- Per-dimension ScoreBars (20px height) with stepper controls (±1) for dimension overrides
+- Dimension names in font-mono 10px
+- Issue corrections list (checkboxes, neon-red for unresolved)
+- Comment textarea (bg-bg-input, 80px height)
+- Save button (neon-cyan primary style)
+- Import from `feedback` store, use Svelte 5 runes
 
 - [ ] **Step 2: Create InspectorRefinement panel**
 
-Turn history display with session state. Shows all turns with source indicators and score deltas.
+Turn history display (see spec Section 6.5). Contents:
+- Reverse-chronological turn list
+- Source indicators: user turns = neon-cyan badge, auto turns = neon-indigo badge
+- Per-turn message summary (truncated to 2 lines)
+- Score delta chips per dimension (neon-green for positive, neon-red for negative)
+- Session state indicator (active / compacted / exhausted)
+- Import from `refinement` store, use Svelte 5 runes
 
 - [ ] **Step 3: Create InspectorBranches panel**
 
-Branch tree with monospace labels, fork/compare/select controls.
+Branch tree with controls (see spec Section 6.6). Contents:
+- Vertical branch tree: trunk at top, forks indented with 1px neon-purple connector lines
+- Branch labels in font-mono
+- Status badges: active=neon-green, selected=neon-cyan, abandoned=neon-dim
+- Per-branch: label, turn count, overall score
+- Fork button (ghost, neon-purple), Compare button (ghost, neon-blue), Select button (primary, neon-cyan)
+- Import from `refinement` store, use Svelte 5 runes
 
 - [ ] **Step 4: Create InspectorAdaptation panel**
 
-Adaptation transparency: weight bars, strategy affinities, retry threshold, reset button.
+Adaptation transparency (see spec Section 6.7). Contents:
+- Per-dimension weight bars: horizontal bars (100% width), height 4px, color-coded
+- Default weight shown as a thin vertical 1px marker on each bar
+- Strategy affinities: per-task-type list with preferred/avoid badges
+- Retry threshold display: numeric + position on 3.0-8.0 scale
+- Feedback count and last computed timestamp
+- Reset button (ghost, neon-red, with confirmation)
+- Import from `feedback` store (adaptationState), use Svelte 5 runes
 
 - [ ] **Step 5: Mount panels in Inspector.svelte**
 
-Add conditional rendering of new panels based on active optimization state.
+Add conditional rendering of new panels in `Inspector.svelte`. Each panel shows when:
+- **InspectorFeedback**: always visible when an optimization is loaded
+- **InspectorRefinement**: visible when the optimization has `refinement_turns > 0`
+- **InspectorBranches**: visible when the optimization has `branch_count > 1`
+- **InspectorAdaptation**: visible when `feedback.adaptationState` is not null
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Verify TypeScript compiles**
+
+Run: `cd frontend && npx svelte-check --threshold warning 2>&1 | tail -10`
+Expected: No new errors from Inspector panels
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/src/lib/components/layout/Inspector*.svelte
+git add frontend/src/lib/components/layout/InspectorFeedback.svelte frontend/src/lib/components/layout/InspectorRefinement.svelte frontend/src/lib/components/layout/InspectorBranches.svelte frontend/src/lib/components/layout/InspectorAdaptation.svelte frontend/src/lib/components/layout/Inspector.svelte
 git commit -m "feat: add Inspector panels for feedback, refinement, branches, and adaptation"
 ```
 
@@ -4460,9 +4799,9 @@ git commit -m "feat: add Inspector panels for feedback, refinement, branches, an
 
 Add FeedbackInline component below the optimized prompt display. Load feedback when optimization is loaded. Show RefinementInput below when expanded.
 
-- [ ] **Step 2: Mount BranchIndicator in PromptPipeline or RunHeader**
+- [ ] **Step 2: Mount BranchIndicator in ForgeArtifact**
 
-Show branch indicator in the pipeline header when branches exist.
+Show BranchIndicator in ForgeArtifact above the optimized prompt, adjacent to the score display. Renders only when `refinement.branchCount > 1`. Import from `refinement` store.
 
 - [ ] **Step 3: Verify full frontend compiles**
 
@@ -4472,8 +4811,8 @@ Expected: No errors
 - [ ] **Step 4: Commit**
 
 ```bash
-git add frontend/src/lib/components/editor/ForgeArtifact.svelte frontend/src/lib/components/editor/PromptPipeline.svelte
-git commit -m "feat: mount feedback, refinement, and branch components in editor views"
+git add frontend/src/lib/components/editor/ForgeArtifact.svelte
+git commit -m "feat: mount feedback, refinement, and branch components in ForgeArtifact"
 ```
 
 ---
@@ -4548,6 +4887,10 @@ Expected: All services running
 
 - [ ] **Step 5: Final commit if any fixes needed**
 
+Stage only the specific files that needed fixes (do NOT use `git add -A`):
+
 ```bash
-git add -A && git commit -m "fix: address any regression issues from quality feedback loops integration"
+# Only stage files that had regressions — list them explicitly
+git add <specific-files-that-were-fixed>
+git commit -m "fix: address regression issues from quality feedback loops integration"
 ```
