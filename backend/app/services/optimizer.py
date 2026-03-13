@@ -85,12 +85,14 @@ _WEAVING_GUIDANCE: dict[str, str] = {
     "security": (
         "- Map auth flows and credential handling into explicit review scope with specific file:function references\n"
         "- Reference input validation patterns, sanitization functions, and encryption usage\n"
-        "- Surface trust boundaries: where external input enters, where privilege checks occur, where secrets are accessed\n"
+        "- Surface trust boundaries: where external input enters, where privilege checks occur,\n"
+        "  where secrets are accessed\n"
         "- Extract configuration-driven security controls (CORS, rate limiting, cookie flags) as audit checkpoints\n"
         "- Use observed token lifecycle patterns (creation, storage, rotation, expiry) to scope credential review"
     ),
     "documentation": (
-        "- Reference public API surfaces (exported functions, route handlers, class interfaces) as documentation targets\n"
+        "- Reference public API surfaces (exported functions, route handlers, class interfaces)\n"
+        "  as documentation targets\n"
         "- Use module-level docstrings and existing documentation patterns to establish voice and depth conventions\n"
         "- Surface configuration knobs, environment variables, and deployment parameters as documentation scope\n"
         "- Extract data flow paths and component relationships to inform architecture documentation structure"
