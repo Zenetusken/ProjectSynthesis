@@ -14,7 +14,7 @@ import re
 
 import httpx
 
-from app.services.cache_service import get_cache
+from app.services.cache_service import CacheService, get_cache
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +117,8 @@ async def fetch_url_contexts(url_contexts: list[str] | None) -> list[dict]:
         for url in url_contexts:
             # Check cache first
             if cache:
-                url_hash = cache.hash_content(url)
-                cache_key = cache.make_key("url_fetch", url_hash)
+                url_hash = CacheService.hash_content(url)
+                cache_key = CacheService.make_key("url_fetch", url_hash)
                 cached = await cache.get(cache_key)
                 if cached is not None:
                     results.append(cached)

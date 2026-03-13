@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_SETTINGS: str = "30/minute"
     RATE_LIMIT_PROVIDER_READ: str = "30/minute"
     RATE_LIMIT_PROVIDER_WRITE: str = "10/minute"
+    RATE_LIMIT_FEEDBACK: str = "10/minute"
+    RATE_LIMIT_REFINE: str = "5/minute"
+    RATE_LIMIT_BRANCH_FORK: str = "3/minute"
+    RATE_LIMIT_BRANCH_SELECT: str = "10/minute"
 
     # Trusted reverse-proxy IPs (comma-separated). X-Forwarded-For is only
     # honoured when the direct connection comes from one of these addresses.
@@ -100,6 +104,14 @@ class Settings(BaseSettings):
     EXPLORE_MAX_AMBIGUOUS_MATCHES: int = 3   # skip prompt-referenced files with > N tree matches
     EXPLORE_MAX_CONTEXT_CHARS: int = 700_000  # ~175K tokens; char ceiling for LLM context payload
     EXPLORE_RESULT_CACHE_TTL: int = 3600     # 1 hour
+
+    # 1M context window beta (H6).  Requires Opus 4.6 / Sonnet 4.6.
+    CONTEXT_1M_ENABLED: bool = False
+    CONTEXT_1M_BETA_STRING: str = "context-1m-2025-08-07"
+
+    # Compaction beta (M6).  Enables automatic context summarization in agentic loops.
+    COMPACTION_ENABLED: bool = False
+    COMPACTION_BETA_STRING: str = "compact-2026-01-12"
 
     # Redis (optional — in-memory fallback when unavailable)
     REDIS_HOST: str = "localhost"

@@ -148,8 +148,15 @@ async def _detect_provider_inner() -> LLMProvider:
                         except ImportError as ie:
                             logger.warning(
                                 "Claude CLI found but claude-agent-sdk not installed: %s. "
-                                "Install with: pip install claude-agent-sdk",
+                                "Install with: pip install claude-agent-sdk. "
+                                "Falling through to AnthropicAPIProvider.",
                                 ie,
+                            )
+                        except Exception as init_err:
+                            logger.warning(
+                                "ClaudeCLIProvider instantiation failed: %s: %s. "
+                                "Falling through to AnthropicAPIProvider.",
+                                type(init_err).__name__, init_err,
                             )
         except asyncio.TimeoutError:
             logger.warning("Claude CLI probe timed out after 5 seconds")
@@ -160,8 +167,18 @@ async def _detect_provider_inner() -> LLMProvider:
     if settings.ANTHROPIC_API_KEY:
         try:
             from app.providers.anthropic_api import AnthropicAPIProvider
-            provider = AnthropicAPIProvider(api_key=settings.ANTHROPIC_API_KEY)
+            betas: list[str] = []
+            if settings.CONTEXT_1M_ENABLED:
+                betas.append(settings.CONTEXT_1M_BETA_STRING)
+            if settings.COMPACTION_ENABLED:
+                betas.append(settings.COMPACTION_BETA_STRING)
+            provider = AnthropicAPIProvider(
+                api_key=settings.ANTHROPIC_API_KEY,
+                betas=betas if betas else None,
+            )
             logger.info("Using AnthropicAPIProvider (direct API)")
+            if betas:
+                logger.info("API betas enabled: %s", betas)
             return provider
         except ImportError as ie:
             logger.warning(

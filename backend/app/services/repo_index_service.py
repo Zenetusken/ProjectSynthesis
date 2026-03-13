@@ -374,12 +374,32 @@ class RepoIndexService:
         outlines: list[str] = []
         vecs: list[np.ndarray] = []
 
+        # Fix #13: validate embedding buffer before deserialization to guard
+        # against corrupted/truncated rows from failed writes or schema changes.
+        # 384 = all-MiniLM-L6-v2 output dimension (settings.EMBEDDING_MODEL).
+        # Changing the model requires a full reindex; this validates stored data.
+        expected_dim = 384
+        expected_bytes = expected_dim * 4  # float32 = 4 bytes
+        skipped = 0
         for rec in records:
+            if rec.embedding is None or len(rec.embedding) != expected_bytes:
+                skipped += 1
+                continue
             paths.append(rec.file_path)
             shas.append(rec.file_sha or "")
             sizes.append(rec.file_size_bytes or 0)
             outlines.append(rec.outline or "")
             vecs.append(np.frombuffer(rec.embedding, dtype=np.float32))
+
+        if skipped:
+            logger.warning(
+                "Skipped %d records with invalid embedding size for %s@%s",
+                skipped, repo_full_name, branch,
+            )
+
+        if not vecs:
+            logger.warning("No valid embeddings for %s@%s", repo_full_name, branch)
+            return []
 
         index_vecs = np.stack(vecs)  # (N, 384)
 

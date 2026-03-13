@@ -375,7 +375,7 @@ async def run_optimize(
                 timeout=settings.OPTIMIZE_TIMEOUT_SECONDS,
             )
         except Exception as e:
-            logger.error(f"Stage 3 (Optimize) non-streaming complete() failed: {e}")
+            logger.error("Stage 3 (Optimize) non-streaming complete() failed: %s", e)
             full_text = ""
         # Parse using same marker logic as streaming path
         parser = OptimizeStreamParser()
@@ -409,7 +409,7 @@ async def run_optimize(
                     timeout=settings.OPTIMIZE_TIMEOUT_SECONDS,
                 )
             except Exception as e2:
-                logger.error(f"Stage 3 (Optimize) complete() also failed: {e2}")
+                logger.error("Stage 3 (Optimize) complete() also failed: %s", e2)
                 full_text = ""
             # Re-parse with fresh parser since stream parser state is invalid
             parser = OptimizeStreamParser()
@@ -450,7 +450,7 @@ async def run_optimize(
             framework_applied = fallback.get("framework_applied", framework_applied)
             optimization_notes = fallback.get("optimization_notes", "")
         except Exception as e:
-            logger.error(f"complete_json() fallback also failed: {e}")
+            logger.error("complete_json() fallback also failed: %s", e)
             optimized_prompt = full_text
             changes_made = []
             optimization_notes = ""

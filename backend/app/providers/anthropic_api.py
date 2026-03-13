@@ -1,16 +1,30 @@
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 from typing import AsyncGenerator, Callable
 
-from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
+from app.providers.base import (
+    AgenticResult,
+    CompletionUsage,
+    LLMProvider,
+    ToolDefinition,
+    invoke_tool,
+    parse_json_robust,
+)
 
 logger = logging.getLogger(__name__)
 
+# Task-local usage tracking — safe for concurrent asyncio tasks sharing one provider.
+_usage_var: contextvars.ContextVar[CompletionUsage | None] = contextvars.ContextVar(
+    "_anthropic_usage", default=None,
+)
+
 # Models that support adaptive thinking via thinking: {type: "adaptive"}.
 # budget_tokens is deprecated on these models — adaptive thinking replaces it.
-# Haiku 4.5 is NOT in this set (no thinking support).
+# Haiku 4.5 supports manual thinking (budget_tokens) but NOT adaptive thinking,
+# so it is excluded from this set.
 _THINKING_MODELS: frozenset[str] = frozenset({"claude-opus-4-6", "claude-sonnet-4-6"})
 
 # max_tokens for turns that may include thinking blocks (thinking + output must fit).
@@ -18,17 +32,51 @@ _THINKING_MODELS: frozenset[str] = frozenset({"claude-opus-4-6", "claude-sonnet-
 _MAX_TOKENS_THINKING = 16000
 _MAX_TOKENS_DEFAULT = 8192
 
+# L2: Default effort level per model family.  Reduces token spend on
+# cost-sensitive stages (Haiku synthesis, Sonnet classification) while
+# preserving full thinking depth for creative Opus work.
+_EFFORT_BY_MODEL_PREFIX: dict[str, str] = {
+    "claude-opus-4": "high",
+    "claude-sonnet-4": "medium",
+    "claude-haiku-4": "low",
+}
+
+
+def _extract_usage(response, model: str) -> CompletionUsage:
+    """Extract CompletionUsage from an Anthropic SDK response object."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return CompletionUsage(is_estimated=True, model=model)
+    return CompletionUsage(
+        input_tokens=getattr(usage, "input_tokens", 0) or 0,
+        output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        cache_read_input_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+        cache_creation_input_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+        is_estimated=False,
+        model=model,
+    )
+
 
 class AnthropicAPIProvider(LLMProvider):
     """LLM provider using the Anthropic Python SDK with direct API calls."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, *, betas: list[str] | None = None):
         import anthropic
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        extra_headers: dict[str, str] = {}
+        if betas:
+            extra_headers["anthropic-beta"] = ",".join(betas)
+        self._client = anthropic.AsyncAnthropic(
+            api_key=api_key,
+            default_headers=extra_headers if extra_headers else None,
+        )
 
     @property
     def name(self) -> str:
         return "anthropic_api"
+
+    def get_last_usage(self) -> CompletionUsage | None:
+        """Return token usage from the most recent LLM call (task-local)."""
+        return _usage_var.get(None)
 
     async def validate_key(self) -> tuple[bool, str]:
         """Validate the API key with a minimal API call.
@@ -52,11 +100,16 @@ class AnthropicAPIProvider(LLMProvider):
         except Exception as e:
             return False, f"Key saved but validation failed: {type(e).__name__}: {e}"
 
-    def _make_extra(self, model: str, *, schema: dict | None = None) -> tuple[int, dict]:
+    def _make_extra(
+        self, model: str, *, schema: dict | None = None, effort: str | None = None,
+    ) -> tuple[int, dict]:
         """Return (max_tokens, extra_kwargs) for messages.stream() calls.
 
         When ``schema`` is provided, thinking is suppressed — the Anthropic API
         rejects requests that combine output_config.json_schema with thinking.
+
+        ``effort`` controls thinking depth via ``output_config.effort``.
+        When None, a model-family default is applied from ``_EFFORT_BY_MODEL_PREFIX``.
         """
         use_thinking = model in _THINKING_MODELS
         max_tokens = _MAX_TOKENS_THINKING if use_thinking else _MAX_TOKENS_DEFAULT
@@ -74,6 +127,17 @@ class AnthropicAPIProvider(LLMProvider):
             extra = {"thinking": {"type": "adaptive"}}
         else:
             extra = {}
+
+        # L2: Resolve effort — explicit > model-family default
+        resolved_effort = effort
+        if resolved_effort is None:
+            for prefix, eff in _EFFORT_BY_MODEL_PREFIX.items():
+                if model.startswith(prefix):
+                    resolved_effort = eff
+                    break
+        if resolved_effort is not None:
+            extra.setdefault("output_config", {})["effort"] = resolved_effort
+
         return max_tokens, extra
 
     async def _call_stream(
@@ -92,6 +156,7 @@ class AnthropicAPIProvider(LLMProvider):
             **extra,
         ) as stream:
             response = await stream.get_final_message()
+        _usage_var.set(_extract_usage(response, model))
         # Use next() — thinking blocks may precede the text block.
         return next((b.text for b in response.content if hasattr(b, "text")), "")
 
@@ -111,6 +176,9 @@ class AnthropicAPIProvider(LLMProvider):
             # text_stream automatically skips thinking deltas — only yields text tokens.
             async for chunk in stream.text_stream:
                 yield chunk
+            # Capture usage after stream is fully consumed
+            response = await stream.get_final_message()
+            _usage_var.set(_extract_usage(response, model))
 
     async def complete_json(
         self,
@@ -149,6 +217,7 @@ class AnthropicAPIProvider(LLMProvider):
         on_tool_call: Callable[[str, dict], None] | None = None,
         on_agent_text: Callable[[str], None] | None = None,
         output_schema: dict | None = None,
+        resume_session_id: str | None = None,
     ) -> AgenticResult:
         api_tools = [
             {
@@ -178,11 +247,20 @@ class AnthropicAPIProvider(LLMProvider):
         messages = [{"role": "user", "content": user}]
         all_tool_calls: list[dict] = []
         turns = 0
+        accumulated_usage = CompletionUsage(model=model)
 
         # Adaptive thinking: enabled for Opus 4.6 and Sonnet 4.6 (both GA, no beta header).
         # budget_tokens is deprecated on these models — adaptive thinking replaces it.
         # Streaming (get_final_message) prevents HTTP timeouts on long thinking+tool turns.
         max_tokens, extra = self._make_extra(model)
+
+        # M6: Compaction beta — automatic context summarization for long agentic loops.
+        from app.config import settings as _cfg
+        compaction_kwargs: dict = {}
+        if _cfg.COMPACTION_ENABLED:
+            compaction_kwargs["context_management"] = {
+                "edits": [{"type": "compact_20260112"}]
+            }
 
         while turns < max_turns:
             turns += 1
@@ -197,8 +275,12 @@ class AnthropicAPIProvider(LLMProvider):
                 tools=api_tools,  # type: ignore[arg-type]
                 messages=messages,  # type: ignore[arg-type]
                 **extra,
+                **compaction_kwargs,
             ) as stream:
                 response = await stream.get_final_message()
+            # Accumulate usage from this turn
+            accumulated_usage += _extract_usage(response, model)
+            _usage_var.set(accumulated_usage)
             # Append full content including any thinking blocks — the API requires
             # thinking blocks to be preserved in conversation history when using thinking.
             messages.append({"role": "assistant", "content": response.content})  # type: ignore[dict-item]
@@ -257,6 +339,14 @@ class AnthropicAPIProvider(LLMProvider):
                             tool_result["is_error"] = True
                         results.append(tool_result)
                 messages.append({"role": "user", "content": results})  # type: ignore[dict-item]
+            elif response.stop_reason == "pause_turn":
+                # L1: Server-side tool hit its iteration limit — the model wants
+                # to continue.  Assistant content is already appended; re-send.
+                logger.info(
+                    "Agentic loop received pause_turn after %d turn(s); continuing",
+                    turns,
+                )
+                continue
             else:
                 # "end_turn", "max_tokens", "stop_sequence", or any other reason —
                 # extract whatever text the model produced and return it.
@@ -281,5 +371,5 @@ class AnthropicAPIProvider(LLMProvider):
                     stop_reason=response.stop_reason or "end_turn",
                 )
 
-        logger.warning(f"Agentic loop hit max_turns ({max_turns})")
+        logger.warning("Agentic loop hit max_turns (%d)", max_turns)
         return AgenticResult(text="", tool_calls=all_tool_calls, stop_reason="max_turns")

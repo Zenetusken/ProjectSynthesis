@@ -3,6 +3,17 @@
 All request/response schemas are re-exported here for convenience.
 """
 
+from app.schemas.feedback import (
+    AdaptationStateResponse,
+    DimensionDelta,
+    FeedbackAggregate,
+    FeedbackCreate,
+    FeedbackResponse,
+    FeedbackStatsResponse,
+    FeedbackWithAggregate,
+    InstructionCompliance,
+    RetryHistoryEntry,
+)
 from app.schemas.github import (
     GitHubUserInfo,
     LinkedRepoResponse,
@@ -14,6 +25,14 @@ from app.schemas.optimization import (
     OptimizeRequest,
     PatchOptimizationRequest,
     RetryRequest,
+)
+from app.schemas.refinement import (
+    BranchCompareResponse,
+    BranchListResponse,
+    BranchResponse,
+    ForkRequest,
+    RefineRequest,
+    SelectRequest,
 )
 
 __all__ = [
@@ -27,4 +46,20 @@ __all__ = [
     "LinkRepoRequest",
     "LinkedRepoResponse",
     "GitHubUserInfo",
+    # H3: Quality feedback loops
+    "AdaptationStateResponse",
+    "DimensionDelta",
+    "FeedbackAggregate",
+    "FeedbackCreate",
+    "FeedbackResponse",
+    "FeedbackStatsResponse",
+    "FeedbackWithAggregate",
+    "InstructionCompliance",
+    "RetryHistoryEntry",
+    "BranchCompareResponse",
+    "BranchListResponse",
+    "BranchResponse",
+    "ForkRequest",
+    "RefineRequest",
+    "SelectRequest",
 ]

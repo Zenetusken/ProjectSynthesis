@@ -10,7 +10,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from app.providers.base import AgenticResult, LLMProvider, ToolDefinition
+from app.providers.base import AgenticResult, CompletionUsage, LLMProvider, ToolDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,12 @@ class MockProvider(LLMProvider):
     @property
     def name(self) -> str:
         return "mock"
+
+    def get_last_usage(self) -> CompletionUsage | None:
+        """Return fixed estimated usage for testing."""
+        return CompletionUsage(
+            input_tokens=100, output_tokens=50, is_estimated=True, model="mock",
+        )
 
     async def complete(self, system: str, user: str, model: str) -> str:
         return "Mock optimized prompt: always respond in bullet points."
@@ -69,6 +75,7 @@ class MockProvider(LLMProvider):
         on_tool_call: Any = None,
         on_agent_text: Any = None,
         output_schema: dict | None = None,
+        resume_session_id: str | None = None,
     ) -> AgenticResult:
         # Explore stage only runs when repo_full_name is provided.
         # Tests don't send a repo so this is never called in normal test runs.

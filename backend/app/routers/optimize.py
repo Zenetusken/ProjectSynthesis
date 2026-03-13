@@ -1,9 +1,9 @@
 import asyncio
-import datetime as dt
 import json
 import logging
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
@@ -16,6 +16,7 @@ from app.database import async_session, get_session
 from app.dependencies.auth import get_current_user
 from app.errors import conflict, not_found, service_unavailable
 from app.models.optimization import Optimization
+from app.routers._sse import sse_event
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.optimization import OptimizeRequest, PatchOptimizationRequest, RetryRequest
 from app.services.optimization_service import PipelineAccumulator
@@ -26,36 +27,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["optimize"])
 
 
-def _default_serializer(obj: object) -> str:
-    """JSON fallback serializer for types not handled by default."""
-    if isinstance(obj, (dt.datetime, dt.date)):
-        return obj.isoformat()
-    if isinstance(obj, Exception):
-        return str(obj)
-    return repr(obj)  # Last resort — never silently drop data
-
-
-def _sse_event(event_type: str, data: dict) -> str:
-    """Format an SSE event with safe JSON serialization.
-
-    Uses a fallback serializer so that non-serializable values (datetimes,
-    exceptions, etc.) never crash the stream silently.
-    """
-    try:
-        payload = json.dumps(data, default=_default_serializer)
-    except Exception as e:
-        logger.error("SSE serialization failed for event %s: %s", event_type, e)
-        payload = json.dumps({"error": f"Serialization error: {e}"})
-    return f"event: {event_type}\ndata: {payload}\n\n"
-
-
 @router.post("/api/optimize")
 async def optimize_prompt(
     request: OptimizeRequest,
     req: Request,
     retry_of: str | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
-):
+) -> StreamingResponse:
     """Run the optimization pipeline with SSE streaming."""
     if not req.app.state.provider:
         raise service_unavailable("LLM provider not initialized")
@@ -63,7 +41,7 @@ async def optimize_prompt(
     opt_id = str(uuid.uuid4())
     start_time = time.time()
 
-    async def event_stream():
+    async def event_stream() -> AsyncGenerator[str, None]:
         # Session 1: create the record in pending state
         async with async_session() as s:
             s.add(Optimization(
@@ -105,8 +83,9 @@ async def optimize_prompt(
                     file_contexts=request.file_contexts,
                     instructions=request.instructions,
                     url_fetched_contexts=url_fetched,
+                    user_id=current_user.id,
                 ):
-                    yield _sse_event(event_type, event_data)
+                    yield sse_event(event_type, event_data)
 
                     if event_type == "validation" and "scores" not in event_data:
                         logger.error(
@@ -118,18 +97,24 @@ async def optimize_prompt(
                 updates = acc.finalize(req.app.state.provider.name, start_time)
 
                 async with async_session() as s:
-                    await s.execute(
+                    result = await s.execute(
                         update(Optimization)
-                        .where(Optimization.id == opt_id)
-                        .values(**updates)
+                        .where(Optimization.id == opt_id, Optimization.row_version == 0)
+                        .values(**updates, row_version=1)
                     )
+                    if result.rowcount == 0:
+                        logger.error("Pipeline version conflict for opt %s", opt_id)
                     await s.commit()
 
                 if not acc.pipeline_failed:
-                    yield _sse_event("complete", {
+                    yield sse_event("complete", {
                         "optimization_id": opt_id,
                         "total_duration_ms": updates["duration_ms"],
                         "total_tokens": acc.total_tokens,
+                        "total_input_tokens": acc.usage_totals.input_tokens,
+                        "total_output_tokens": acc.usage_totals.output_tokens,
+                        "estimated_cost_usd": acc.usage_totals.estimated_cost_usd(),
+                        "usage_is_estimated": acc.usage_totals.is_estimated,
                     })
 
         except asyncio.TimeoutError:
@@ -137,13 +122,15 @@ async def optimize_prompt(
             updates = acc.finalize(req.app.state.provider.name, start_time,
                                    error=TimeoutError(f"Pipeline timed out after {effective_timeout}s"))
             async with async_session() as s:
-                await s.execute(
+                result = await s.execute(
                     update(Optimization)
-                    .where(Optimization.id == opt_id)
-                    .values(**updates)
+                    .where(Optimization.id == opt_id, Optimization.row_version == 0)
+                    .values(**updates, row_version=1)
                 )
+                if result.rowcount == 0:
+                    logger.error("Pipeline version conflict for opt %s", opt_id)
                 await s.commit()
-            yield _sse_event("error", {
+            yield sse_event("error", {
                 "stage": "pipeline",
                 "error": f"Pipeline timed out after {effective_timeout}s",
                 "recoverable": False,
@@ -151,19 +138,21 @@ async def optimize_prompt(
             return
 
         except Exception as e:
-            logger.exception(f"Pipeline error for {opt_id}: {e}")
+            logger.exception("Pipeline error for %s: %s", opt_id, e)
             updates = acc.finalize(req.app.state.provider.name, start_time, error=e)
             try:
                 async with async_session() as s:
-                    await s.execute(
+                    result = await s.execute(
                         update(Optimization)
-                        .where(Optimization.id == opt_id)
-                        .values(**updates)
+                        .where(Optimization.id == opt_id, Optimization.row_version == 0)
+                        .values(**updates, row_version=1)
                     )
+                    if result.rowcount == 0:
+                        logger.error("Pipeline version conflict for opt %s", opt_id)
                     await s.commit()
             except Exception:
                 logger.exception("Failed to save error state")
-            yield _sse_event("error", {
+            yield sse_event("error", {
                 "stage": "pipeline",
                 "error": str(e),
                 "recoverable": False,
@@ -185,7 +174,7 @@ async def get_optimization(
     optimization_id: str,
     session: AsyncSession = Depends(get_session),
     current_user: AuthenticatedUser = Depends(get_current_user),
-):
+) -> dict:
     """Get a single optimization by ID."""
     result = await session.execute(
         select(Optimization).where(

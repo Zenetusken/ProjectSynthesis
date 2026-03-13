@@ -682,6 +682,17 @@ async def run_explore(
     used_branch = repo_branch
     branch_fallback = False
 
+    # H6: Dynamic explore limits — expanded when 1M context beta is enabled.
+    # These are local variables (NOT mutating global settings).
+    max_context_chars = settings.EXPLORE_MAX_CONTEXT_CHARS
+    max_files_limit = settings.EXPLORE_MAX_FILES
+    line_budget = settings.EXPLORE_TOTAL_LINE_BUDGET
+    if settings.CONTEXT_1M_ENABLED:
+        max_context_chars = 2_000_000   # ~500K tokens
+        max_files_limit = 80
+        line_budget = 50_000
+        logger.info("1M context beta enabled — expanded explore limits")
+
     # ── Token resolution ──────────────────────────────────────────────
     try:
         if github_token:
@@ -773,7 +784,7 @@ async def run_explore(
         return
 
     total_in_tree = len(tree)
-    max_files = settings.EXPLORE_MAX_FILES
+    max_files = max_files_limit
 
     # Try semantic retrieval via embedding index
     index_svc = get_repo_index_service()
@@ -873,7 +884,7 @@ async def run_explore(
     # Dynamic line budget: divide total budget across files, capped per file
     max_lines = min(
         settings.EXPLORE_MAX_LINES_PER_FILE,
-        settings.EXPLORE_TOTAL_LINE_BUDGET // max(1, len(all_file_paths)),
+        line_budget // max(1, len(all_file_paths)),
     )
     file_contents = await _batch_read_files(
         token, repo_full_name, tree, all_file_paths,
@@ -914,7 +925,6 @@ async def run_explore(
     system_prompt = get_explore_synthesis_prompt()
     # Runtime char guard — prevent context overflow on repos with long lines
     context_payload = _format_files_for_llm(file_contents)
-    max_context_chars = settings.EXPLORE_MAX_CONTEXT_CHARS
     if len(context_payload) > max_context_chars:
         logger.warning(
             "Explore context exceeds %d chars (%d chars); trimming semantic files",
@@ -1027,8 +1037,9 @@ async def run_explore(
 
     ctx_dict = asdict(context)
 
-    # Cache the result
-    if cache and cache_key and context.explore_quality == "complete":
+    # Cache the result — skip when SHA is unknown (current_sha is None) to avoid
+    # caching under a non-invalidatable empty-SHA key (Fix #11/#12)
+    if cache and cache_key and context.explore_quality == "complete" and current_sha:
         try:
             await cache.set(cache_key, ctx_dict, ttl_seconds=settings.EXPLORE_RESULT_CACHE_TTL)
         except Exception as e:

@@ -1,25 +1,21 @@
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 
-from app.database import Base
+from app.database import Base, utcnow
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow():
-    return datetime.now(timezone.utc)
 
 
 class Optimization(Base):
     __tablename__ = "optimizations"
 
     id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     # Core prompt data
     raw_prompt = Column(Text, nullable=False)
@@ -60,6 +56,14 @@ class Optimization(Base):
     duration_ms = Column(Integer, nullable=True)
     stage_durations = Column(Text, nullable=True)  # JSON: {"explore": {"duration_ms": N, "token_count": N}, ...}
     provider_used = Column(Text, nullable=True)
+
+    # Cost / usage tracking (H2)
+    total_input_tokens = Column(Integer, nullable=True)
+    total_output_tokens = Column(Integer, nullable=True)
+    total_cache_read_tokens = Column(Integer, nullable=True)
+    total_cache_creation_tokens = Column(Integer, nullable=True)
+    estimated_cost_usd = Column(Float, nullable=True)
+    usage_is_estimated = Column(Boolean, nullable=True)
     model_explore = Column(Text, nullable=True)
     model_analyze = Column(Text, nullable=True)
     model_strategy = Column(Text, nullable=True)
@@ -88,6 +92,15 @@ class Optimization(Base):
     linked_repo_full_name = Column(Text, nullable=True)
     linked_repo_branch = Column(Text, nullable=True)
     codebase_context_snapshot = Column(Text, nullable=True)  # JSON
+
+    # H3: Quality feedback loops + session resumption
+    retry_history = Column(Text, nullable=True)  # JSON array
+    per_instruction_compliance = Column(Text, nullable=True)  # JSON array
+    session_id = Column(Text, nullable=True)
+    refinement_turns = Column(Integer, default=0)
+    active_branch_id = Column(Text, nullable=True)  # app-layer FK to refinement_branch
+    branch_count = Column(Integer, default=0)
+    adaptation_snapshot = Column(Text, nullable=True)  # JSON
 
     # ── JSON-as-TEXT columns ────────────────────────────────────────────
     # weaknesses, strengths, changes_made, issues, tags, secondary_frameworks
@@ -128,6 +141,20 @@ class Optimization(Base):
                         value = []
             # Parse stage_durations dict (separate from list-columns — wrong default type)
             if col.name == "stage_durations":
+                if value and isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except (json.JSONDecodeError, TypeError):
+                        value = None
+            # Parse H3 JSON columns (list-type)
+            if col.name in ("retry_history", "per_instruction_compliance"):
+                if value and isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except (json.JSONDecodeError, TypeError):
+                        value = []
+            # Parse H3 JSON columns (dict-type)
+            if col.name == "adaptation_snapshot":
                 if value and isinstance(value, str):
                     try:
                         value = json.loads(value)

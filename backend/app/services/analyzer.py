@@ -4,13 +4,14 @@ Classifies the prompt and identifies optimization opportunities.
 Uses claude-sonnet for structured JSON extraction with streaming.
 """
 
+import json
 import logging
 from typing import AsyncGenerator, Optional
 
 from app.config import settings
 from app.prompts.analyzer_prompt import get_analyzer_prompt
 from app.providers.base import MODEL_ROUTING, LLMProvider
-from app.services.cache_service import get_cache
+from app.services.cache_service import CacheService, get_cache
 from app.services.context_builders import (
     build_codebase_summary,
     format_file_contexts,
@@ -42,17 +43,30 @@ async def run_analyze(
     """
     system_prompt = get_analyzer_prompt()
 
-    # Cache check: same prompt + same context type flags + same system prompt = same classification
+    # Cache check: same prompt + same context content + same system prompt = same classification.
+    # Fix #9: hash full context content so different repos, file attachments, or
+    # instructions produce distinct cache keys (not just presence-flag booleans).
     cache = get_cache()
     if cache:
-        context_flags = (
-            f"{bool(codebase_context)}:{bool(file_contexts)}"
-            f":{bool(url_fetched_contexts)}:{bool(instructions)}"
-        )
-        prompt_hash = cache.hash_content(raw_prompt)
-        flags_hash = cache.hash_content(context_flags)
-        sys_hash = cache.hash_content(system_prompt)
-        analyze_cache_key = cache.make_key("analyze_v3", prompt_hash, flags_hash, sys_hash)
+        context_sig_parts = [
+            CacheService.hash_content(
+                json.dumps(codebase_context, sort_keys=True, default=str)
+            ) if codebase_context else "",
+            CacheService.hash_content(
+                json.dumps(file_contexts, default=str)
+            ) if file_contexts else "",
+            CacheService.hash_content(
+                json.dumps(url_fetched_contexts, default=str)
+            ) if url_fetched_contexts else "",
+            CacheService.hash_content(
+                json.dumps(instructions, default=str)
+            ) if instructions else "",
+        ]
+        context_sig = ":".join(context_sig_parts)
+        prompt_hash = CacheService.hash_content(raw_prompt)
+        flags_hash = CacheService.hash_content(context_sig)
+        sys_hash = CacheService.hash_content(system_prompt)
+        analyze_cache_key = CacheService.make_key("analyze_v3", prompt_hash, flags_hash, sys_hash)
         cached = await cache.get(analyze_cache_key)
         if cached is not None:
             cached["analysis_quality"] = "cached"

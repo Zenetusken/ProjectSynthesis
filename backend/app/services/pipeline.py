@@ -3,13 +3,15 @@
 Runs the full optimization pipeline (up to 5 stages) and yields SSE events.
 """
 
+import asyncio
 import json
 import logging
 import time
 from typing import AsyncGenerator
 
 from app.config import settings
-from app.providers.base import MODEL_ROUTING, LLMProvider
+from app.providers.base import MODEL_ROUTING, LLMProvider, select_model
+from app.services.adaptation_engine import load_adaptation
 from app.services.analyzer import run_analyze
 from app.services.codebase_explorer import run_explore
 from app.services.context_builders import (
@@ -18,26 +20,22 @@ from app.services.context_builders import (
     MAX_URL_CONTEXTS,
 )
 from app.services.optimizer import run_optimize
+from app.services.refinement_service import create_trunk_branch
+from app.services.retry_oracle import RetryOracle
 from app.services.settings_service import load_settings
 from app.services.strategy import run_strategy
 from app.services.validator import run_validate
 
 logger = logging.getLogger(__name__)
 
-# Retry threshold: if overall_score < this, retry optimize+validate once
-LOW_SCORE_THRESHOLD = 5.0
-
 
 def _estimate_tokens(text: str) -> int:
     """Estimate token count from text using the ~4 chars/token heuristic.
 
-    This is an approximation. Actual token counts vary by model tokenizer
-    (Claude's tokenizer averages ~3.5-4.5 chars/token for English text).
-    The ``token_count`` values reported in stage events should be treated as
-    order-of-magnitude estimates, not precise billing figures.
-
-    TODO: When provider responses include ``usage.input_tokens`` /
-    ``usage.output_tokens``, reconcile against those for accurate reporting.
+    This is a fallback approximation used when ``provider.get_last_usage()``
+    returns None. Actual token counts vary by model tokenizer (Claude's
+    tokenizer averages ~3.5-4.5 chars/token for English text).  When real
+    usage data is available (H2), the pipeline prefers it over this estimate.
     """
     if not text:
         return 0
@@ -59,9 +57,11 @@ async def _run_optimize_validate(
     file_contexts: list[dict] | None,
     url_fetched_contexts: list[dict] | None,
     instructions: list[str] | None,
-    model_override: str | None,
+    model_optimize: str | None,
+    model_validate: str | None,
     stream_optimize: bool,
     retry_constraints: dict | None = None,
+    user_weights: dict[str, float] | None = None,
 ) -> AsyncGenerator[tuple, None]:
     """Run optimize + validate stages and yield all events.
 
@@ -93,18 +93,18 @@ async def _run_optimize_validate(
         url_fetched_contexts=url_fetched_contexts,
         instructions=instructions,
         retry_constraints=retry_constraints,
-        model=model_override,
+        model=model_optimize,
         streaming=stream_optimize,
     ):
         if event_type == "optimization":
             optimization_result = event_data
-            optimization_result["model"] = model_override or MODEL_ROUTING["optimize"]
+            optimization_result["model"] = model_optimize or MODEL_ROUTING["optimize"]
         yield (event_type, event_data)
 
     opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
-    stage_tokens = _estimate_tokens(opt_text)
-    if not retry_constraints:
-        # Full token estimate for primary run
+    usage = provider.get_last_usage()
+    stage_tokens = usage.total_tokens if usage else _estimate_tokens(opt_text)
+    if not usage and not retry_constraints:
         stage_tokens = (
             _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
             + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
@@ -116,6 +116,7 @@ async def _run_optimize_validate(
         "status": "complete",
         "duration_ms": int((time.time() - start) * 1000),
         "token_count": stage_tokens,
+        "usage": usage.to_dict() if usage else None,
     })
 
     opt_failed = bool((optimization_result or {}).get("optimization_failed", False))
@@ -143,7 +144,8 @@ async def _run_optimize_validate(
         changes_made=changes_made,
         codebase_context=codebase_context,
         instructions=instructions,
-        model=model_override,
+        model=model_validate,
+        user_weights=user_weights,
     ):
         if event_type == "validation":
             validation = event_data
@@ -151,9 +153,10 @@ async def _run_optimize_validate(
             yield (event_type, event_data)
 
     validation = validation or {}
-    validation["model"] = model_override or MODEL_ROUTING["validate"]
+    validation["model"] = model_validate or MODEL_ROUTING["validate"]
 
-    stage_tokens = (
+    usage = provider.get_last_usage()
+    stage_tokens = usage.total_tokens if usage else (
         _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt)
         + _estimate_tokens(json.dumps(validation))
     )
@@ -165,6 +168,7 @@ async def _run_optimize_validate(
         "status": "complete",
         "duration_ms": int((time.time() - start) * 1000),
         "token_count": stage_tokens,
+        "usage": usage.to_dict() if usage else None,
     })
 
     yield ("_ov_result", {
@@ -187,6 +191,7 @@ async def run_pipeline(
     file_contexts: list[dict] | None = None,
     url_fetched_contexts: list[dict] | None = None,
     instructions: list[str] | None = None,
+    user_id: str | None = None,
 ) -> AsyncGenerator[tuple, None]:
     """Run the full optimization pipeline, yielding (event_type, event_data) tuples.
 
@@ -220,72 +225,23 @@ async def run_pipeline(
 
     codebase_context = None
 
-    # ---- Stage 0: Explore (conditional) ----
-    # Runs whenever a repo is linked AND a token is available (session_id or
-    # explicit github_token). Skipped silently when neither is provided.
-    if repo_full_name and (session_id or github_token):
-        try:
-            yield ("stage", {
-                "stage": "explore",
-                "status": "started",
-                "repo": repo_full_name,
-            })
-            start = time.time()
-
-            async for event_type, event_data in run_explore(
-                provider=provider,
-                raw_prompt=raw_prompt,
-                repo_full_name=repo_full_name,
-                repo_branch=repo_branch or "main",
-                session_id=session_id,
-                github_token=github_token,
-                model=model_override,
-            ):
-                if event_type == "explore_result":
-                    codebase_context = event_data
-                    # Buffer — duration_ms and model not yet known; yield after loop
-                else:
-                    yield (event_type, event_data)
-
-            duration_ms = int((time.time() - start) * 1000)
-            explore_failed = bool(codebase_context and codebase_context.get("explore_failed"))
-            if explore_failed:
-                explore_error = (codebase_context or {}).get("explore_error", "Exploration failed")
-                # Strip internal flags so downstream stages get clean context
-                codebase_context = {
-                    k: v for k, v in codebase_context.items()
-                    if k not in ("explore_failed", "explore_error")
-                } if codebase_context else None
-                if codebase_context:
-                    codebase_context["duration_ms"] = duration_ms
-                    codebase_context["model"] = model_override or MODEL_ROUTING["explore"]
-                    yield ("codebase_context", codebase_context)
-                yield ("stage", {
-                    "stage": "explore",
-                    "status": "failed",
-                    "error": explore_error,
-                    "duration_ms": duration_ms,
-                })
-            else:
-                if codebase_context:
-                    codebase_context["duration_ms"] = duration_ms
-                    codebase_context["model"] = model_override or MODEL_ROUTING["explore"]
-                    yield ("codebase_context", codebase_context)
-                yield ("stage", {
-                    "stage": "explore",
-                    "status": "complete",
-                    "files_read": codebase_context.get("files_read_count", 0) if codebase_context else 0,
-                    "duration_ms": duration_ms,
-                })
-        except Exception as e:
-            logger.warning(f"Stage 0 (Explore) failed: {e}. Continuing without codebase context.")
-            yield ("error", {
-                "stage": "explore",
-                "error": str(e),
-                "recoverable": True,
-            })
-
     total_tokens = 0
+
+    # Load user adaptation (if authenticated)
+    adaptation = None
+    if user_id:
+        from app.database import get_session_context
+        async with get_session_context() as db:
+            adaptation = await load_adaptation(user_id, db)
+
+    # Initialize oracle (replaces LOW_SCORE_THRESHOLD)
+    oracle_threshold = adaptation.get("retry_threshold", 5.0) if adaptation else 5.0
+    oracle_weights = adaptation.get("dimension_weights") if adaptation else None
+    oracle = RetryOracle(
+        max_retries=effective_max_retries,
+        threshold=oracle_threshold,
+        user_weights=oracle_weights,
+    )
 
     # ---- Context truncation ----
     # Enforce injection caps BEFORE stages run. Slices happen here so every
@@ -312,16 +268,88 @@ async def run_pipeline(
             "total_instructions_received": _orig_instr,
         })
 
-    # ---- Stage 1: Analyze ----
-    try:
-        yield ("stage", {"stage": "analyze", "status": "started"})
+    # ---- Stage 0 + Stage 1: Parallel Explore + Analyze (H1) ----
+    # Explore and Analyze run concurrently. Analyze does NOT require
+    # codebase_context (it's optional navigational aid). Running concurrently
+    # saves ~min(explore, analyze) seconds of wall-clock time.
+    #
+    # Events are buffered into lists and yielded in deterministic order
+    # (Explore first, then Analyze) to maintain frontend SSE expectations.
+    should_explore = bool(repo_full_name and (session_id or github_token))
+
+    explore_events: list[tuple[str, dict]] = []
+    analyze_events: list[tuple[str, dict]] = []
+    analysis = None
+
+    async def _collect_explore() -> None:
+        nonlocal codebase_context
+        explore_events.append(("stage", {
+            "stage": "explore",
+            "status": "started",
+            "repo": repo_full_name,
+        }))
+        start = time.time()
+        try:
+            async for event_type, event_data in run_explore(
+                provider=provider,
+                raw_prompt=raw_prompt,
+                repo_full_name=repo_full_name,
+                repo_branch=repo_branch or "main",
+                session_id=session_id,
+                github_token=github_token,
+                model=model_override,
+            ):
+                if event_type == "explore_result":
+                    codebase_context = event_data
+                else:
+                    explore_events.append((event_type, event_data))
+
+            duration_ms = int((time.time() - start) * 1000)
+            explore_failed = bool(codebase_context and codebase_context.get("explore_failed"))
+            if explore_failed:
+                exp_error = (codebase_context or {}).get("explore_error", "Exploration failed")
+                codebase_context = {
+                    k: v for k, v in codebase_context.items()
+                    if k not in ("explore_failed", "explore_error")
+                } if codebase_context else None
+                if codebase_context:
+                    codebase_context["duration_ms"] = duration_ms
+                    codebase_context["model"] = model_override or MODEL_ROUTING["explore"]
+                    explore_events.append(("codebase_context", codebase_context))
+                explore_events.append(("stage", {
+                    "stage": "explore",
+                    "status": "failed",
+                    "error": exp_error,
+                    "duration_ms": duration_ms,
+                }))
+            else:
+                if codebase_context:
+                    codebase_context["duration_ms"] = duration_ms
+                    codebase_context["model"] = model_override or MODEL_ROUTING["explore"]
+                    explore_events.append(("codebase_context", codebase_context))
+                explore_events.append(("stage", {
+                    "stage": "explore",
+                    "status": "complete",
+                    "files_read": codebase_context.get("files_read_count", 0) if codebase_context else 0,
+                    "duration_ms": duration_ms,
+                }))
+        except Exception as e:
+            logger.warning("Stage 0 (Explore) failed: %s. Continuing without codebase context.", e)
+            explore_events.append(("error", {
+                "stage": "explore",
+                "error": str(e),
+                "recoverable": True,
+            }))
+
+    async def _collect_analyze() -> None:
+        nonlocal analysis
+        analyze_events.append(("stage", {"stage": "analyze", "status": "started"}))
         start = time.time()
 
-        analysis = None
         async for event_type, event_data in run_analyze(
             provider=provider,
             raw_prompt=raw_prompt,
-            codebase_context=codebase_context,
+            codebase_context=None,   # No codebase context in parallel mode
             file_contexts=file_contexts,
             url_fetched_contexts=url_fetched_contexts,
             instructions=instructions,
@@ -330,7 +358,7 @@ async def run_pipeline(
             if event_type == "analysis":
                 analysis = event_data
             else:
-                yield (event_type, event_data)
+                analyze_events.append((event_type, event_data))
 
         analysis = analysis or {}
         if not analysis.get("task_type") or not isinstance(analysis.get("task_type"), str):
@@ -341,26 +369,82 @@ async def run_pipeline(
             analysis["complexity"] = "moderate"
         analysis["model"] = model_override or MODEL_ROUTING["analyze"]
 
-        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
-        total_tokens += stage_tokens
+        usage = provider.get_last_usage()
+        est = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
+        stage_tokens = usage.total_tokens if usage else est
 
-        yield ("analysis", analysis)
-        yield ("stage", {
+        analyze_events.append(("analysis", analysis))
+        analyze_events.append(("stage", {
             "stage": "analyze",
             "status": "complete",
             "duration_ms": int((time.time() - start) * 1000),
             "token_count": stage_tokens,
-        })
-    except Exception as e:
-        logger.error(f"Stage 1 (Analyze) failed fatally: {e}")
+            "usage": usage.to_dict() if usage else None,
+        }))
+
+    # Run concurrently — asyncio.wait (not TaskGroup) so one failure doesn't cancel the other
+    tasks: list[asyncio.Task] = [asyncio.create_task(_collect_analyze())]
+    if should_explore:
+        tasks.insert(0, asyncio.create_task(_collect_explore()))
+
+    _max_timeout = max(settings.EXPLORE_TIMEOUT_SECONDS, settings.ANALYZE_TIMEOUT_SECONDS) + 10
+    done, pending = await asyncio.wait(tasks, timeout=_max_timeout)
+    for t in pending:
+        t.cancel()
+        try:
+            await t
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    # Check for Analyze failure (fatal — Explore failure is recoverable)
+    analyze_task = tasks[-1]  # Analyze is always the last task
+    if analyze_task.done() and analyze_task.exception():
+        analyze_exc = analyze_task.exception()
+        logger.error("Stage 1 (Analyze) failed fatally: %s", analyze_exc)
+        # Yield explore events first (if any), then the error
+        for et, ed in explore_events:
+            yield (et, ed)
         yield ("error", {
             "stage": "analyze",
-            "error": str(e),
+            "error": str(analyze_exc),
             "recoverable": False,
         })
         for item in _skip_remaining(["strategy", "optimize", "validate"]):
             yield item
         return
+
+    # Yield in deterministic order: Explore first, then Analyze
+    for et, ed in explore_events:
+        yield (et, ed)
+    for et, ed in analyze_events:
+        # Accumulate token counts from the analyze stage events
+        if et == "stage" and ed.get("status") == "complete":
+            total_tokens += ed.get("token_count", 0)
+        yield (et, ed)
+
+    # ---- Dynamic model routing (H4) ----
+    # After Analyze produces complexity, downstream stages may use cheaper models.
+    complexity = analysis.get("complexity", "moderate")
+    model_strategy = select_model("strategy", complexity, model_override)
+    model_optimize = select_model("optimize", complexity, model_override)
+    model_validate = select_model("validate", complexity, model_override)
+
+    # Emit model_selection event for observability
+    _routing_info: dict[str, dict] = {}
+    for _stage_name, _stage_model, _default in [
+        ("strategy", model_strategy, MODEL_ROUTING["strategy"]),
+        ("optimize", model_optimize, MODEL_ROUTING["optimize"]),
+        ("validate", model_validate, MODEL_ROUTING["validate"]),
+    ]:
+        _reason = "user override" if model_override else (
+            f"downgraded ({complexity})" if _stage_model != _default else "default"
+        )
+        _routing_info[_stage_name] = {"model": _stage_model, "reason": _reason}
+
+    yield ("model_selection", {
+        "complexity": complexity,
+        **_routing_info,
+    })
 
     # ---- Stage 2: Strategy ----
     try:
@@ -374,10 +458,11 @@ async def run_pipeline(
                 "rationale": f"User-specified strategy override: {effective_strategy}",
                 "approach_notes": f"Apply {effective_strategy} framework as requested.",
                 "strategy_source": "override",
-                "model": model_override or MODEL_ROUTING["strategy"],
+                "model": model_strategy,
             }
         else:
             strategy_result = None
+            strategy_affinities = adaptation.get("strategy_affinities") if adaptation else None
             async for event_type, event_data in run_strategy(
                 provider=provider,
                 raw_prompt=raw_prompt,
@@ -386,7 +471,8 @@ async def run_pipeline(
                 file_contexts=file_contexts,
                 url_fetched_contexts=url_fetched_contexts,
                 instructions=instructions,
-                model=model_override,
+                model=model_strategy,
+                strategy_affinities=strategy_affinities,
             ):
                 if event_type == "strategy":
                     strategy_result = event_data
@@ -394,9 +480,11 @@ async def run_pipeline(
                     yield (event_type, event_data)
 
             strategy_result = strategy_result or {}
-            strategy_result["model"] = model_override or MODEL_ROUTING["strategy"]
+            strategy_result["model"] = model_strategy
 
-        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(strategy_result))
+        usage = provider.get_last_usage()
+        est = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(strategy_result))
+        stage_tokens = usage.total_tokens if usage else est
         total_tokens += stage_tokens
 
         yield ("strategy", strategy_result)
@@ -405,9 +493,10 @@ async def run_pipeline(
             "status": "complete",
             "duration_ms": int((time.time() - start) * 1000),
             "token_count": stage_tokens,
+            "usage": usage.to_dict() if usage else None,
         })
     except Exception as e:
-        logger.error(f"Stage 2 (Strategy) failed fatally: {e}")
+        logger.error("Stage 2 (Strategy) failed fatally: %s", e)
         yield ("error", {
             "stage": "strategy",
             "error": str(e),
@@ -433,16 +522,17 @@ async def run_pipeline(
             file_contexts=file_contexts,
             url_fetched_contexts=url_fetched_contexts,
             instructions=instructions,
-            model=model_override,
+            model=model_optimize,
             streaming=stream_optimize,
         ):
             if event_type == "optimization":
                 optimization_result = event_data
-                optimization_result["model"] = model_override or MODEL_ROUTING["optimize"]
+                optimization_result["model"] = model_optimize
             yield (event_type, event_data)
 
         opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
-        stage_tokens = (
+        usage = provider.get_last_usage()
+        stage_tokens = usage.total_tokens if usage else (
             _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
             + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
         )
@@ -453,10 +543,11 @@ async def run_pipeline(
             "status": "complete",
             "duration_ms": int((time.time() - start) * 1000),
             "token_count": stage_tokens,
+            "usage": usage.to_dict() if usage else None,
         })
         _opt_failed = bool((optimization_result or {}).get("optimization_failed", False))
     except Exception as e:
-        logger.error(f"Stage 3 (Optimize) failed fatally: {e}")
+        logger.error("Stage 3 (Optimize) failed fatally: %s", e)
         yield ("error", {
             "stage": "optimize",
             "error": str(e),
@@ -496,7 +587,8 @@ async def run_pipeline(
             changes_made=changes_made,
             codebase_context=codebase_context,
             instructions=instructions,
-            model=model_override,
+            model=model_validate,
+            user_weights=oracle_weights,
         ):
             if event_type == "validation":
                 validation = event_data
@@ -504,9 +596,10 @@ async def run_pipeline(
                 yield (event_type, event_data)
 
         validation = validation or {}
-        validation["model"] = model_override or MODEL_ROUTING["validate"]
+        validation["model"] = model_validate
 
-        stage_tokens = (
+        usage = provider.get_last_usage()
+        stage_tokens = usage.total_tokens if usage else (
             _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt)
             + _estimate_tokens(json.dumps(validation))
         )
@@ -518,9 +611,10 @@ async def run_pipeline(
             "status": "complete",
             "duration_ms": int((time.time() - start) * 1000),
             "token_count": stage_tokens,
+            "usage": usage.to_dict() if usage else None,
         })
     except Exception as e:
-        logger.error(f"Stage 4 (Validate) failed fatally: {e}")
+        logger.error("Stage 4 (Validate) failed fatally: %s", e)
         yield ("error", {
             "stage": "validate",
             "error": str(e),
@@ -528,58 +622,59 @@ async def run_pipeline(
         })
         return
 
-    # ---- Retry on low score ----
-    retry_count = 0
-    overall_score = validation.get("scores", {}).get("overall_score", 10)
-    is_improvement = validation.get("is_improvement", False)
-    while (
-        retry_count < effective_max_retries
-        and overall_score is not None
-        and overall_score < LOW_SCORE_THRESHOLD
-        and not is_improvement
-    ):
-        logger.info(
-            f"Overall score {overall_score} < {LOW_SCORE_THRESHOLD} "
-            f"(retry {retry_count + 1}/{effective_max_retries}): "
-            "retrying optimize+validate with adjusted constraints"
-        )
+    # ---- Oracle-driven retry loop ----
+    # Record first attempt
+    validation_scores = validation.get("scores", {})
+    optimized_prompt = (optimization_result or {}).get("optimized_prompt", "")
+    oracle.record_attempt(validation_scores, optimized_prompt, [])
+    yield ("retry_diagnostics", oracle.get_diagnostics())
+
+    # Store all attempts for best-of-N selection
+    all_attempts = [{
+        "optimization_result": optimization_result,
+        "validation": validation,
+    }]
+
+    while True:
+        decision = oracle.should_retry()
+        if decision.action in ("accept", "accept_best"):
+            # Best-of-N: if accept_best, swap to the highest-scoring attempt
+            if decision.action == "accept_best" and decision.best_attempt is not None:
+                best = all_attempts[decision.best_attempt]
+                optimization_result = best["optimization_result"]
+                validation = best["validation"]
+                yield ("retry_best_selected", {
+                    "selected_attempt": decision.best_attempt + 1,
+                    "total_attempts": len(all_attempts),
+                    "reason": decision.reason,
+                })
+            break
+
+        # Retry: build diagnostic message for the optimizer
+        yield ("stage", {
+            "stage": "optimize",
+            "status": "retrying",
+            "attempt": oracle.attempt_count + 1,
+        })
+        diagnostic_msg = oracle.build_diagnostic_message(decision.focus_areas)
         yield ("rate_limit_warning", {
-            "message": (
-                f"Score {overall_score}/10 below threshold — "
-                f"retrying with stricter constraints "
-                f"(attempt {retry_count + 1}/{effective_max_retries})"
-            ),
+            "message": diagnostic_msg,
             "stage": "validate",
         })
-
-        # Determine focus_areas for this retry attempt.
-        if retry_count == 0:
-            focus_areas = validation.get("issues", [])
-        else:
-            scores = validation.get("scores", {})
-            score_dims = {
-                "clarity": scores.get("clarity_score", 10),
-                "specificity": scores.get("specificity_score", 10),
-                "structure": scores.get("structure_score", 10),
-                "faithfulness": scores.get("faithfulness_score", 10),
-                "conciseness": scores.get("conciseness_score", 10),
-            }
-            lowest_dim = min(score_dims, key=score_dims.get)
-            focus_areas = [lowest_dim]
-            logger.info(f"Second retry: narrowing focus to lowest dimension '{lowest_dim}'")
 
         try:
             ov_result = None
             async for event_type, event_data in _run_optimize_validate(
                 provider, raw_prompt, analysis, strategy_result, codebase_context,
                 file_contexts, url_fetched_contexts, instructions,
-                model_override, stream_optimize,
+                model_optimize, model_validate, stream_optimize,
                 retry_constraints={
-                    "min_score_target": LOW_SCORE_THRESHOLD + 2,
-                    "previous_score": overall_score,
-                    "focus_areas": focus_areas,
-                    "retry_attempt": retry_count + 1,
+                    "focus_areas": decision.focus_areas,
+                    "min_score_target": oracle.threshold + 2,
+                    "previous_score": oracle._attempts[-1].overall_score,
+                    "retry_attempt": oracle.attempt_count,
                 },
+                user_weights=oracle_weights,
             ):
                 if event_type == "_ov_result":
                     ov_result = event_data
@@ -589,27 +684,58 @@ async def run_pipeline(
             assert ov_result is not None
 
             if ov_result["opt_failed"]:
-                logger.error("Retry optimizer signalled failure; skipping validate and aborting retry loop")
+                logger.error("Retry optimizer failed; aborting retry loop")
                 yield ("stage", {"stage": "validate", "status": "skipped"})
                 yield ("error", {"stage": "optimize",
-                                 "error": "Retry optimizer failed; no prompt to validate.",
+                                 "error": "Retry optimizer failed",
                                  "recoverable": False})
                 return
 
-            # Update for next iteration
-            if ov_result["optimization_result"]:
-                optimization_result = ov_result["optimization_result"]
-            validation = ov_result["validation"] or {}
-            overall_score = validation.get("scores", {}).get("overall_score", 10)
-            is_improvement = validation.get("is_improvement", False)
+            # Record new attempt
+            new_opt = ov_result["optimization_result"]
+            new_val = ov_result["validation"] or {}
+            new_scores = new_val.get("scores", {})
+            new_prompt = (new_opt or {}).get("optimized_prompt", "")
+            oracle.record_attempt(new_scores, new_prompt, decision.focus_areas)
+            yield ("retry_diagnostics", oracle.get_diagnostics())
+
+            all_attempts.append({
+                "optimization_result": new_opt,
+                "validation": new_val,
+            })
+
+            # Update running references
+            if new_opt:
+                optimization_result = new_opt
+            validation = new_val
 
         except Exception as e:
-            logger.warning(f"Retry {retry_count + 1} failed: {e}. Using previous validation result.")
+            logger.warning("Retry %d failed: %s", oracle.attempt_count, e)
             yield ("error", {
                 "stage": "optimize",
-                "error": f"Retry {retry_count + 1} failed: {e}",
+                "error": f"Retry failed: {e}",
                 "recoverable": True,
             })
             break
 
-        retry_count += 1
+    # Create trunk branch for refinement support
+    try:
+        from app.database import get_session_context as _gs
+        async with _gs() as db:
+            final_prompt = (optimization_result or {}).get("optimized_prompt", "")
+            final_scores = validation.get("scores", {})
+            if final_prompt:
+                trunk = await create_trunk_branch(
+                    optimization_id=optimization_id,
+                    prompt=final_prompt,
+                    scores=final_scores,
+                    db=db,
+                )
+                await db.commit()
+                yield ("branch_created", {"branch": trunk})
+    except Exception as e:
+        logger.warning("Trunk branch creation failed: %s (non-fatal)", e)
+
+    # Store adaptation snapshot for transparency
+    if adaptation:
+        yield ("adaptation_snapshot", adaptation)

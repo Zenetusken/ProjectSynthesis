@@ -108,6 +108,10 @@ class ForgeStore {
     ts: number;
   }>>([]);
   liveStageText = $state<Record<string, string>>({});
+  retryDiagnostics = $state<any>(null);
+  retryBestSelected = $state<any>(null);
+  retryCycleDetected = $state<any>(null);
+  instructionCompliance = $state<any>(null);
 
   get stages() {
     return ['explore', 'analyze', 'strategy', 'optimize', 'validate'];
@@ -163,6 +167,10 @@ class ForgeStore {
     this._activitySeq = 0;
     this.liveActivity = [];
     this.liveStageText = {};
+    this.retryDiagnostics = null;
+    this.retryBestSelected = null;
+    this.retryCycleDetected = null;
+    this.instructionCompliance = null;
   }
 
   startForge(rawPrompt?: string) {
@@ -653,6 +661,25 @@ class ForgeStore {
         break;
       case 'tool_call':
         this.addToolCall(data.tool as string, (data.input as Record<string, unknown>) ?? {});
+        break;
+      case 'retry_diagnostics':
+        this.retryDiagnostics = data;
+        break;
+      case 'retry_best_selected':
+        this.retryBestSelected = data;
+        break;
+      case 'retry_cycle_detected':
+        this.retryCycleDetected = data;
+        break;
+      case 'instruction_compliance':
+        this.instructionCompliance = data;
+        break;
+      case 'adaptation_snapshot':
+        // Store for inspector panel — no immediate UI action
+        this.stageResults['adaptation'] = { stage: 'adaptation', data };
+        break;
+      case 'branch_created':
+        this.stageResults['branch'] = { stage: 'branch', data };
         break;
       default:
         break;

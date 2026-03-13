@@ -13,7 +13,7 @@ from app.models.github import GitHubToken, LinkedRepo
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.github import LinkRepoRequest
 from app.services import github_service
-from app.services.cache_service import get_cache
+from app.services.cache_service import CacheService, get_cache
 from app.services.repo_index_service import get_repo_index_service
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ async def evict_repo_cache(session_id: str) -> None:
     """Remove cached repo list for a session (call on logout/disconnect)."""
     cache = get_cache()
     if cache:
-        await cache.delete(cache.make_key("repos", session_id))
+        await cache.delete(CacheService.make_key("repos", session_id))
 
 
 async def _get_github_token(
@@ -77,7 +77,7 @@ async def list_repos(
 
     # Check cache
     cache = get_cache()
-    cache_key = cache.make_key("repos", request.session.get("session_id", "")) if cache else None
+    cache_key = CacheService.make_key("repos", request.session.get("session_id", "")) if cache else None
     if cache:
         cached = await cache.get(cache_key)
         if cached is not None:

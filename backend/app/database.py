@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 class Base(DeclarativeBase):
     pass
+
+
+def utcnow():
+    """Shared UTC-now factory for all ORM model default/onupdate columns."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc)
 
 
 # Ensure data directory exists for SQLite
@@ -63,7 +70,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @asynccontextmanager
-async def get_session_context():
+async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
     """Async context manager for database sessions outside FastAPI DI."""
     async with async_session() as session:
         try:
@@ -97,6 +104,24 @@ async def _migrate_add_missing_columns() -> None:
             "validation_quality": "VARCHAR(20)", # pipeline quality flag for validation stage
             "row_version": "INTEGER NOT NULL DEFAULT 0",  # optimistic locking counter
             "stage_durations": "TEXT",           # JSON dict of per-stage timing
+            "total_input_tokens": "INTEGER",       # H2: cost tracking
+            "total_output_tokens": "INTEGER",
+            "total_cache_read_tokens": "INTEGER",
+            "total_cache_creation_tokens": "INTEGER",
+            "estimated_cost_usd": "REAL",
+            "usage_is_estimated": "BOOLEAN",
+            "model_explore": "TEXT",              # per-stage model tracking
+            "model_analyze": "TEXT",
+            "model_strategy": "TEXT",
+            "model_optimize": "TEXT",
+            "model_validate": "TEXT",
+            "retry_history": "TEXT",
+            "per_instruction_compliance": "TEXT",
+            "session_id": "TEXT",
+            "refinement_turns": "INTEGER DEFAULT 0",
+            "active_branch_id": "TEXT",
+            "branch_count": "INTEGER DEFAULT 0",
+            "adaptation_snapshot": "TEXT",
         },
         "github_tokens": {
             "avatar_url": "TEXT",              # cached avatar URL
@@ -146,7 +171,7 @@ async def _migrate_add_missing_columns() -> None:
                     logger.info("Migration: added column %s.%s", table_name, col_name)
 
 
-async def _migrate_add_missing_indexes(eng=None) -> None:
+async def _migrate_add_missing_indexes(eng: AsyncEngine | None = None) -> None:
     """Idempotently create missing indices on existing tables.
 
     Checks sqlite_master (SQLite) or pg_indexes (PostgreSQL) before issuing
@@ -169,6 +194,13 @@ async def _migrate_add_missing_indexes(eng=None) -> None:
         ("idx_optimizations_retry_of", "optimizations", "retry_of"),
         ("idx_optimizations_user_listing", "optimizations",
          "user_id, deleted_at, created_at DESC"),
+        # H3 tables — indexes also defined in ORM __table_args__ (safety net for migrations)
+        ("ix_feedback_user_created", "feedback", "user_id, created_at"),
+        ("ix_branch_optimization", "refinement_branch", "optimization_id"),
+        ("ix_branch_opt_status", "refinement_branch", "optimization_id, status"),
+        ("ix_pairwise_user", "pairwise_preference", "user_id"),
+        ("ix_pairwise_optimization", "pairwise_preference", "optimization_id"),
+        ("ix_pairwise_user_created", "pairwise_preference", "user_id, created_at"),
     ]
 
     async with _eng.begin() as conn:
@@ -196,6 +228,8 @@ async def create_tables():
     # Import all models so they register with Base.metadata
     import app.models.audit_log  # noqa: F401
     import app.models.auth  # noqa: F401
+    import app.models.branch  # noqa: F401
+    import app.models.feedback  # noqa: F401
     import app.models.github  # noqa: F401
     import app.models.onboarding_event  # noqa: F401
     import app.models.optimization  # noqa: F401
@@ -220,5 +254,5 @@ async def check_db_connection() -> bool:
             )
         return True
     except Exception as e:
-        logger.error(f"Database connection check failed: {e}")
+        logger.error("Database connection check failed: %s", e)
         return False
