@@ -1125,6 +1125,7 @@ def test_pipeline_accumulator_usage_accumulation():
 def test_pipeline_accumulator_finalize_writes_cost_columns():
     """finalize() populates cost columns when usage is present."""
     import time
+
     from app.services.optimization_service import PipelineAccumulator
     acc = PipelineAccumulator()
 
@@ -1250,6 +1251,7 @@ def test_make_extra_effort_explicit_override():
 def test_pipeline_update_includes_row_version_guard():
     """The optimize router's success-path UPDATE must include row_version == 0."""
     import inspect
+
     from app.routers import optimize as opt_mod
     source = inspect.getsource(opt_mod.optimize_prompt)
     # All three update paths (success, timeout, exception) should have the guard
@@ -1262,6 +1264,7 @@ def test_pipeline_update_logs_on_version_conflict():
     # We test the logging pattern by verifying the log message format exists
     # in the module source — the actual DB path requires full integration setup.
     import inspect
+
     from app.routers import optimize as opt_mod
     source = inspect.getsource(opt_mod.optimize_prompt)
     assert "Pipeline version conflict for opt %s" in source
@@ -1274,6 +1277,7 @@ def test_pipeline_update_logs_on_version_conflict():
 def test_compaction_enabled_passes_context_management():
     """When COMPACTION_ENABLED=True, complete_agentic builds context_management kwargs."""
     import inspect
+
     from app.providers import anthropic_api as api_mod
     source = inspect.getsource(api_mod.AnthropicAPIProvider.complete_agentic)
     assert "context_management" in source
@@ -1289,6 +1293,7 @@ def test_compaction_disabled_no_context_management():
 def test_detector_includes_compaction_beta():
     """detector.py includes compaction beta string when enabled."""
     import inspect
+
     from app.providers import detector as det_mod
     source = inspect.getsource(det_mod._detect_provider_inner)
     assert "COMPACTION_ENABLED" in source

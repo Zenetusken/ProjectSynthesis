@@ -13,10 +13,11 @@ from app.database import get_session
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import RateLimit
 from app.routers._sse import sse_event
+from app.routers.feedback import _recompute_adaptation_safe
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.refinement import ForkRequest, RefineRequest, SelectRequest
-from app.routers.feedback import _recompute_adaptation_safe
-from app.services.adaptation_engine import load_adaptation, recompute_adaptation
+from app.services.adaptation_engine import load_adaptation
+from app.services.prompt_diff import SCORE_DIMENSIONS
 from app.services.refinement_service import (
     fork_branch,
     get_branch,
@@ -67,7 +68,7 @@ async def refine_optimization(
             await db.commit()
         except ValueError as e:
             yield sse_event("error", {"error": str(e), "recoverable": False})
-        except Exception as e:
+        except Exception:
             logger.exception("Refinement stream error for %s", optimization_id)
             yield sse_event("error", {"error": "Internal error", "recoverable": False})
 
@@ -106,7 +107,7 @@ async def create_branch(
             await db.commit()
         except ValueError as e:
             yield sse_event("error", {"error": str(e), "recoverable": False})
-        except Exception as e:
+        except Exception:
             logger.exception("Branch fork error for %s", optimization_id)
             yield sse_event("error", {"error": "Internal error", "recoverable": False})
 
@@ -192,8 +193,7 @@ async def compare_branches(
     # Compute score deltas
     deltas = {}
     if a.get("scores") and b.get("scores"):
-        for dim in ("clarity_score", "specificity_score", "structure_score",
-                     "faithfulness_score", "conciseness_score", "overall_score"):
+        for dim in (*SCORE_DIMENSIONS, "overall_score"):
             va = a["scores"].get(dim, 0)
             vb = b["scores"].get(dim, 0)
             deltas[dim] = round(va - vb, 1)

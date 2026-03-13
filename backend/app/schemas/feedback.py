@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
-VALID_DIMENSIONS = {
-    "clarity_score", "specificity_score", "structure_score",
-    "faithfulness_score", "conciseness_score",
-}
+from app.services.prompt_diff import SCORE_DIMENSIONS
+
+VALID_DIMENSIONS = set(SCORE_DIMENSIONS)
 
 
 class FeedbackCreate(BaseModel):

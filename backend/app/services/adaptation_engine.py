@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.feedback import UserAdaptation
 from app.services.prompt_diff import SCORE_DIMENSIONS
+from app.utils.json_fields import parse_json_column
 
 logger = logging.getLogger(__name__)
 
@@ -218,13 +219,7 @@ async def recompute_adaptation(
             from app.models.optimization import Optimization
             feedbacks = []
             for fb in feedbacks_orm:
-                overrides = None
-                if fb.dimension_overrides:
-                    try:
-                        raw = fb.dimension_overrides
-                        overrides = json.loads(raw) if isinstance(raw, str) else raw
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                overrides = parse_json_column(fb.dimension_overrides) if fb.dimension_overrides else None
                 # Fetch optimization scores for this feedback
                 opt_stmt = sa_select(Optimization).where(Optimization.id == fb.optimization_id)
                 opt_result = await db.execute(opt_stmt)
@@ -295,21 +290,8 @@ async def load_adaptation(user_id: str, db: AsyncSession) -> dict | None:
     if not adaptation:
         return None
 
-    weights = None
-    if adaptation.dimension_weights:
-        try:
-            raw_w = adaptation.dimension_weights
-            weights = json.loads(raw_w) if isinstance(raw_w, str) else raw_w
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    affinities = None
-    if adaptation.strategy_affinities:
-        try:
-            raw_a = adaptation.strategy_affinities
-            affinities = json.loads(raw_a) if isinstance(raw_a, str) else raw_a
-        except (json.JSONDecodeError, TypeError):
-            pass
+    weights = parse_json_column(adaptation.dimension_weights) if adaptation.dimension_weights else None
+    affinities = parse_json_column(adaptation.strategy_affinities) if adaptation.strategy_affinities else None
 
     return {
         "dimension_weights": weights,

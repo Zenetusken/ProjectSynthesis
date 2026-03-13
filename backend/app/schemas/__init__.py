@@ -3,12 +3,6 @@
 All request/response schemas are re-exported here for convenience.
 """
 
-from app.schemas.github import (
-    GitHubUserInfo,
-    LinkedRepoResponse,
-    LinkRepoRequest,
-    RepoInfo,
-)
 from app.schemas.feedback import (
     AdaptationStateResponse,
     DimensionDelta,
@@ -19,6 +13,12 @@ from app.schemas.feedback import (
     FeedbackWithAggregate,
     InstructionCompliance,
     RetryHistoryEntry,
+)
+from app.schemas.github import (
+    GitHubUserInfo,
+    LinkedRepoResponse,
+    LinkRepoRequest,
+    RepoInfo,
 )
 from app.schemas.optimization import (
     HistoryStatsResponse,

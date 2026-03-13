@@ -1,14 +1,13 @@
 """Tests for feedback CRUD and aggregation."""
 
 import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.feedback_service import (
-    upsert_feedback,
-    get_feedback_for_optimization,
     get_feedback_aggregate,
-    get_user_feedback_history,
+    upsert_feedback,
 )
 
 

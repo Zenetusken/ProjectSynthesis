@@ -1,7 +1,8 @@
 """Tests for complete_with_session on LLMProvider."""
 
+
 import pytest
-from unittest.mock import AsyncMock
+
 from app.services.session_context import SessionContext
 
 

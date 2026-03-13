@@ -1,8 +1,9 @@
 """Contract tests for feedback API endpoints."""
 
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from app.schemas.feedback import FeedbackCreate, VALID_DIMENSIONS
+
+from app.schemas.feedback import FeedbackCreate
 
 
 class TestFeedbackCreateValidation:

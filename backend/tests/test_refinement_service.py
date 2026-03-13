@@ -1,15 +1,12 @@
 """Tests for refinement service — branch CRUD and unified refine."""
 
-import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.refinement_service import (
-    create_trunk_branch,
-    get_branches,
-    get_branch,
     MAX_BRANCHES_PER_OPTIMIZATION,
-    MAX_ACTIVE_BRANCHES,
+    create_trunk_branch,
 )
 
 

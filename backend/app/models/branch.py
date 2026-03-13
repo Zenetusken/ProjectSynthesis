@@ -1,15 +1,10 @@
 """Refinement branch and pairwise preference ORM models."""
 
 import uuid
-from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Text
 
-from app.database import Base
-
-
-def _utcnow():
-    return datetime.now(timezone.utc)
+from app.database import Base, utcnow
 
 
 class RefinementBranch(Base):
@@ -27,8 +22,8 @@ class RefinementBranch(Base):
     turn_history = Column(Text, default="[]")  # JSON array
     status = Column(Text, default="active", nullable=False)  # active | selected | abandoned
     row_version = Column(Integer, nullable=False, server_default="0", default=0)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (
         Index("ix_branch_optimization", "optimization_id"),
@@ -47,7 +42,7 @@ class PairwisePreference(Base):
     rejected_scores = Column(Text, nullable=True)  # JSON
     user_id = Column(Text, nullable=False)
     reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     __table_args__ = (
         Index("ix_pairwise_user", "user_id"),

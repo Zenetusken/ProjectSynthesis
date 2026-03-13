@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.feedback import Feedback
+from app.utils.json_fields import parse_json_column
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +95,9 @@ async def get_feedback_aggregate(
     all_overrides: dict[str, list[int]] = {}
     for f in feedbacks:
         if f.dimension_overrides:
-            try:
-                raw = f.dimension_overrides
-                overrides = json.loads(raw) if isinstance(raw, str) else raw
-                for k, v in overrides.items():
-                    all_overrides.setdefault(k, []).append(v)
-            except (json.JSONDecodeError, TypeError):
-                pass
+            overrides = parse_json_column(f.dimension_overrides, default={})
+            for k, v in overrides.items():
+                all_overrides.setdefault(k, []).append(v)
 
     avg_overrides = {k: round(sum(v) / len(v), 1) for k, v in all_overrides.items()} if all_overrides else None
 
@@ -158,20 +155,8 @@ async def get_all_feedbacks_for_user(
 
 def _to_dict(fb: Feedback) -> dict:
     """Convert Feedback ORM to response dict."""
-    overrides = None
-    if fb.dimension_overrides:
-        try:
-            raw = fb.dimension_overrides
-            overrides = json.loads(raw) if isinstance(raw, str) else raw
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    issues = None
-    if fb.corrected_issues:
-        try:
-            issues = json.loads(fb.corrected_issues) if isinstance(fb.corrected_issues, str) else fb.corrected_issues
-        except (json.JSONDecodeError, TypeError):
-            pass
+    overrides = parse_json_column(fb.dimension_overrides) if fb.dimension_overrides else None
+    issues = parse_json_column(fb.corrected_issues) if fb.corrected_issues else None
 
     return {
         "id": fb.id,

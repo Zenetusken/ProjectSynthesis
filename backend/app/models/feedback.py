@@ -1,15 +1,10 @@
 """Feedback and user adaptation ORM models."""
 
 import uuid
-from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, Integer, SmallInteger, Text, UniqueConstraint
 
-from app.database import Base
-
-
-def _utcnow():
-    return datetime.now(timezone.utc)
+from app.database import Base, utcnow
 
 
 class Feedback(Base):
@@ -22,7 +17,7 @@ class Feedback(Base):
     dimension_overrides = Column(Text, nullable=True)  # JSON
     corrected_issues = Column(Text, nullable=True)  # JSON array
     comment = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("optimization_id", "user_id", name="uq_feedback_opt_user"),
@@ -38,4 +33,4 @@ class UserAdaptation(Base):
     strategy_affinities = Column(Text, nullable=True)  # JSON
     retry_threshold = Column(Float, default=5.0)
     feedback_count = Column(Integer, default=0)
-    last_computed_at = Column(DateTime, default=_utcnow)
+    last_computed_at = Column(DateTime, default=utcnow)

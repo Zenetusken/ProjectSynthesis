@@ -1,7 +1,8 @@
 """Contract tests for refinement API schemas."""
 
 import pytest
-from app.schemas.refinement import RefineRequest, ForkRequest, SelectRequest
+
+from app.schemas.refinement import ForkRequest, RefineRequest, SelectRequest
 
 
 class TestRefineRequestValidation:

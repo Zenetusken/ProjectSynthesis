@@ -16,6 +16,13 @@ class Base(DeclarativeBase):
     pass
 
 
+def utcnow():
+    """Shared UTC-now factory for all ORM model default/onupdate columns."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc)
+
+
 # Ensure data directory exists for SQLite
 db_url = settings.DATABASE_URL
 if "sqlite" in db_url:
@@ -221,12 +228,12 @@ async def create_tables():
     # Import all models so they register with Base.metadata
     import app.models.audit_log  # noqa: F401
     import app.models.auth  # noqa: F401
+    import app.models.branch  # noqa: F401
+    import app.models.feedback  # noqa: F401
     import app.models.github  # noqa: F401
     import app.models.onboarding_event  # noqa: F401
     import app.models.optimization  # noqa: F401
     import app.models.repo_index  # noqa: F401
-    import app.models.feedback  # noqa: F401
-    import app.models.branch  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

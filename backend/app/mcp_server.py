@@ -1053,8 +1053,8 @@ def create_mcp_server(
     )
     async def get_adaptation_state_tool(ctx: Context, user_id: str) -> str:
         """Get the current adaptation state (learned weights, threshold, affinities) for a user."""
-        from app.services.adaptation_engine import load_adaptation
         from app.database import get_session_context
+        from app.services.adaptation_engine import load_adaptation
         async with get_session_context() as db:
             state = await load_adaptation(user_id, db)
         if not state:

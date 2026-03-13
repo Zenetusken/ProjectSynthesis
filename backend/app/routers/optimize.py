@@ -3,9 +3,8 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
-
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse

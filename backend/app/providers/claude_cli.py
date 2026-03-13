@@ -7,7 +7,14 @@ import logging
 import os
 from typing import AsyncGenerator, Callable
 
-from app.providers.base import AgenticResult, CompletionUsage, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
+from app.providers.base import (
+    AgenticResult,
+    CompletionUsage,
+    LLMProvider,
+    ToolDefinition,
+    invoke_tool,
+    parse_json_robust,
+)
 
 logger = logging.getLogger(__name__)
 

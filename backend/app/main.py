@@ -24,13 +24,13 @@ from app.providers.detector import ProviderNotAvailableError, detect_provider
 # Import routers
 from app.routers import github_auth, github_repos, health, history, optimize
 from app.routers.auth import router as jwt_auth_router
+from app.routers.feedback import router as feedback_router
 from app.routers.github import router as github_router
 from app.routers.github_config import router as github_config_router
-from app.routers.feedback import router as feedback_router
 from app.routers.onboarding import router as onboarding_router
-from app.routers.refinement import router as refinement_router
 from app.routers.provider_config import router as provider_config_router
 from app.routers.providers import router as providers_router
+from app.routers.refinement import router as refinement_router
 from app.routers.settings import router as settings_router
 from app.services.cleanup import cleanup_loop
 from app.services.github_credentials_service import load_credentials_from_file

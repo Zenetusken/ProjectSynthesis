@@ -1,11 +1,8 @@
 """Tests for SessionContext serialization and compaction."""
 
-import json
-import pytest
 from app.services.session_context import (
-    SessionContext,
     MAX_REFINEMENT_TURNS,
-    MAX_SESSION_CONTEXT_BYTES,
+    SessionContext,
     needs_compaction,
 )
 

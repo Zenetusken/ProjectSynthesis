@@ -1,25 +1,21 @@
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 
-from app.database import Base
+from app.database import Base, utcnow
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow():
-    return datetime.now(timezone.utc)
 
 
 class Optimization(Base):
     __tablename__ = "optimizations"
 
     id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     # Core prompt data
     raw_prompt = Column(Text, nullable=False)

@@ -1,9 +1,7 @@
 """Tests for pipeline integration with RetryOracle."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.retry_oracle import RetryOracle, RetryDecision
+from app.services.retry_oracle import RetryOracle
 
 
 class TestPipelineOracleIntegration:

@@ -18,6 +18,7 @@ from app.models.optimization import Optimization
 from app.providers.base import LLMProvider
 from app.services.prompt_diff import compute_prompt_hash
 from app.services.session_context import SessionContext, compact_session, needs_compaction
+from app.utils.json_fields import parse_json_column
 
 logger = logging.getLogger(__name__)
 
@@ -183,14 +184,14 @@ async def refine(
     # Load session context
     session = None
     if branch.session_context:
-        try:
-            raw_ctx = branch.session_context
-            ctx_data = json.loads(raw_ctx) if isinstance(raw_ctx, str) else raw_ctx
-            session = SessionContext.from_dict(ctx_data)
-        except (json.JSONDecodeError, TypeError):
-            logger.warning("Failed to load session context for branch %s", branch_id)
+        ctx_data = parse_json_column(branch.session_context)
+        if ctx_data:
+            try:
+                session = SessionContext.from_dict(ctx_data)
+            except (KeyError, TypeError):
+                logger.warning("Failed to load session context for branch %s", branch_id)
 
-    scores_before = json.loads(branch.scores) if branch.scores else {}
+    scores_before = parse_json_column(branch.scores, default={})
 
     yield {"event": "refinement_started", "branch_id": branch_id, "turn": branch.turn_count + 1, "source": source}
 
@@ -238,7 +239,7 @@ async def refine(
         "prompt_hash": prompt_hash,
     }
 
-    history = json.loads(branch.turn_history or "[]")
+    history = parse_json_column(branch.turn_history, default=[])
     history.append(turn_entry)
 
     branch.optimized_prompt = refined_prompt
@@ -321,12 +322,7 @@ async def select_branch(
 
 def _branch_to_dict(branch: RefinementBranch) -> dict:
     """Convert branch ORM to response dict."""
-    scores = None
-    if branch.scores:
-        try:
-            scores = json.loads(branch.scores) if isinstance(branch.scores, str) else branch.scores
-        except (json.JSONDecodeError, TypeError):
-            pass
+    scores = parse_json_column(branch.scores) if branch.scores else None
 
     return {
         "id": branch.id,
