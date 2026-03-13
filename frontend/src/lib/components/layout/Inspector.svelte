@@ -3,11 +3,17 @@
   import { editor } from "$lib/stores/editor.svelte";
   import { forge } from "$lib/stores/forge.svelte";
   import { history } from "$lib/stores/history.svelte";
+  import { feedback } from "$lib/stores/feedback.svelte";
+  import { refinement } from "$lib/stores/refinement.svelte";
   import { getStrategyHex } from "$lib/utils/strategy";
   import ScoreCircle from "$lib/components/shared/ScoreCircle.svelte";
   import ScoreBar from "$lib/components/shared/ScoreBar.svelte";
   import { getScoreColor } from "$lib/utils/colors";
   import Tip from "$lib/components/shared/Tip.svelte";
+  import InspectorFeedback from "$lib/components/layout/InspectorFeedback.svelte";
+  import InspectorRefinement from "$lib/components/layout/InspectorRefinement.svelte";
+  import InspectorBranches from "$lib/components/layout/InspectorBranches.svelte";
+  import InspectorAdaptation from "$lib/components/layout/InspectorAdaptation.svelte";
 
   let strategyRecommendations = $derived.by(() => {
     // Prefer real forge strategy result when available
@@ -199,6 +205,26 @@
               {/each}
             </div>
           {/key}
+        {/if}
+
+        <!-- Feedback panel — visible when optimization is loaded -->
+        {#if forge.overallScore != null}
+          <InspectorFeedback />
+        {/if}
+
+        <!-- Refinement turn history — visible when there are refinement turns -->
+        {#if refinement.branches.length > 0}
+          <InspectorRefinement />
+        {/if}
+
+        <!-- Branch tree — visible when there is more than one branch -->
+        {#if refinement.branchCount > 1}
+          <InspectorBranches />
+        {/if}
+
+        <!-- Adaptation transparency — visible when adaptation state is loaded -->
+        {#if feedback.adaptationState !== null}
+          <InspectorAdaptation />
         {/if}
 
         <!-- Original Prompt -->
