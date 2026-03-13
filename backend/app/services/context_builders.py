@@ -209,7 +209,7 @@ def build_strategy_summary(strategy: dict) -> str:
 
     approach_notes = strategy.get("approach_notes")
     if approach_notes:
-        parts.append(f"Approach: {approach_notes}")
+        parts.append(f"Approach (authoritative depth/scope guidance):\n{approach_notes}")
 
     # N13: secondary_frameworks — explicitly included so the optimizer applies them
     secondary = strategy.get("secondary_frameworks", [])

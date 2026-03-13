@@ -465,11 +465,12 @@ async def run_pipeline(
         start = time.time()
 
         if effective_strategy:
+            from app.services.strategy_selector import build_override_approach_notes
             strategy_result = {
                 "primary_framework": effective_strategy,
                 "secondary_frameworks": [],
                 "rationale": f"User-specified strategy override: {effective_strategy}",
-                "approach_notes": f"Apply {effective_strategy} framework as requested.",
+                "approach_notes": build_override_approach_notes(effective_strategy, analysis),
                 "strategy_source": "override",
                 "model": model_strategy,
             }

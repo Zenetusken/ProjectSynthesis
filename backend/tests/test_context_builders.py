@@ -528,7 +528,8 @@ def test_strategy_rationale_shown():
 
 def test_strategy_approach_notes_shown():
     result = build_strategy_summary({"approach_notes": "Focus on structure"})
-    assert "Approach: Focus on structure" in result
+    assert "Approach (authoritative depth/scope guidance):" in result
+    assert "Focus on structure" in result
 
 
 def test_codebase_snippets_as_dict_ignored():
