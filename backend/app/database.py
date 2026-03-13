@@ -108,6 +108,13 @@ async def _migrate_add_missing_columns() -> None:
             "model_strategy": "TEXT",
             "model_optimize": "TEXT",
             "model_validate": "TEXT",
+            "retry_history": "TEXT",
+            "per_instruction_compliance": "TEXT",
+            "session_id": "TEXT",
+            "refinement_turns": "INTEGER DEFAULT 0",
+            "active_branch_id": "TEXT",
+            "branch_count": "INTEGER DEFAULT 0",
+            "adaptation_snapshot": "TEXT",
         },
         "github_tokens": {
             "avatar_url": "TEXT",              # cached avatar URL
@@ -180,6 +187,13 @@ async def _migrate_add_missing_indexes(eng: AsyncEngine | None = None) -> None:
         ("idx_optimizations_retry_of", "optimizations", "retry_of"),
         ("idx_optimizations_user_listing", "optimizations",
          "user_id, deleted_at, created_at DESC"),
+        # H3 tables — indexes also defined in ORM __table_args__ (safety net for migrations)
+        ("ix_feedback_user_created", "feedback", "user_id, created_at"),
+        ("ix_branch_optimization", "refinement_branch", "optimization_id"),
+        ("ix_branch_opt_status", "refinement_branch", "optimization_id, status"),
+        ("ix_pairwise_user", "pairwise_preference", "user_id"),
+        ("ix_pairwise_optimization", "pairwise_preference", "optimization_id"),
+        ("ix_pairwise_user_created", "pairwise_preference", "user_id, created_at"),
     ]
 
     async with _eng.begin() as conn:

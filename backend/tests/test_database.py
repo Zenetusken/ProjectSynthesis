@@ -54,6 +54,8 @@ async def test_pool_pre_ping():
 async def test_missing_indices_created(tmp_path):
     """_migrate_add_missing_indexes must create all expected indices on optimizations."""
     import app.models.auth  # noqa: F401
+    import app.models.branch  # noqa: F401
+    import app.models.feedback  # noqa: F401
     import app.models.github  # noqa: F401
     import app.models.optimization  # noqa: F401
 
@@ -102,9 +104,11 @@ async def test_cache_size_pragma_set(mem_engine):
 
 async def test_missing_indices_idempotent(tmp_path):
     """_migrate_add_missing_indexes must be safe to run multiple times."""
-    import app.models.optimization  # noqa
-    import app.models.github        # noqa
     import app.models.auth          # noqa
+    import app.models.branch        # noqa
+    import app.models.feedback      # noqa
+    import app.models.github        # noqa
+    import app.models.optimization  # noqa
 
     db_path = tmp_path / "idempotent_test.db"
     eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
@@ -146,6 +150,8 @@ async def test_schema_additions_migrated(tmp_path):
 async def test_migrate_adds_composite_user_listing_index(tmp_path):
     """_migrate_add_missing_indexes creates idx_optimizations_user_listing."""
     import app.models.auth  # noqa: F401
+    import app.models.branch  # noqa: F401
+    import app.models.feedback  # noqa: F401
     import app.models.github  # noqa: F401
     import app.models.optimization  # noqa: F401
 

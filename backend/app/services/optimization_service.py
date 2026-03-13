@@ -196,6 +196,7 @@ class PipelineAccumulator:
 VALID_SORT_COLUMNS: frozenset[str] = frozenset({
     "created_at", "overall_score", "task_type", "updated_at",
     "duration_ms", "primary_framework", "status",
+    "refinement_turns", "branch_count",
 })
 
 VALID_ORDERS: frozenset[str] = frozenset({"asc", "desc"})
