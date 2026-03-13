@@ -3707,7 +3707,7 @@ from app.services.refinement_service import create_trunk_branch
             adaptation = await load_adaptation(user_id, db)
 
     # Initialize oracle (replaces LOW_SCORE_THRESHOLD)
-    oracle_threshold = adaptation["retry_threshold"] if adaptation else 5.0
+    oracle_threshold = adaptation.get("retry_threshold", 5.0) if adaptation else 5.0
     oracle_weights = adaptation.get("dimension_weights") if adaptation else None
     oracle = RetryOracle(
         max_retries=effective_max_retries,
@@ -3815,7 +3815,7 @@ from app.services.refinement_service import create_trunk_branch
             break
 ```
 
-**3f. Create trunk branch at pipeline end** — after the final validation is settled and before the `complete` event (insert before the yield of `("complete", ...)`):
+**3f. Create trunk branch at pipeline end** — insert at the very end of `run_pipeline()`, after the retry loop exits (after line 686 `retry_count += 1`), at the same indentation level as the retry `while` loop. Note: the `("complete", ...)` event is yielded in the router (`optimize.py`), not in `pipeline.py`:
 
 ```python
     # Create trunk branch for refinement support
@@ -3918,9 +3918,9 @@ In `backend/app/services/pipeline.py`, add `user_weights: dict[str, float] | Non
     ):
 ```
 
-Then update **both** call sites in `run_pipeline()`:
-- The first `_run_optimize_validate()` call (~line 560): add `user_weights=oracle_weights,`
-- The retry loop `_run_optimize_validate()` call (Task 18, Step 3e): add `user_weights=oracle_weights,`
+Then update **both** validation call sites in `run_pipeline()`:
+1. The **direct** `run_validate()` call (~line 560): add `user_weights=oracle_weights,` — this is the first validation, called inline (not through `_run_optimize_validate()`), so it needs the parameter added directly
+2. The **retry loop** `_run_optimize_validate()` call (Task 18, Step 3e): add `user_weights=oracle_weights,` — this passes through to `run_validate()` via the new parameter added to `_run_optimize_validate()`
 
 Where `oracle_weights` was defined in Task 18 Step 3d:
 ```python
