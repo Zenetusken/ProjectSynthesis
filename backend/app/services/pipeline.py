@@ -277,6 +277,19 @@ async def run_pipeline(
     # (Explore first, then Analyze) to maintain frontend SSE expectations.
     should_explore = bool(repo_full_name and (session_id or github_token))
 
+    # Emit diagnostic when Explore is skipped so callers know WHY
+    if not should_explore:
+        skip_reasons = []
+        if not repo_full_name:
+            skip_reasons.append("no repository linked")
+        elif not session_id and not github_token:
+            skip_reasons.append("no GitHub credentials (no session or token)")
+        yield ("stage", {
+            "stage": "explore",
+            "status": "skipped",
+            "reason": "; ".join(skip_reasons) or "explore gate not met",
+        })
+
     explore_events: list[tuple[str, dict]] = []
     analyze_events: list[tuple[str, dict]] = []
     analysis = None

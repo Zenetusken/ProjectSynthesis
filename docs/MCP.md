@@ -94,6 +94,39 @@ curl -X POST http://127.0.0.1:8001/mcp \
 
 ---
 
+## Codebase-aware optimization (Explore stage)
+
+The Explore stage reads a linked GitHub repository to ground the optimization in real codebase context — producing precise file paths, function signatures, and architectural patterns instead of generic advice.
+
+### How it works
+
+1. **Repo linking**: The user links a repo via the frontend UI (`POST /api/github/repos/link`), which stores it in the `linked_repos` table and triggers background semantic indexing.
+2. **Explore gate**: The pipeline runs Explore when `repo_full_name AND (session_id OR github_token)` are both truthy.
+3. **Token resolution**: Explore resolves GitHub credentials in order: explicit `github_token` → session-stored encrypted token (via `session_id`) → failure.
+4. **Context injection**: Explore results (tech stack, file outlines, architectural observations) flow to all downstream stages (Strategy, Optimizer, Validator), grounding their output in the real codebase.
+
+### MCP auto-resolution
+
+MCP clients (Claude Code, MCP Inspector) have no browser session, so they historically lacked the `session_id` needed for token resolution. This caused the Explore stage to silently skip on every MCP call.
+
+**Current behavior**: When `repo_full_name` is omitted from an MCP tool call, the server **auto-resolves** the most recently linked repo and its associated `session_id` from the database. This means:
+
+- **No parameters needed**: Call `synthesis_optimize` with just `prompt` — if the user has linked a repo via the UI, Explore runs automatically.
+- **Explicit override**: Pass `repo_full_name` and/or `github_token` to target a different repo or use different credentials.
+- **Graceful fallback**: If no linked repo exists or token resolution fails, Explore is skipped and the pipeline continues without codebase context. A diagnostic `stage: skipped` event is emitted with the specific reason.
+
+### When Explore is skipped
+
+When no codebase context is available, the pipeline emits a diagnostic event:
+
+```json
+{"stage": "explore", "status": "skipped", "reason": "no repository linked"}
+```
+
+All downstream stages (Strategy, Optimizer, Validator) receive explicit "no codebase context" guardrails that prevent them from fabricating tech stacks, file paths, or framework names not present in the user's original prompt.
+
+---
+
 ## Tool Reference
 
 ### Optimization tools
@@ -106,15 +139,33 @@ Run the full 5-stage pipeline (Explore → Analyze → Strategy → Optimize →
 | `prompt` | string | yes | The raw prompt to optimize |
 | `project` | string | no | Group this run under a project |
 | `title` | string | no | Human-readable label for this run |
-| `repo_full_name` | string | no | `owner/repo` to enable codebase-aware Explore stage |
-| `repo_branch` | string | no | Branch to explore (default: `main`) |
-| `github_token` | string | no | GitHub PAT; required when `repo_full_name` is set |
-| `strategy` | string | no | Force a specific strategy instead of auto-selecting |
+| `repo_full_name` | string | no | `owner/repo` for codebase-aware Explore stage. **Auto-resolved** from the most recently linked repo when omitted. |
+| `repo_branch` | string | no | Branch to explore (default: `main` or the linked repo's branch) |
+| `github_token` | string | no | GitHub PAT for explicit credentials. When omitted, the server resolves stored credentials from the linked repo's session or falls back to a GitHub App installation token. |
+| `strategy` | string | no | Force a specific framework: `chain-of-thought`, `constraint-injection`, `context-enrichment`, `CO-STAR`, `few-shot-scaffolding`, `persona-assignment`, `RISEN`, `role-task-format`, `step-by-step`, `structured-output` |
+| `file_contexts` | list[dict] | no | File content objects to include as context (`{name, content}`) |
+| `instructions` | list[string] | no | Output constraints (e.g. "always use bullet points"). These take absolute priority in the optimized prompt. |
+| `url_contexts` | list[string] | no | URLs to fetch and include as context |
+
+Returns: `PipelineResult` with `optimization_id`, `analysis`, `strategy`, `optimization`, and `validation` stage results. The `optimization.optimized_prompt` field contains the final result.
+
+**User association**: MCP-created records are automatically associated with the most recently active frontend user, ensuring they appear in the UI's history view.
+
+---
+
+#### `synthesis_retry`
+Re-run the pipeline on an existing optimization. Creates a new record linked via `retry_of`. Loads the original prompt and repo settings from the stored record.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `optimization_id` | string | yes | UUID of the optimization to retry |
+| `strategy` | string | no | Override the strategy for this run |
+| `github_token` | string | no | GitHub PAT. When omitted and the original had a linked repo, credentials are auto-resolved from the stored session. |
 | `file_contexts` | list[dict] | no | File content objects to include as context (`{name, content}`) |
 | `instructions` | list[string] | no | Additional freeform instructions for the optimizer |
 | `url_contexts` | list[string] | no | URLs to fetch and include as context |
 
-Returns: optimization record with `id`, `status`, `optimized_prompt`, `overall_score`, and stage results.
+Returns: `PipelineResult` with `optimization_id` and `retry_of` linking to the original.
 
 ---
 
@@ -125,20 +176,22 @@ Fetch a single optimization record by ID.
 |---|---|---|---|
 | `optimization_id` | string | yes | UUID of the optimization |
 
+Returns: `OptimizationRecord` with all fields including scores, prompts, stage durations, token usage, and metadata.
+
 ---
 
 #### `synthesis_list_optimizations`
-List optimizations with pagination.
+List optimizations with filtering, sorting, and pagination.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `limit` | int | 20 | Results per page (1–100) |
 | `offset` | int | 0 | Pagination offset |
 | `project` | string | — | Filter by project |
-| `task_type` | string | — | Filter by task type |
+| `task_type` | string | — | Filter by task type (`coding`, `writing`, `analysis`, `general`) |
 | `min_score` | float | — | Minimum `overall_score` threshold (1.0–10.0) |
-| `search` | string | — | Full-text filter on prompt content |
-| `sort` | string | `created_at` | Sort column: `created_at`, `overall_score`, `task_type`, `updated_at`, `duration_ms`, `primary_framework`, `status` |
+| `search` | string | — | Full-text filter on prompt content and title |
+| `sort` | string | `created_at` | Sort column: `created_at`, `overall_score`, `task_type`, `updated_at`, `duration_ms`, `primary_framework`, `status`, `refinement_turns`, `branch_count` |
 | `order` | string | `desc` | `asc` or `desc` |
 
 Returns a pagination envelope:
@@ -156,7 +209,7 @@ Returns a pagination envelope:
 ---
 
 #### `synthesis_search_optimizations`
-Full-text search across prompt content and metadata.
+Full-text search across prompt content, optimized prompts, and titles.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -180,7 +233,7 @@ Fetch all optimizations belonging to a project.
 ---
 
 #### `synthesis_get_stats`
-Return aggregate statistics: total runs, average score, and task type breakdown.
+Return aggregate statistics: total runs, average score, task type and framework breakdowns, token usage, and cost.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -189,15 +242,16 @@ Return aggregate statistics: total runs, average score, and task type breakdown.
 ---
 
 #### `synthesis_tag_optimization`
-Add or remove tags on an optimization. Tags are deduplicated and insertion order is preserved.
+Add or remove tags on an optimization. Supports optimistic locking via `expected_version`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `optimization_id` | string | yes | UUID of the optimization |
 | `add_tags` | list[string] | no | Tags to add |
 | `remove_tags` | list[string] | no | Tags to remove |
-| `project` | string | no | Update the project label |
-| `title` | string | no | Update the human-readable title |
+| `project` | string | no | Update the project label (empty string clears) |
+| `title` | string | no | Update the human-readable title (empty string clears) |
+| `expected_version` | int | no | Expected `row_version` for optimistic locking; rejected if mismatched |
 
 ---
 
@@ -211,14 +265,14 @@ Soft-delete an optimization record (sets `deleted_at`; purged permanently after 
 ---
 
 #### `synthesis_batch_delete`
-Batch soft-delete multiple optimization records (sets `deleted_at`; purged permanently after 7 days). All-or-nothing semantics: if any ID is not found, none are deleted. Use `synthesis_list_trash` + `synthesis_restore` to undo within the recovery window.
+Batch soft-delete multiple optimization records. All-or-nothing semantics: if any ID is not found, none are deleted.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `ids` | list[string] | yes | UUIDs of optimizations to delete (1–50 items). Use `synthesis_list_optimizations` to discover valid IDs. |
-| `user_id` | string | no | Owner filter — when set, all records must belong to this user. Omit for unscoped access (single-user/localhost mode). |
+| `ids` | list[string] | yes | UUIDs of optimizations to delete (1–50 items) |
+| `user_id` | string | no | Owner filter — when set, all records must belong to this user |
 
-Returns `{"deleted_count": N, "ids": [...]}` on success, or `{"error": "..."}` on validation failure.
+Returns `{"deleted_count": N, "ids": [...]}`.
 
 ---
 
@@ -230,45 +284,31 @@ List soft-deleted optimizations still within the 7-day recovery window.
 | `limit` | int | no (default 20) | Max results per page (1–100) |
 | `offset` | int | no (default 0) | Records to skip for pagination |
 
-Returns a pagination envelope `{total, count, offset, items, has_more, next_offset}`. Each item includes `id`, `raw_prompt`, `title`, `deleted_at`, and `created_at`.
+Returns a pagination envelope. Each item includes `id`, `raw_prompt`, `title`, `deleted_at`, and `created_at`.
 
 ---
 
 #### `synthesis_restore`
-Restore a soft-deleted optimization from the trash (clears `deleted_at`). The record must still be within the 7-day recovery window.
+Restore a soft-deleted optimization from the trash (clears `deleted_at`). Must be within the 7-day recovery window.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `optimization_id` | string | yes | UUID of the optimization to restore (use `synthesis_list_trash` to discover valid IDs) |
+| `optimization_id` | string | yes | UUID of the optimization to restore |
 
-Returns `{"restored": true, "id": "..."}` on success, or `{"error": "..."}` if not found or window expired.
-
----
-
-#### `synthesis_retry`
-Re-run the pipeline on an existing optimization (useful after a failure or provider change).
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `optimization_id` | string | yes | UUID of the optimization to retry |
-| `strategy` | string | no | Override the strategy for this run |
-| `github_token` | string | no | GitHub PAT if the original run used a linked repo |
-| `file_contexts` | list[dict] | no | File content objects to include as context (`{name, content}`) |
-| `instructions` | list[string] | no | Additional freeform instructions for the optimizer |
-| `url_contexts` | list[string] | no | URLs to fetch and include as context |
+Returns `{"restored": true, "id": "..."}`.
 
 ---
 
 ### GitHub tools
 
-All GitHub tools require an explicit `token` parameter (a GitHub Personal Access Token with `repo` scope). No session-level state is shared between calls.
+GitHub tools read repository content via the GitHub API. The `token` parameter accepts a GitHub Personal Access Token with `repo` scope. When omitted or empty, the server attempts to generate a GitHub App installation token automatically.
 
 #### `synthesis_github_list_repos`
 List repositories accessible to the token.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `token` | string | yes | GitHub PAT |
+| `token` | string | no | GitHub PAT. Omit to use platform bot credentials. |
 | `limit` | int | no (default 30) | Max repos to return (1–100) |
 
 Returns each repo with `full_name`, `default_branch`, `language`, `private`.
@@ -280,9 +320,9 @@ Read a file from a GitHub repository at a specific ref.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `token` | string | yes | GitHub PAT |
-| `repo_full_name` | string | yes | `owner/repo` |
+| `full_name` | string | yes | `owner/repo` |
 | `path` | string | yes | File path within the repo |
+| `token` | string | no | GitHub PAT. Omit to use platform bot credentials. |
 | `branch` | string | no | Branch, tag, or commit SHA (default: repo default branch) |
 
 ---
@@ -292,9 +332,9 @@ Search for a pattern within a repository using the GitHub code search API.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `token` | string | yes | GitHub PAT |
-| `repo_full_name` | string | yes | `owner/repo` |
+| `full_name` | string | yes | `owner/repo` |
 | `pattern` | string | yes | Search query (GitHub code search syntax) |
+| `token` | string | no | GitHub PAT. Omit to use platform bot credentials. |
 | `extension` | string | no | Restrict results to files with this extension (e.g. `py`) |
 
 Returns up to 20 matches with `path` and `name`.
@@ -304,23 +344,21 @@ Returns up to 20 matches with `path` and `name`.
 ### Feedback and refinement tools
 
 #### `synthesis_submit_feedback`
-Submit quality feedback (thumbs up/down + dimension overrides) on an optimization. Triggers background adaptation recomputation.
+Submit quality feedback (thumbs up/down + dimension overrides) on an optimization. Triggers background adaptation recomputation that tunes pipeline parameters (dimension weights, retry threshold, strategy affinities) for the user.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `optimization_id` | string | yes | UUID of the optimization |
 | `rating` | int | yes | Feedback rating: `-1` (negative), `0` (neutral), `1` (positive) |
-| `dimension_overrides` | dict | no | Per-dimension score overrides, e.g. `{"clarity_score": 8, "specificity_score": 7}` |
-| `comment` | string | no | Free-text feedback comment |
+| `dimension_overrides` | dict | no | Per-dimension score overrides (1–10), e.g. `{"clarity_score": 8, "specificity_score": 7}`. Valid dimensions: `clarity_score`, `specificity_score`, `structure_score`, `faithfulness_score`, `conciseness_score`. |
+| `comment` | string | no | Free-text feedback comment (max 2000 chars) |
 
-Returns the upserted feedback record as JSON. One feedback per optimization per user (upsert semantics).
-
-Annotations: `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`
+One feedback per optimization per user (upsert semantics). Requires 3+ feedbacks before adaptation weights are computed.
 
 ---
 
 #### `synthesis_get_branches`
-List all refinement branches for an optimization.
+List all refinement branches for an optimization. Refinement branches are created via the REST API's `/refine` endpoint (SSE streaming); this tool is a read-only viewer.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -328,20 +366,16 @@ List all refinement branches for an optimization.
 
 Returns `{"branches": [...], "total": N}` where each branch includes `id`, `label`, `status`, `turn_count`, `scores`, and `optimized_prompt`.
 
-Annotations: `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`
-
 ---
 
 #### `synthesis_get_adaptation_state`
-Retrieve the current learned adaptation state for a user (dimension weights, retry threshold, strategy affinities).
+Retrieve the current learned adaptation state for a user (dimension weights, retry threshold, strategy affinities). These parameters tune the pipeline's behavior based on accumulated feedback.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `user_id` | string | yes | User identifier |
 
-Returns the adaptation state object or `{"error": "No adaptation found"}` if the user has insufficient feedback history.
-
-Annotations: `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`
+Returns the adaptation state object with `dimension_weights`, `strategy_affinities`, `retry_threshold`, and `feedback_count`. Returns an error if the user has fewer than 3 feedbacks (the minimum for adaptation computation).
 
 ---
 
@@ -372,13 +406,27 @@ The MCP server resolves the LLM provider in order of preference:
 
 If no provider is available, `synthesis_optimize` and `synthesis_retry` return a JSON error with a configuration hint instead of crashing.
 
+> **Note:** When running inside a Claude Code session (`CLAUDECODE=1` env var), the CLI provider probe is skipped to prevent nested session crashes. Start the MCP server with `env -u CLAUDECODE python -m app.mcp_server` to use the CLI provider from within Claude Code.
+
+---
+
+## User association
+
+MCP tools have no authentication layer (the server is localhost-only). To ensure MCP-created records appear in the frontend's history view:
+
+- **Optimization records**: `synthesis_optimize` and `synthesis_retry` auto-resolve the most recently active user from the database and set `user_id` on the record.
+- **Feedback records**: `synthesis_submit_feedback` associates feedback with the resolved user, ensuring adaptation weights are computed for the correct user.
+
+This means MCP-created optimizations appear alongside UI-created ones in the frontend history without manual user ID management.
+
 ---
 
 ## Error responses
 
 All tools return actionable error messages as JSON strings. Common cases:
 
-- **No LLM provider**: `synthesis_optimize` and `synthesis_retry` return `{"error": "No LLM provider configured", "hint": "..."}` when no API key is set
+- **No LLM provider**: `synthesis_optimize` and `synthesis_retry` return a configuration hint when no API key is set
 - **Optimization not found**: includes the ID that was looked up and a suggestion to call `synthesis_list_optimizations`
-- **GitHub API error**: includes HTTP status and response body
-- **Missing token/session**: raised at the explore stage if a repo is linked but no GitHub token is available
+- **GitHub API error**: includes HTTP status, context description, and a specific hint per status code (401: check token, 403: check permissions, 404: verify repo/path, 429: rate limit)
+- **Explore skipped**: emitted as a `stage` event with `status: "skipped"` and a `reason` field explaining why (no repository linked, no GitHub credentials, token resolution failed)
+- **Version conflict**: `synthesis_tag_optimization` with `expected_version` returns the current version for retry

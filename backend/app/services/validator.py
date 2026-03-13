@@ -129,6 +129,14 @@ async def run_validate(
                 f"does NOT mean something doesn't exist — this is partial coverage.\n"
                 f"{codebase_summary[:4000]}"
             )
+    else:
+        user_message += (
+            "\n\nNo codebase exploration was performed for this optimization.\n"
+            "If the optimized prompt introduces specific tech stacks, file paths, "
+            "framework names, or architectural patterns that are NOT present in the "
+            "original prompt, penalize faithfulness_score — these are likely hallucinated "
+            "and would mislead the executor."
+        )
 
     if instructions:
         constraint_list = "\n".join(f"  - {c}" for c in instructions[:10])

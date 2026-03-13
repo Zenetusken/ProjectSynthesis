@@ -37,6 +37,12 @@ CRITICAL — anti-patterns to avoid:
   (path, line number, variable name) is not in the reference, omit it entirely rather
   than guessing a plausible value. Wrong specifics are worse than no specifics.
 - Do NOT incorporate any claims marked [unverified] as factual statements
+- When NO codebase reference is provided: do NOT invent tech stacks, language versions,
+  framework names, file paths, module structures, or architectural patterns. If the
+  user's prompt does not specify these, the optimized prompt must leave them open or
+  instruct the executor to state assumptions. Fabricating a plausible tech stack
+  (e.g. "Python 3.10+", "FastAPI", "PostgreSQL") is just as harmful as fabricating
+  file paths — it constrains the executor with ungrounded assumptions.
 Instead: Use codebase knowledge to make every instruction precise. The output should read
 as if written by someone with deep codebase knowledge — not as a report about exploration.
 Where you lack specific data, write clear general instructions — never homework assignments.

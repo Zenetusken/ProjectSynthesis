@@ -89,6 +89,16 @@ async def run_strategy(
                 f"intents, chain-of-thought for investigation intents, structured-output for "
                 f"specification intents."
             )
+    else:
+        user_message += (
+            "\n\nNo codebase context is available — no repository was linked.\n"
+            "Your framework selection must NOT assume any specific programming language,\n"
+            "runtime version, framework, library, or project structure.\n"
+            "Select frameworks based solely on the task type, complexity, and weaknesses\n"
+            "identified in the analysis. If the user's prompt does not mention a specific\n"
+            "tech stack, prefer general-purpose frameworks (role-task-format, chain-of-thought,\n"
+            "step-by-step, constraint-injection) over domain-specific ones."
+        )
 
     # Inject attached files / URLs / user constraints so strategy selection
     # can account for domain-specific signals (the strategy prompt already

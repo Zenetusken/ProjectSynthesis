@@ -337,6 +337,22 @@ async def run_optimize(
                 f"{codebase_summary}\n"
                 "--- End codebase reference ---"
             )
+    else:
+        user_message += (
+            "\n\n--- No codebase context ---\n"
+            "No repository was linked and no codebase exploration was performed.\n"
+            "You MUST NOT invent, guess, or infer:\n"
+            "- Programming language versions (e.g. 'Python 3.10+')\n"
+            "- Framework names or versions (e.g. 'FastAPI', 'Express')\n"
+            "- File paths, module names, or function signatures\n"
+            "- Database engines, ORM choices, or library names\n"
+            "- Architectural patterns, layer rules, or project conventions\n\n"
+            "If the user's prompt does not specify a tech stack, the optimized\n"
+            "prompt must either leave the choice open or ask the executor to\n"
+            "state assumptions before proceeding. Base the optimization\n"
+            "strictly on what the raw prompt and user instructions contain.\n"
+            "--- End codebase note ---"
+        )
 
     # N24: inject attached file content
     user_message += format_file_contexts(file_contexts)
