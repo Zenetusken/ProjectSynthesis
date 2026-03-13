@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from app.services.prompt_diff import (
     SCORE_DIMENSIONS,
     compute_dimension_deltas,
-    compute_prompt_entropy,
+    compute_prompt_divergence,
     compute_prompt_hash,
     detect_cycle,
 )
@@ -77,7 +77,7 @@ class RetryOracle:
         self._attempts: list[_Attempt] = []
         self._elasticity: dict[str, list[bool]] = {d: [] for d in SCORE_DIMENSIONS}
         self._focus_history: list[list[str]] = []
-        self._last_entropy: float = 1.0
+        self._last_divergence: float = 1.0
         self._last_prompt: str = ""
 
     @property
@@ -123,7 +123,7 @@ class RetryOracle:
                     self._elasticity[dim].append(improved)
 
         if self._last_prompt:
-            self._last_entropy = compute_prompt_entropy(self._last_prompt, prompt)
+            self._last_divergence = compute_prompt_divergence(self._last_prompt, prompt)
         self._last_prompt = prompt
 
         self._attempts.append(_Attempt(
@@ -152,11 +152,11 @@ class RetryOracle:
             weight_total += w
         return weighted_sum / weight_total if weight_total > 0 else 0.0
 
-    def _compute_entropy(self) -> float:
-        """Prompt entropy between last two attempts."""
+    def _compute_divergence(self) -> float:
+        """Prompt divergence between last two attempts."""
         if len(self._attempts) < 2:
             return 1.0
-        return self._last_entropy
+        return self._last_divergence
 
     def _compute_regression_ratio(self) -> float:
         """Fraction of dimensions that degraded on the last attempt."""
@@ -211,20 +211,37 @@ class RetryOracle:
         # Gate 3: Cycle detected → ACCEPT_BEST
         if self.attempt_count >= 2:
             previous_hashes = [a.prompt_hash for a in self._attempts[:-1]]
-            cycle_match = detect_cycle(latest.prompt_hash, previous_hashes)
-            if cycle_match is not None:
+            cycle_result = detect_cycle(
+                latest.prompt_hash,
+                previous_hashes,
+                current_divergence=self._last_divergence,
+                dimension_deltas=latest.dimension_deltas,
+            )
+            if cycle_result is not None:
+                if cycle_result.type == "hard":
+                    return RetryDecision(
+                        action="accept_best",
+                        reason=(
+                            f"Cycle detected: attempt {self.attempt_count} "
+                            f"matches attempt {cycle_result.matched_attempt}"
+                        ),
+                        best_attempt=self.best_attempt_index,
+                    )
                 return RetryDecision(
                     action="accept_best",
-                    reason=f"Cycle detected: attempt {self.attempt_count} matches attempt {cycle_match}",
+                    reason=(
+                        f"Soft cycle detected: divergence "
+                        f"{cycle_result.divergence:.3f} below threshold"
+                    ),
                     best_attempt=self.best_attempt_index,
                 )
 
         # Gate 4: Creative exhaustion → ACCEPT_BEST
-        entropy = self._last_entropy if self.attempt_count >= 2 else 1.0
-        if entropy < ENTROPY_EXHAUSTION_THRESHOLD and self.attempt_count >= 2:
+        divergence = self._last_divergence if self.attempt_count >= 2 else 1.0
+        if divergence < ENTROPY_EXHAUSTION_THRESHOLD and self.attempt_count >= 2:
             return RetryDecision(
                 action="accept_best",
-                reason=f"Creative exhaustion: entropy {entropy:.3f} < {ENTROPY_EXHAUSTION_THRESHOLD}",
+                reason=f"Creative exhaustion: divergence {divergence:.3f} < {ENTROPY_EXHAUSTION_THRESHOLD}",
                 best_attempt=self.best_attempt_index,
             )
 
