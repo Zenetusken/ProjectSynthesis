@@ -308,6 +308,13 @@ class SubmitFeedbackInput(BaseModel):
             '{"clarity_score": 8, "specificity_score": 7}.'
         ),
     )
+    corrected_issues: list[str] | None = Field(
+        default=None,
+        description=(
+            "Issue IDs the user observed (e.g. 'lost_key_terms', 'too_verbose'). "
+            "See CORRECTABLE_ISSUES for valid IDs."
+        ),
+    )
     comment: str | None = Field(
         default=None,
         max_length=2000,
