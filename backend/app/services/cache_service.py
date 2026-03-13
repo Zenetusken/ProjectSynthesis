@@ -16,6 +16,7 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -37,9 +38,17 @@ class CacheService:
         self._redis = redis_service
         # In-memory fallback: {key: (expiry_timestamp, value)}
         self._memory: dict[str, tuple[float, Any]] = {}
+        # Fix #4: protect _memory from concurrent over-eviction in async context
+        self._memory_lock = asyncio.Lock()
 
     async def get(self, key: str) -> Any | None:
-        """Get a value by key. Returns None on miss or expiry."""
+        """Get a value by key. Returns None on miss or expiry.
+
+        Design note: when Redis is healthy, it is authoritative. A Redis miss
+        returns None immediately without checking the in-memory layer — even
+        though set() dual-writes to both. The in-memory layer is a *failover*
+        for when Redis is down or throws, not a second-chance lookup.
+        """
         if self._redis.is_ready:
             try:
                 raw = await self._redis.client.get(key)
@@ -66,16 +75,18 @@ class CacheService:
         if self._redis.is_ready:
             try:
                 await self._redis.client.set(key, serialized, ex=ttl_seconds)
-                return
             except Exception as e:
                 logger.debug("Redis cache set failed for %s: %s", key, e)
 
-        # Fallback to in-memory with lazy cleanup
-        # Store JSON-normalized value so types match the Redis path (e.g., datetime → str)
-        if len(self._memory) >= _MAX_MEMORY_ENTRIES:
-            self._cleanup_memory()
-        normalized = json.loads(serialized)
-        self._memory[key] = (time.time() + ttl_seconds, normalized)
+        # Fix #1/#2: Always write to in-memory regardless of Redis success.
+        # This ensures get() can serve from memory if Redis fails transiently,
+        # and delete() can fully invalidate across both layers.
+        # Fix #4: Lock prevents concurrent set() calls from over-evicting.
+        async with self._memory_lock:
+            if len(self._memory) >= _MAX_MEMORY_ENTRIES:
+                self._cleanup_memory()
+            normalized = json.loads(serialized)
+            self._memory[key] = (time.time() + ttl_seconds, normalized)
 
     async def delete(self, key: str) -> None:
         """Delete a key from cache."""

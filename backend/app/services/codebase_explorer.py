@@ -1027,8 +1027,9 @@ async def run_explore(
 
     ctx_dict = asdict(context)
 
-    # Cache the result
-    if cache and cache_key and context.explore_quality == "complete":
+    # Cache the result — skip when SHA is unknown (current_sha is None) to avoid
+    # caching under a non-invalidatable empty-SHA key (Fix #11/#12)
+    if cache and cache_key and context.explore_quality == "complete" and current_sha:
         try:
             await cache.set(cache_key, ctx_dict, ttl_seconds=settings.EXPLORE_RESULT_CACHE_TTL)
         except Exception as e:
