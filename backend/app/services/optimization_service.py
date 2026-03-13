@@ -14,6 +14,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.optimization import Optimization
+from app.providers.base import CompletionUsage
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ class PipelineAccumulator:
         self.pipeline_failed = False
         self.error_message: str | None = None
         self.total_tokens: int = 0
+        self.usage_totals = CompletionUsage()
 
     def process_event(self, event_type: str, event_data: dict) -> None:
         """Process a single pipeline event, accumulating updates."""
@@ -112,14 +114,31 @@ class PipelineAccumulator:
         if event_type in ("analysis", "strategy", "optimization", "validation"):
             self.results[event_type] = event_data
 
-        # Track stage timings and token counts
+        # Track stage timings, token counts, and per-stage usage
         if event_type == "stage" and event_data.get("status") == "complete":
             stage_name = event_data.get("stage")
             if stage_name:
-                self.stage_timings[stage_name] = {
+                timing: dict = {
                     "duration_ms": event_data.get("duration_ms", 0),
                     "token_count": event_data.get("token_count", 0),
                 }
+                stage_usage = event_data.get("usage")
+                if stage_usage:
+                    timing["input_tokens"] = stage_usage.get("input_tokens", 0)
+                    timing["output_tokens"] = stage_usage.get("output_tokens", 0)
+                    timing["cache_read"] = stage_usage.get("cache_read_input_tokens", 0)
+                    timing["cache_creation"] = stage_usage.get("cache_creation_input_tokens", 0)
+                    timing["is_estimated"] = stage_usage.get("is_estimated", False)
+                    # Accumulate into pipeline-wide usage totals
+                    self.usage_totals += CompletionUsage(
+                        input_tokens=stage_usage.get("input_tokens", 0),
+                        output_tokens=stage_usage.get("output_tokens", 0),
+                        cache_read_input_tokens=stage_usage.get("cache_read_input_tokens", 0),
+                        cache_creation_input_tokens=stage_usage.get("cache_creation_input_tokens", 0),
+                        is_estimated=stage_usage.get("is_estimated", False),
+                        model=stage_usage.get("model", ""),
+                    )
+                self.stage_timings[stage_name] = timing
             self.total_tokens += event_data.get("token_count", 0)
 
         # Detect non-recoverable errors
@@ -161,6 +180,15 @@ class PipelineAccumulator:
             self.updates["error_message"] = self.error_message
         else:
             self.updates["status"] = "completed"
+
+        # Write accumulated usage/cost columns
+        if self.usage_totals.total_tokens > 0:
+            self.updates["total_input_tokens"] = self.usage_totals.input_tokens
+            self.updates["total_output_tokens"] = self.usage_totals.output_tokens
+            self.updates["total_cache_read_tokens"] = self.usage_totals.cache_read_input_tokens
+            self.updates["total_cache_creation_tokens"] = self.usage_totals.cache_creation_input_tokens
+            self.updates["estimated_cost_usd"] = self.usage_totals.estimated_cost_usd()
+            self.updates["usage_is_estimated"] = self.usage_totals.is_estimated
 
         return self.updates
 
@@ -369,6 +397,9 @@ async def compute_stats(
             func.sum(case((Optimization.linked_repo_full_name.isnot(None), 1), else_=0)).label("codebase_aware"),
             func.sum(case((Optimization.is_improvement.is_(True), 1), else_=0)).label("improvements"),
             func.count(Optimization.is_improvement).label("validated"),
+            func.sum(Optimization.total_input_tokens).label("total_input_tokens"),
+            func.sum(Optimization.total_output_tokens).label("total_output_tokens"),
+            func.sum(Optimization.estimated_cost_usd).label("total_cost_usd"),
         ).where(*base_filter)
     )
     totals = totals_result.one()
@@ -423,6 +454,9 @@ async def compute_stats(
         "model_usage": model_usage,
         "codebase_aware_count": totals.codebase_aware or 0,
         "improvement_rate": improvement_rate,
+        "total_input_tokens": totals.total_input_tokens or 0,
+        "total_output_tokens": totals.total_output_tokens or 0,
+        "total_cost_usd": round(float(totals.total_cost_usd), 4) if totals.total_cost_usd else None,
     }
 
 

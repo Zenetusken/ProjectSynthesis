@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json as _json
 import logging
 import os
 from typing import AsyncGenerator, Callable
 
-from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
+from app.providers.base import AgenticResult, CompletionUsage, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
 
 logger = logging.getLogger(__name__)
+
+# Task-local usage tracking (estimated — CLI has no real token data).
+_usage_var: contextvars.ContextVar[CompletionUsage | None] = contextvars.ContextVar(
+    "_cli_usage", default=None,
+)
 
 # The SDK's default stream-close timeout is 60 s — far too short for
 # the Explore stage which runs up to 25 tool turns with network I/O.
@@ -41,6 +47,19 @@ class ClaudeCLIProvider(LLMProvider):
     def name(self) -> str:
         return "claude_cli"
 
+    def get_last_usage(self) -> CompletionUsage | None:
+        """Return estimated token usage from the most recent CLI call (task-local)."""
+        return _usage_var.get(None)
+
+    def _set_estimated_usage(self, system: str, user: str, output: str, model: str) -> None:
+        """Set estimated usage using the ~4 chars/token heuristic."""
+        _usage_var.set(CompletionUsage(
+            input_tokens=max(1, (len(system) + len(user)) // 4),
+            output_tokens=max(1, len(output) // 4),
+            is_estimated=True,
+            model=model,
+        ))
+
     async def complete(self, system: str, user: str, model: str) -> str:
         from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock
 
@@ -55,6 +74,7 @@ class ClaudeCLIProvider(LLMProvider):
                 for block in msg.content:
                     if isinstance(block, TextBlock):
                         full_text += block.text
+        self._set_estimated_usage(system, user, full_text, model)
         return full_text
 
     async def stream(self, system: str, user: str, model: str) -> AsyncGenerator[str, None]:
@@ -96,6 +116,7 @@ class ClaudeCLIProvider(LLMProvider):
         # the subprocess is always cleaned up — even when the optimizer's
         # timeout cancels the consuming task mid-stream.
         assert proc.stdout is not None
+        _output_chars = 0
         try:
             async for line_bytes in proc.stdout:
                 line = line_bytes.decode("utf-8").strip()
@@ -114,8 +135,16 @@ class ClaudeCLIProvider(LLMProvider):
                     continue
                 delta = inner.get("delta", {})
                 if delta.get("type") == "text_delta" and delta.get("text"):
+                    _output_chars += len(delta["text"])
                     yield delta["text"]
         finally:
+            # Set estimated usage before cleanup
+            _usage_var.set(CompletionUsage(
+                input_tokens=max(1, (len(system) + len(user)) // 4),
+                output_tokens=max(1, _output_chars // 4),
+                is_estimated=True,
+                model=model,
+            ))
             # Kill the subprocess if it's still running (e.g. generator cancelled)
             if proc.returncode is None:
                 try:
@@ -140,6 +169,32 @@ class ClaudeCLIProvider(LLMProvider):
         model: str,
         schema: dict | None = None,
     ) -> dict:
+        """Structured JSON output via CLI provider.
+
+        The Claude CLI does not support ``output_config.format`` (API-only feature),
+        so native schema enforcement is unavailable.  When ``schema`` is provided:
+
+        1. Injects a JSON-schema instruction block into the system prompt so the
+           model is aware of the expected shape.
+        2. Falls back to ``parse_json_robust()`` 3-strategy extraction.
+
+        This is best-effort — callers that require guaranteed schema compliance
+        should prefer AnthropicAPIProvider.
+        """
+        if schema is not None:
+            logger.debug(
+                "ClaudeCLIProvider.complete_json: schema provided but native "
+                "schema enforcement is unavailable (CLI limitation). "
+                "Injecting schema instruction into system prompt."
+            )
+            import json as _json_mod
+            schema_instruction = (
+                "\n\nIMPORTANT: You MUST respond with valid JSON that strictly "
+                "conforms to this JSON schema:\n"
+                f"```json\n{_json_mod.dumps(schema, indent=2)}\n```\n"
+                "Output ONLY the JSON object. No markdown fences, no commentary."
+            )
+            system = system + schema_instruction
         raw = await self.complete(system, user, model)
         return parse_json_robust(raw)
 
@@ -153,6 +208,7 @@ class ClaudeCLIProvider(LLMProvider):
         on_tool_call: Callable[[str, dict], None] | None = None,
         on_agent_text: Callable[[str], None] | None = None,
         output_schema: dict | None = None,
+        resume_session_id: str | None = None,
     ) -> AgenticResult:
         from claude_agent_sdk import (
             AssistantMessage,
@@ -225,16 +281,20 @@ class ClaudeCLIProvider(LLMProvider):
         # the schema from training knowledge rather than actual repository reads.
         # submit_result MCP tool is the canonical structured-output mechanism and is
         # enforced by the explore system prompt ("you MUST call the submit_result tool").
-        options = ClaudeAgentOptions(
+        opts_kwargs: dict = dict(
             system_prompt=system,
             model=model,
             max_turns=max_turns,
             mcp_servers={"pf-tools": mcp_server},
             allowed_tools=allowed,
         )
+        if resume_session_id:
+            opts_kwargs["resume"] = resume_session_id
+        options = ClaudeAgentOptions(**opts_kwargs)
 
         full_text = ""
         sdk_structured_output: dict | None = None
+        captured_session_id: str | None = None
 
         # Use AsyncIterable[dict] prompt — query() signature: str | AsyncIterable[dict].
         # SDK >=0.1.46 fixed the string-prompt race (PR #630: stdin was closed before MCP
@@ -268,21 +328,35 @@ class ClaudeCLIProvider(LLMProvider):
                     structured = getattr(msg, "structured_output", None)
                     if structured:
                         sdk_structured_output = structured
+                    # H3: Capture session_id for resume support
+                    sid = getattr(msg, "session_id", None)
+                    if sid:
+                        captured_session_id = sid
         except BaseException as e:
             # Unwrap anyio ExceptionGroup to expose the actual sub-exception.
-            actual = e
-            if hasattr(e, "exceptions") and e.exceptions:
+            # The SDK wraps errors in ExceptionGroup; unwrapping surfaces the
+            # real cause for better diagnostics and stack traces.
+            if isinstance(e, BaseExceptionGroup) or (
+                hasattr(e, "exceptions") and isinstance(getattr(e, "exceptions", None), (list, tuple))
+            ):
                 actual = e.exceptions[0]
                 logger.error(
-                    "ClaudeCLIProvider agentic loop failed: %s: %s",
-                    type(actual).__name__,
-                    actual,
+                    "ClaudeCLIProvider agentic loop failed (unwrapped from %s): %s: %s",
+                    type(e).__name__, type(actual).__name__, actual,
                 )
-
-            if actual is not e:
                 raise actual from e
+            logger.error(
+                "ClaudeCLIProvider agentic loop failed: %s: %s",
+                type(e).__name__, e,
+            )
             raise
+
+        # Set estimated usage for the full agentic session
+        self._set_estimated_usage(system, user, full_text, model)
 
         # Prefer SDK-level structured output, then submit_result capture, then text
         final_output = sdk_structured_output or (captured_output if captured_output else None)
-        return AgenticResult(text=full_text, tool_calls=tool_calls, output=final_output)
+        return AgenticResult(
+            text=full_text, tool_calls=tool_calls, output=final_output,
+            session_id=captured_session_id,
+        )

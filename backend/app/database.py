@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
@@ -63,7 +63,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @asynccontextmanager
-async def get_session_context():
+async def get_session_context() -> AsyncGenerator[AsyncSession, None]:
     """Async context manager for database sessions outside FastAPI DI."""
     async with async_session() as session:
         try:
@@ -97,6 +97,17 @@ async def _migrate_add_missing_columns() -> None:
             "validation_quality": "VARCHAR(20)", # pipeline quality flag for validation stage
             "row_version": "INTEGER NOT NULL DEFAULT 0",  # optimistic locking counter
             "stage_durations": "TEXT",           # JSON dict of per-stage timing
+            "total_input_tokens": "INTEGER",       # H2: cost tracking
+            "total_output_tokens": "INTEGER",
+            "total_cache_read_tokens": "INTEGER",
+            "total_cache_creation_tokens": "INTEGER",
+            "estimated_cost_usd": "REAL",
+            "usage_is_estimated": "BOOLEAN",
+            "model_explore": "TEXT",              # per-stage model tracking
+            "model_analyze": "TEXT",
+            "model_strategy": "TEXT",
+            "model_optimize": "TEXT",
+            "model_validate": "TEXT",
         },
         "github_tokens": {
             "avatar_url": "TEXT",              # cached avatar URL
@@ -146,7 +157,7 @@ async def _migrate_add_missing_columns() -> None:
                     logger.info("Migration: added column %s.%s", table_name, col_name)
 
 
-async def _migrate_add_missing_indexes(eng=None) -> None:
+async def _migrate_add_missing_indexes(eng: AsyncEngine | None = None) -> None:
     """Idempotently create missing indices on existing tables.
 
     Checks sqlite_master (SQLite) or pg_indexes (PostgreSQL) before issuing

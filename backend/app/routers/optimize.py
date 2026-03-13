@@ -6,6 +6,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from collections.abc import AsyncGenerator
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update
@@ -55,7 +57,7 @@ async def optimize_prompt(
     req: Request,
     retry_of: str | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
-):
+) -> StreamingResponse:
     """Run the optimization pipeline with SSE streaming."""
     if not req.app.state.provider:
         raise service_unavailable("LLM provider not initialized")
@@ -63,7 +65,7 @@ async def optimize_prompt(
     opt_id = str(uuid.uuid4())
     start_time = time.time()
 
-    async def event_stream():
+    async def event_stream() -> AsyncGenerator[str, None]:
         # Session 1: create the record in pending state
         async with async_session() as s:
             s.add(Optimization(
@@ -130,6 +132,10 @@ async def optimize_prompt(
                         "optimization_id": opt_id,
                         "total_duration_ms": updates["duration_ms"],
                         "total_tokens": acc.total_tokens,
+                        "total_input_tokens": acc.usage_totals.input_tokens,
+                        "total_output_tokens": acc.usage_totals.output_tokens,
+                        "estimated_cost_usd": acc.usage_totals.estimated_cost_usd(),
+                        "usage_is_estimated": acc.usage_totals.is_estimated,
                     })
 
         except asyncio.TimeoutError:
@@ -185,7 +191,7 @@ async def get_optimization(
     optimization_id: str,
     session: AsyncSession = Depends(get_session),
     current_user: AuthenticatedUser = Depends(get_current_user),
-):
+) -> dict:
     """Get a single optimization by ID."""
     result = await session.execute(
         select(Optimization).where(

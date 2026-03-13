@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 from typing import AsyncGenerator, Callable
 
-from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
+from app.providers.base import AgenticResult, CompletionUsage, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
 
 logger = logging.getLogger(__name__)
 
+# Task-local usage tracking — safe for concurrent asyncio tasks sharing one provider.
+_usage_var: contextvars.ContextVar[CompletionUsage | None] = contextvars.ContextVar(
+    "_anthropic_usage", default=None,
+)
+
 # Models that support adaptive thinking via thinking: {type: "adaptive"}.
 # budget_tokens is deprecated on these models — adaptive thinking replaces it.
-# Haiku 4.5 is NOT in this set (no thinking support).
+# Haiku 4.5 supports manual thinking (budget_tokens) but NOT adaptive thinking,
+# so it is excluded from this set.
 _THINKING_MODELS: frozenset[str] = frozenset({"claude-opus-4-6", "claude-sonnet-4-6"})
 
 # max_tokens for turns that may include thinking blocks (thinking + output must fit).
@@ -19,16 +26,41 @@ _MAX_TOKENS_THINKING = 16000
 _MAX_TOKENS_DEFAULT = 8192
 
 
+def _extract_usage(response, model: str) -> CompletionUsage:
+    """Extract CompletionUsage from an Anthropic SDK response object."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return CompletionUsage(is_estimated=True, model=model)
+    return CompletionUsage(
+        input_tokens=getattr(usage, "input_tokens", 0) or 0,
+        output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        cache_read_input_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+        cache_creation_input_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+        is_estimated=False,
+        model=model,
+    )
+
+
 class AnthropicAPIProvider(LLMProvider):
     """LLM provider using the Anthropic Python SDK with direct API calls."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, *, betas: list[str] | None = None):
         import anthropic
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        extra_headers: dict[str, str] = {}
+        if betas:
+            extra_headers["anthropic-beta"] = ",".join(betas)
+        self._client = anthropic.AsyncAnthropic(
+            api_key=api_key,
+            default_headers=extra_headers if extra_headers else None,
+        )
 
     @property
     def name(self) -> str:
         return "anthropic_api"
+
+    def get_last_usage(self) -> CompletionUsage | None:
+        """Return token usage from the most recent LLM call (task-local)."""
+        return _usage_var.get(None)
 
     async def validate_key(self) -> tuple[bool, str]:
         """Validate the API key with a minimal API call.
@@ -92,6 +124,7 @@ class AnthropicAPIProvider(LLMProvider):
             **extra,
         ) as stream:
             response = await stream.get_final_message()
+        _usage_var.set(_extract_usage(response, model))
         # Use next() — thinking blocks may precede the text block.
         return next((b.text for b in response.content if hasattr(b, "text")), "")
 
@@ -111,6 +144,9 @@ class AnthropicAPIProvider(LLMProvider):
             # text_stream automatically skips thinking deltas — only yields text tokens.
             async for chunk in stream.text_stream:
                 yield chunk
+            # Capture usage after stream is fully consumed
+            response = await stream.get_final_message()
+            _usage_var.set(_extract_usage(response, model))
 
     async def complete_json(
         self,
@@ -149,6 +185,7 @@ class AnthropicAPIProvider(LLMProvider):
         on_tool_call: Callable[[str, dict], None] | None = None,
         on_agent_text: Callable[[str], None] | None = None,
         output_schema: dict | None = None,
+        resume_session_id: str | None = None,
     ) -> AgenticResult:
         api_tools = [
             {
@@ -178,6 +215,7 @@ class AnthropicAPIProvider(LLMProvider):
         messages = [{"role": "user", "content": user}]
         all_tool_calls: list[dict] = []
         turns = 0
+        accumulated_usage = CompletionUsage(model=model)
 
         # Adaptive thinking: enabled for Opus 4.6 and Sonnet 4.6 (both GA, no beta header).
         # budget_tokens is deprecated on these models — adaptive thinking replaces it.
@@ -199,6 +237,9 @@ class AnthropicAPIProvider(LLMProvider):
                 **extra,
             ) as stream:
                 response = await stream.get_final_message()
+            # Accumulate usage from this turn
+            accumulated_usage += _extract_usage(response, model)
+            _usage_var.set(accumulated_usage)
             # Append full content including any thinking blocks — the API requires
             # thinking blocks to be preserved in conversation history when using thinking.
             messages.append({"role": "assistant", "content": response.content})  # type: ignore[dict-item]

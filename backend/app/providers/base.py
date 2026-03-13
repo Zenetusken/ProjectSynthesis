@@ -4,10 +4,96 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import AsyncGenerator, Awaitable, Callable  # noqa: F401 — Awaitable used by invoke_tool
 
 logger = logging.getLogger(__name__)
+
+
+# ── Cost tracking ────────────────────────────────────────────────────────
+
+# Per-million-token pricing (USD).  Covers current Claude 4.x model family.
+# Key prefix matching: "claude-opus-4" matches "claude-opus-4-6", etc.
+_MODEL_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-4":   {"input": 15.0, "output": 75.0, "cache_read": 1.5,  "cache_write": 18.75},
+    "claude-sonnet-4": {"input": 3.0,  "output": 15.0, "cache_read": 0.30, "cache_write": 3.75},
+    "claude-haiku-4":  {"input": 0.80, "output": 4.0,  "cache_read": 0.08, "cache_write": 1.0},
+}
+
+
+def _compute_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_input_tokens: int = 0,
+    cache_creation_input_tokens: int = 0,
+) -> float | None:
+    """Compute estimated cost in USD from token counts and model pricing.
+
+    Uses prefix matching against ``_MODEL_PRICING`` keys so that
+    "claude-opus-4-6" matches the "claude-opus-4" pricing tier.
+
+    Returns None if no pricing data is available for the model.
+    """
+    pricing = None
+    for prefix, rates in _MODEL_PRICING.items():
+        if model.startswith(prefix):
+            pricing = rates
+            break
+    if pricing is None:
+        return None
+
+    # Normal (non-cached) input tokens — clamp to zero so cache tokens
+    # exceeding total input never produce a negative cost component.
+    normal_input = max(0, input_tokens - cache_read_input_tokens - cache_creation_input_tokens)
+    cost = (
+        normal_input * pricing["input"] / 1_000_000
+        + output_tokens * pricing["output"] / 1_000_000
+        + cache_read_input_tokens * pricing["cache_read"] / 1_000_000
+        + cache_creation_input_tokens * pricing["cache_write"] / 1_000_000
+    )
+    return round(cost, 6)
+
+
+@dataclass
+class CompletionUsage:
+    """Token usage from a single LLM call or accumulated across calls."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    is_estimated: bool = False
+    model: str = ""
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def estimated_cost_usd(self) -> float | None:
+        """Return estimated cost in USD, or None if usage is estimated/unknown."""
+        if self.is_estimated:
+            return None
+        return _compute_cost(
+            self.model, self.input_tokens, self.output_tokens,
+            self.cache_read_input_tokens, self.cache_creation_input_tokens,
+        )
+
+    def to_dict(self) -> dict:
+        """Serialize to dict for SSE events and DB storage."""
+        return asdict(self)
+
+    def __iadd__(self, other: CompletionUsage) -> CompletionUsage:
+        """Accumulate usage from another CompletionUsage (in-place)."""
+        self.input_tokens += other.input_tokens
+        self.output_tokens += other.output_tokens
+        self.cache_read_input_tokens += other.cache_read_input_tokens
+        self.cache_creation_input_tokens += other.cache_creation_input_tokens
+        if other.is_estimated:
+            self.is_estimated = True
+        if other.model and not self.model:
+            self.model = other.model
+        return self
 
 
 def parse_json_robust(text: str) -> dict:
@@ -54,6 +140,30 @@ MODEL_ROUTING = {
     "validate": "claude-sonnet-4-6",
 }
 
+# Complexity-based model downgrade rules.  When Analyze reports "simple",
+# these stages swap from the default (Opus) to a cheaper model.
+_COMPLEXITY_DOWNGRADE: dict[str, dict[str, str]] = {
+    "strategy": {"simple": "claude-sonnet-4-6"},  # Opus → Sonnet for simple prompts
+    "optimize": {"simple": "claude-sonnet-4-6"},  # Opus → Sonnet for simple prompts
+}
+
+
+def select_model(
+    stage: str,
+    complexity: str = "moderate",
+    user_override: str | None = None,
+) -> str:
+    """Select the model for a pipeline stage based on complexity.
+
+    Priority: user_override > complexity downgrade > MODEL_ROUTING default.
+    """
+    if user_override:
+        return user_override
+    downgrade = _COMPLEXITY_DOWNGRADE.get(stage, {}).get(complexity)
+    if downgrade:
+        return downgrade
+    return MODEL_ROUTING[stage]
+
 
 @dataclass
 class ToolDefinition:
@@ -77,6 +187,7 @@ class AgenticResult:
       "tool_error" — a tool call failed after exhausting retries
       "cancelled"  — loop was cancelled externally
     """
+    session_id: str | None = None  # H3: SDK session_id for resume support
 
 
 async def invoke_tool(
@@ -138,6 +249,17 @@ class LLMProvider(ABC):
         """Provider name identifier."""
         ...
 
+    def get_last_usage(self) -> CompletionUsage | None:
+        """Return token usage from the most recent LLM call.
+
+        Implemented via ``contextvars.ContextVar`` on each provider so
+        concurrent asyncio tasks (e.g. parallel Explore + Analyze) get
+        independent usage tracking without races.
+
+        Returns None by default (provider doesn't track usage).
+        """
+        return None
+
     @abstractmethod
     async def complete(self, system: str, user: str, model: str) -> str:
         """Single-shot completion. Returns full response text."""
@@ -164,8 +286,14 @@ class LLMProvider(ABC):
         """Structured JSON output.
 
         When ``schema`` is provided (a JSON Schema dict with
-        ``additionalProperties: false`` on all objects), providers MUST use
-        native schema enforcement (API output_config.format or SDK equivalent).
+        ``additionalProperties: false`` on all objects), providers SHOULD use
+        native schema enforcement where available:
+
+        - **AnthropicAPIProvider**: uses ``output_config.format`` with
+          ``json_schema`` type — server-side enforcement, guaranteed compliance.
+        - **ClaudeCLIProvider**: native schema enforcement is unavailable (CLI
+          limitation). Injects the schema into the system prompt as an instruction
+          and falls back to ``parse_json_robust()`` text extraction.
 
         When ``schema`` is None, falls back to 3-strategy text parsing:
         1. Parse raw response as JSON
@@ -185,6 +313,7 @@ class LLMProvider(ABC):
         on_tool_call: Callable[[str, dict], None] | None = None,
         on_agent_text: Callable[[str], None] | None = None,
         output_schema: dict | None = None,
+        resume_session_id: str | None = None,
     ) -> AgenticResult:
         """Agentic tool-calling loop.
 
@@ -196,8 +325,11 @@ class LLMProvider(ABC):
         on_tool_call: optional sync callback fired after each tool execution with
             (tool_name, tool_input). Used to stream tool events to the client.
 
-        on_agent_text: optional sync callback fired for each assistant text block
-            produced during the loop. Surfaces Claude's intermediate reasoning
+        on_agent_text: optional sync callback fired for assistant text produced
+            during the loop. Surfaces Claude's intermediate reasoning
             (e.g. "Let me check the main file first") for real-time UI display.
+            Granularity varies by provider: AnthropicAPIProvider fires once per
+            text content block; ClaudeCLIProvider fires once per message (may
+            concatenate multiple text blocks). Thinking blocks are excluded.
         """
         ...

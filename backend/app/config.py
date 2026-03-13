@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     EXPLORE_MAX_CONTEXT_CHARS: int = 700_000  # ~175K tokens; char ceiling for LLM context payload
     EXPLORE_RESULT_CACHE_TTL: int = 3600     # 1 hour
 
+    # 1M context window beta (H6).  Requires Opus 4.6 / Sonnet 4.6.
+    CONTEXT_1M_ENABLED: bool = False
+    CONTEXT_1M_BETA_STRING: str = "context-1m-2025-08-07"
+
     # Redis (optional — in-memory fallback when unavailable)
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

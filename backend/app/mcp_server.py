@@ -34,6 +34,26 @@ logger = logging.getLogger(__name__)
 
 _GITHUB_API = "https://api.github.com"
 
+# H5: Tool category registry — structured metadata for future tool search.
+# No runtime behavior change; enables category-based filtering and discovery.
+TOOL_CATEGORIES: dict[str, dict] = {
+    "optimize":                  {"category": "pipeline", "tags": ["llm", "execute"]},
+    "retry_optimization":        {"category": "pipeline", "tags": ["llm", "retry"]},
+    "get_optimization":          {"category": "crud",     "tags": ["read"]},
+    "list_optimizations":        {"category": "crud",     "tags": ["read", "list"]},
+    "search_optimizations":      {"category": "crud",     "tags": ["read", "search"]},
+    "get_by_project":            {"category": "crud",     "tags": ["read", "project"]},
+    "get_stats":                 {"category": "crud",     "tags": ["read", "analytics"]},
+    "tag_optimization":          {"category": "crud",     "tags": ["write", "metadata"]},
+    "delete_optimization":       {"category": "crud",     "tags": ["write", "lifecycle"]},
+    "batch_delete_optimizations": {"category": "crud",    "tags": ["write", "batch"]},
+    "list_trash":                {"category": "crud",     "tags": ["read", "trash"]},
+    "restore_optimization":      {"category": "crud",     "tags": ["write", "trash"]},
+    "github_list_repos":         {"category": "github",   "tags": ["read", "repos"]},
+    "github_read_file":          {"category": "github",   "tags": ["read", "files"]},
+    "github_search_code":        {"category": "github",   "tags": ["read", "search"]},
+}
+
 try:
     from mcp.server.fastmcp import Context, FastMCP
     from mcp.types import ToolAnnotations

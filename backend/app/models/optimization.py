@@ -60,6 +60,14 @@ class Optimization(Base):
     duration_ms = Column(Integer, nullable=True)
     stage_durations = Column(Text, nullable=True)  # JSON: {"explore": {"duration_ms": N, "token_count": N}, ...}
     provider_used = Column(Text, nullable=True)
+
+    # Cost / usage tracking (H2)
+    total_input_tokens = Column(Integer, nullable=True)
+    total_output_tokens = Column(Integer, nullable=True)
+    total_cache_read_tokens = Column(Integer, nullable=True)
+    total_cache_creation_tokens = Column(Integer, nullable=True)
+    estimated_cost_usd = Column(Float, nullable=True)
+    usage_is_estimated = Column(Boolean, nullable=True)
     model_explore = Column(Text, nullable=True)
     model_analyze = Column(Text, nullable=True)
     model_strategy = Column(Text, nullable=True)
