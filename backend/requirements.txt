@@ -14,10 +14,10 @@ itsdangerous
 redis>=5.0
 limits>=4.0
 python-jose[cryptography]
-mcp
+mcp>=1.0,<2.0
 websockets
-anthropic
-claude-agent-sdk>=0.1.46
+anthropic>=1.45.0,<2.0
+claude-agent-sdk>=0.1.46,<1.0
 sentence-transformers>=3.0
 numpy>=1.26
 
