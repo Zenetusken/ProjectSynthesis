@@ -139,17 +139,6 @@ ISSUE_GUARDRAILS: dict[str, str] = {
     ),
 }
 
-ISSUE_GUARDRAILS_SHORT: dict[str, str] = {
-    "lost_key_terms": "Term preservation",
-    "changed_meaning": "Meaning fidelity",
-    "hallucinated_content": "Addition prevention",
-    "lost_examples": "Example preservation",
-    "too_verbose": "Conciseness enforcement",
-    "too_vague": "Specificity protection",
-    "wrong_tone": "Tone matching",
-    "broken_structure": "Structure preservation",
-}
-
 SCORE_ISSUE_MAP: dict[str, list[str]] = {
     "faithfulness_score": ["changed_meaning", "hallucinated_content"],
     "specificity_score": ["too_vague", "lost_examples"],

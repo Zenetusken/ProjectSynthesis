@@ -685,6 +685,28 @@ class ForgeStore {
           data: { ...(this.stageResults['adaptation']?.data ?? {}), adaptation_impact: data },
         };
         break;
+      case 'result_assessment':
+        // Merge result assessment into adaptation stage for ForgeArtifact consumption
+        if (this.stageResults['adaptation']) {
+          this.stageResults['adaptation'] = {
+            ...this.stageResults['adaptation'],
+            data: { ...this.stageResults['adaptation'].data, result_assessment: data },
+          };
+        } else {
+          this.stageResults['adaptation'] = { stage: 'adaptation', data: { result_assessment: data } };
+        }
+        break;
+      case 'issue_suggestions':
+        // Merge issue suggestions into adaptation stage for ForgeArtifact consumption
+        if (this.stageResults['adaptation']) {
+          this.stageResults['adaptation'] = {
+            ...this.stageResults['adaptation'],
+            data: { ...this.stageResults['adaptation'].data, issue_suggestions: data },
+          };
+        } else {
+          this.stageResults['adaptation'] = { stage: 'adaptation', data: { issue_suggestions: data } };
+        }
+        break;
       case 'branch_created':
         this.stageResults['branch'] = { stage: 'branch', data };
         break;

@@ -289,7 +289,10 @@ def detect_trade_offs(
 
                 gained_label = gained_dim.replace("_score", "")
                 lost_label = lost_dim.replace("_score", "")
-                desc = f"{gained_label} improved by {gained_delta:.0f} while {lost_label} declined by {abs(lost_delta):.0f}"
+                desc = (
+                    f"{gained_label} improved by {gained_delta:.0f} "
+                    f"while {lost_label} declined by {abs(lost_delta):.0f}"
+                )
                 if is_typical:
                     desc += f" (typical for {framework})"
 
@@ -695,6 +698,16 @@ def compute_result_assessment(
         active_guardrails=active_guardrails,
     )
 
+    # TODO: Compute percentile_context from user_history when sufficient data
+    # exists (>= 5 past optimizations). Requires aggregating per-dimension
+    # score distributions from user_history to place the current result.
+    percentile_context = None
+
+    # TODO: Compute trend_analysis from user_history when sufficient data
+    # exists (>= 3 recent optimizations). Compare recent vs previous average
+    # overall scores to detect improving/declining/stable trajectory.
+    trend_analysis = None
+
     return ResultAssessment(
         verdict=verdict,
         confidence=confidence,
@@ -705,4 +718,6 @@ def compute_result_assessment(
         framework_fit=framework_fit,
         improvement_signals=improvement_signals,
         next_actions=next_actions,
+        percentile_context=percentile_context,
+        trend_analysis=trend_analysis,
     )
