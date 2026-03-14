@@ -1064,9 +1064,11 @@ async def run_pipeline(
     # Issue 5: Adaptation impact report
     try:
         from app.schemas.result_assessment import AdaptationImpactReport
+        from app.services.prompt_diff import SCORE_DIMENSIONS
         impact_data = AdaptationImpactReport(
             weights_applied=effective_weights,
             guardrails_active=_guardrail_list,
+            active_guardrails=[g for g in (_guardrail_list or [])],
             threshold_used=oracle.threshold,
         )
         # Estimate impact by comparing with default behavior
@@ -1078,6 +1080,27 @@ async def run_pipeline(
                 impact_data.estimated_impact = "neutral"
             else:
                 impact_data.estimated_impact = "negative"
+        # Compute per-dimension improvements/regressions vs previous scores
+        if prev_scores and final_scores:
+            for dim in SCORE_DIMENSIONS:
+                prev_val = prev_scores.get(dim, 0)
+                curr_val = final_scores.get(dim, 0)
+                delta = curr_val - prev_val
+                if delta >= 0.5:
+                    impact_data.improvements.append({
+                        "dim": dim,
+                        "prev": round(prev_val, 1),
+                        "curr": round(curr_val, 1),
+                    })
+                elif delta <= -0.5:
+                    impact_data.regressions.append({
+                        "dim": dim,
+                        "prev": round(prev_val, 1),
+                        "curr": round(curr_val, 1),
+                    })
+            impact_data.has_meaningful_change = bool(
+                impact_data.improvements or impact_data.regressions
+            )
         yield ("adaptation_impact", impact_data.model_dump(mode="json"))
     except Exception as e:
         logger.warning("Adaptation impact report failed: %s (non-fatal)", e)

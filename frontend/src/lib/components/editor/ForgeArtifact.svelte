@@ -104,8 +104,10 @@
       }
 
       // Load issue suggestions from adaptation data
+      // Backend emits {suggestions: [...]} wrapper; extract the inner array
       if (adaptationData?.issue_suggestions) {
-        issueSuggestions = adaptationData.issue_suggestions as any[];
+        const issueData = adaptationData.issue_suggestions as any;
+        issueSuggestions = issueData?.suggestions ?? issueData ?? [];
       }
     }
   });
@@ -122,12 +124,12 @@
     _lastImpactTs = ts;
 
     if (impact.has_meaningful_change) {
-      const dims = impact.dimension_deltas as Array<{ dimension: string; delta: number }> | undefined;
-      if (dims?.length && feedbackInlineRef) {
-        const top = dims[0];
-        const label = top.dimension.replace(/_score$/, '').replace(/\b\w/g, (c: string) => c.toUpperCase());
-        const sign = top.delta > 0 ? '+' : '';
-        feedbackInlineRef.flashImpactDelta(label, `${sign}${top.delta.toFixed(1)}`);
+      const improvements = impact.improvements as Array<{ dim: string; prev: number; curr: number }> | undefined;
+      if (improvements?.length && feedbackInlineRef) {
+        const top = improvements[0];
+        const label = top.dim.replace(/_score$/, '').replace(/\b\w/g, (c: string) => c.toUpperCase());
+        const delta = (top.curr - top.prev).toFixed(1);
+        feedbackInlineRef.flashImpactDelta(label, `+${delta}`);
       }
       // Toast for meaningful adaptation impact
       toast.info(

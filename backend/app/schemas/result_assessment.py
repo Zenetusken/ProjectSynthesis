@@ -118,6 +118,12 @@ class TrendAnalysis(BaseModel):
 class AdaptationImpactReport(BaseModel):
     """How adaptation settings affected this result."""
 
+    improvements: list[dict] = []      # [{dim, prev, curr}]
+    regressions: list[dict] = []       # [{dim, prev, curr}]
+    resolved_issues: list[str] = []
+    active_guardrails: list[str] = []
+    has_meaningful_change: bool = False
+    # Existing fields kept for backward compat
     weights_applied: dict[str, float] = {}
     guardrails_active: list[str] = []
     threshold_used: float = 5.0
