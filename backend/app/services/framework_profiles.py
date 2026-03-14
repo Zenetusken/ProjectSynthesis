@@ -6,10 +6,6 @@ patterns. All values are tunable constants — no runtime computation.
 """
 from __future__ import annotations
 
-from app.services.prompt_diff import SCORE_DIMENSIONS
-
-__all__ = ["SCORE_DIMENSIONS"]
-
 DEFAULT_FRAMEWORK_PROFILE: dict = {
     "emphasis": {},
     "de_emphasis": {},

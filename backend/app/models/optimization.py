@@ -156,7 +156,7 @@ class Optimization(Base):
                     except (json.JSONDecodeError, TypeError):
                         value = []
             # Parse H3 JSON columns (dict-type)
-            if col.name == "adaptation_snapshot":
+            if col.name in ("adaptation_snapshot", "active_guardrails", "codebase_context_snapshot"):
                 if value and isinstance(value, str):
                     try:
                         value = json.loads(value)

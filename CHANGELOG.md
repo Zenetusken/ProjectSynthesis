@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Improved adaptation summary by extracting `build_adaptation_summary_data()` shared by REST and MCP endpoints
+- Improved framework performance by extracting `format_framework_performance()` shared by REST and MCP endpoints
+- Fixed `to_dict()` not parsing `active_guardrails` and `codebase_context_snapshot` JSON columns
+- Fixed `FeedbackStatsResponse.issue_frequency` not populated from adaptation state
+- Fixed `load_adaptation()` not returning `adaptation_version` field
+- Fixed `recompute_adaptation()` not incrementing `adaptation_version` on updates
+- Changed MCP `synthesis_submit_feedback` to validate inputs through `SubmitFeedbackInput` model
+- Removed misleading `__all__` re-export and unused `SCORE_DIMENSIONS` import from `framework_profiles.py`
+- Removed unused `_select_focus` alias from `RetryOracle`
 - Changed MCP server name from `project-synthesis` to `synthesis_mcp` following Python MCP naming conventions
 - Changed all 18 MCP tool names to use `synthesis_` prefix (e.g. `optimize` → `synthesis_optimize`) for multi-server disambiguation
 - Added Pydantic structured output on all MCP tools — `outputSchema` in `tools/list` and `structuredContent` in `tools/call` responses

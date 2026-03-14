@@ -23,7 +23,7 @@ from app.schemas.feedback import (
     FeedbackWithAggregate,
 )
 from app.services.adaptation_engine import (
-    DEFAULT_WEIGHTS,
+    build_adaptation_summary_data,
     compute_adaptation_pulse,
     load_adaptation,
     schedule_adaptation_recompute,
@@ -172,10 +172,12 @@ async def feedback_stats(
     }
 
     adaptation = await load_adaptation(current_user.id, db)
+    issue_freq = (adaptation.get("issue_frequency") or {}) if adaptation else {}
 
     return FeedbackStatsResponse(
         total_feedbacks=total,
         rating_distribution=rating_dist,
+        issue_frequency=issue_freq,
         adaptation_state=adaptation,
     )
 
@@ -206,58 +208,5 @@ async def feedback_summary(
 ):
     """High-level adaptation summary for dashboard display."""
     adaptation = await load_adaptation(current_user.id, db)
-
-    if not adaptation:
-        return AdaptationSummary()
-
-    # Build priorities from dimension weight shifts
-    weights = adaptation.get("dimension_weights") or {}
-    priorities = []
-    for dim, weight in sorted(
-        weights.items(),
-        key=lambda x: abs(x[1] - DEFAULT_WEIGHTS.get(x[0], 0.2)),
-        reverse=True,
-    ):
-        default = DEFAULT_WEIGHTS.get(dim, 0.2)
-        shift = weight - default
-        if abs(shift) > 0.01:
-            priorities.append({
-                "dimension": dim,
-                "weight": round(weight, 3),
-                "shift": round(shift, 3),
-                "direction": "up" if shift > 0 else "down",
-            })
-
-    # Extract guardrails from issue frequency
-    issue_freq = adaptation.get("issue_frequency") or {}
-    active_guardrails = [
-        issue_id for issue_id, count in issue_freq.items() if count >= 2
-    ]
-
-    # Framework preferences from strategy affinities
-    affinities = adaptation.get("strategy_affinities") or {}
-    framework_prefs: dict[str, float] = {}
-    top_frameworks: list[str] = []
-    for _task_type, prefs in affinities.items():
-        for fw in prefs.get("preferred", []):
-            framework_prefs[fw] = framework_prefs.get(fw, 0) + 1.0
-        for fw in prefs.get("avoid", []):
-            framework_prefs[fw] = framework_prefs.get(fw, 0) - 1.0
-
-    if framework_prefs:
-        top_frameworks = sorted(
-            [fw for fw, score in framework_prefs.items() if score > 0],
-            key=lambda fw: framework_prefs[fw],
-            reverse=True,
-        )[:3]
-
-    return AdaptationSummary(
-        feedback_count=adaptation.get("feedback_count", 0),
-        priorities=priorities,
-        active_guardrails=active_guardrails,
-        framework_preferences=framework_prefs,
-        top_frameworks=top_frameworks,
-        issue_resolution=issue_freq,
-        retry_threshold=adaptation.get("retry_threshold", 5.0),
-        last_updated=None,
-    )
+    data = build_adaptation_summary_data(adaptation)
+    return AdaptationSummary(**data, last_updated=None)

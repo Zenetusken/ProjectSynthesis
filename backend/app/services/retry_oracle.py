@@ -495,9 +495,6 @@ class RetryOracle:
         dim_scores.sort(key=lambda x: x[1])
         return [d[0] for d in dim_scores[:2]]
 
-    # Keep old name as alias for backward compatibility
-    _select_focus = _select_focus_areas
-
     def build_diagnostic_message(self, focus_areas: list[str]) -> str:
         """Build a diagnostic message for the optimizer as a refinement turn."""
         if not self._attempts:

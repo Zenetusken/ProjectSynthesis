@@ -45,6 +45,7 @@ from app.schemas.mcp_models import (
     PipelineResult,
     RestoreResult,
     StatsResult,
+    SubmitFeedbackInput,
 )
 from app.services.url_fetcher import fetch_url_contexts
 
@@ -1212,22 +1213,34 @@ def create_mcp_server(
         Returns:
             FeedbackSubmitResult with the feedback ID and whether it was newly created.
         """
+        from pydantic import ValidationError
+
         from app.services.adaptation_engine import schedule_adaptation_recompute
         from app.services.feedback_service import upsert_feedback
 
-        if rating not in (-1, 0, 1):
-            raise ValueError("Rating must be -1 (negative), 0 (neutral), or 1 (positive)")
-        async with _opt_session(optimization_id) as (db, opt):
-            if not opt:
-                raise ValueError(_not_found_msg(optimization_id))
-            mcp_user = await _resolve_mcp_user_id() or "mcp"
-            result = await upsert_feedback(
+        # Validate through Pydantic model
+        try:
+            validated = SubmitFeedbackInput(
                 optimization_id=optimization_id,
-                user_id=mcp_user,
                 rating=rating,
                 dimension_overrides=dimension_overrides,
                 corrected_issues=corrected_issues,
                 comment=comment,
+            )
+        except ValidationError as e:
+            raise ValueError(str(e)) from None
+
+        async with _opt_session(validated.optimization_id) as (db, opt):
+            if not opt:
+                raise ValueError(_not_found_msg(validated.optimization_id))
+            mcp_user = await _resolve_mcp_user_id() or "mcp"
+            result = await upsert_feedback(
+                optimization_id=validated.optimization_id,
+                user_id=mcp_user,
+                rating=validated.rating,
+                dimension_overrides=validated.dimension_overrides,
+                corrected_issues=validated.corrected_issues,
+                comment=validated.comment,
                 db=db,
             )
             await db.commit()
@@ -1338,7 +1351,7 @@ def create_mcp_server(
         """
         from app.database import get_session_context
         from app.models.framework_performance import FrameworkPerformance
-        from app.utils.json_fields import parse_json_column
+        from app.services.framework_scoring import format_framework_performance
 
         resolved_user = user_id or await _resolve_mcp_user_id() or "mcp"
 
@@ -1350,20 +1363,7 @@ def create_mcp_server(
             result = await db.execute(stmt)
             rows = result.scalars().all()
 
-        items = []
-        for row in rows:
-            items.append({
-                "framework": row.framework,
-                "avg_scores": parse_json_column(row.avg_scores) if row.avg_scores else None,
-                "user_rating_avg": row.user_rating_avg,
-                "issue_frequency": parse_json_column(row.issue_frequency) if row.issue_frequency else None,
-                "sample_count": row.sample_count,
-                "elasticity_snapshot": (
-                    parse_json_column(row.elasticity_snapshot)
-                    if row.elasticity_snapshot else None
-                ),
-            })
-
+        items = format_framework_performance(rows, include_last_updated=False)
         return json.dumps({"task_type": task_type, "frameworks": items})
 
     @mcp.tool(
@@ -1392,52 +1392,17 @@ def create_mcp_server(
             guardrails, and framework preferences.
         """
         from app.database import get_session_context
-        from app.services.adaptation_engine import DEFAULT_WEIGHTS, load_adaptation
+        from app.services.adaptation_engine import (
+            build_adaptation_summary_data,
+            load_adaptation,
+        )
 
         resolved_user = user_id or await _resolve_mcp_user_id() or "mcp"
 
         async with get_session_context() as db:
             adaptation = await load_adaptation(resolved_user, db)
 
-        if not adaptation:
-            return json.dumps({"feedback_count": 0, "priorities": [], "active_guardrails": []})
-
-        weights = adaptation.get("dimension_weights") or {}
-        priorities = []
-        for dim, weight in sorted(
-            weights.items(),
-            key=lambda x: abs(x[1] - DEFAULT_WEIGHTS.get(x[0], 0.2)),
-            reverse=True,
-        ):
-            default = DEFAULT_WEIGHTS.get(dim, 0.2)
-            shift = weight - default
-            if abs(shift) > 0.01:
-                priorities.append({
-                    "dimension": dim,
-                    "weight": round(weight, 3),
-                    "shift": round(shift, 3),
-                })
-
-        issue_freq = adaptation.get("issue_frequency") or {}
-        active_guardrails = [
-            issue_id for issue_id, count in issue_freq.items() if count >= 2
-        ]
-
-        affinities = adaptation.get("strategy_affinities") or {}
-        framework_prefs: dict[str, float] = {}
-        for _task_type, prefs in affinities.items():
-            for fw in prefs.get("preferred", []):
-                framework_prefs[fw] = framework_prefs.get(fw, 0) + 1.0
-            for fw in prefs.get("avoid", []):
-                framework_prefs[fw] = framework_prefs.get(fw, 0) - 1.0
-
-        return json.dumps({
-            "feedback_count": adaptation.get("feedback_count", 0),
-            "priorities": priorities,
-            "active_guardrails": active_guardrails,
-            "framework_preferences": framework_prefs,
-            "retry_threshold": adaptation.get("retry_threshold", 5.0),
-        })
+        return json.dumps(build_adaptation_summary_data(adaptation))
 
     return mcp
 

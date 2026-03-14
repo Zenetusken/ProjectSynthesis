@@ -6,9 +6,9 @@ from app.services.framework_profiles import (
     FRAMEWORK_PROFILES,
     FRAMEWORK_TRADE_OFF_PATTERNS,
     ISSUE_DIMENSION_MAP,
-    SCORE_DIMENSIONS,
     get_profile,
 )
+from app.services.prompt_diff import SCORE_DIMENSIONS
 
 
 class TestFrameworkProfiles:

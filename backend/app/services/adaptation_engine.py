@@ -575,6 +575,7 @@ async def recompute_adaptation(
                 existing.issue_frequency = json.dumps(issue_freq) if issue_freq else None
                 existing.damping_level = damping
                 existing.consistency_score = consistency
+                existing.adaptation_version = (existing.adaptation_version or 0) + 1
             else:
                 adaptation = UserAdaptation(
                     user_id=user_id,
@@ -650,4 +651,78 @@ async def load_adaptation(user_id: str, db: AsyncSession) -> dict | None:
         "issue_frequency": issue_frequency,
         "damping_level": adaptation.damping_level,
         "consistency_score": adaptation.consistency_score,
+        "adaptation_version": adaptation.adaptation_version or 0,
+    }
+
+
+def build_adaptation_summary_data(adaptation: dict | None) -> dict:
+    """Build adaptation summary from loaded adaptation state.
+
+    Shared by the REST ``/api/feedback/summary`` endpoint and the
+    ``synthesis_get_adaptation_summary`` MCP tool.
+
+    Returns a dict with keys matching ``AdaptationSummary`` fields:
+    feedback_count, priorities, active_guardrails, framework_preferences,
+    top_frameworks, issue_resolution, retry_threshold.
+    """
+    if not adaptation:
+        return {
+            "feedback_count": 0,
+            "priorities": [],
+            "active_guardrails": [],
+            "framework_preferences": {},
+            "top_frameworks": [],
+            "issue_resolution": {},
+            "retry_threshold": 5.0,
+        }
+
+    # Build priorities from dimension weight shifts
+    weights = adaptation.get("dimension_weights") or {}
+    priorities: list[dict] = []
+    for dim, weight in sorted(
+        weights.items(),
+        key=lambda x: abs(x[1] - DEFAULT_WEIGHTS.get(x[0], 0.2)),
+        reverse=True,
+    ):
+        default = DEFAULT_WEIGHTS.get(dim, 0.2)
+        shift = weight - default
+        if abs(shift) > 0.01:
+            priorities.append({
+                "dimension": dim,
+                "weight": round(weight, 3),
+                "shift": round(shift, 3),
+                "direction": "up" if shift > 0 else "down",
+            })
+
+    # Extract guardrails from issue frequency
+    issue_freq = adaptation.get("issue_frequency") or {}
+    active_guardrails = [
+        issue_id for issue_id, count in issue_freq.items() if count >= 2
+    ]
+
+    # Framework preferences from strategy affinities
+    affinities = adaptation.get("strategy_affinities") or {}
+    framework_prefs: dict[str, float] = {}
+    top_frameworks: list[str] = []
+    for _task_type, prefs in affinities.items():
+        for fw in prefs.get("preferred", []):
+            framework_prefs[fw] = framework_prefs.get(fw, 0) + 1.0
+        for fw in prefs.get("avoid", []):
+            framework_prefs[fw] = framework_prefs.get(fw, 0) - 1.0
+
+    if framework_prefs:
+        top_frameworks = sorted(
+            [fw for fw, score in framework_prefs.items() if score > 0],
+            key=lambda fw: framework_prefs[fw],
+            reverse=True,
+        )[:3]
+
+    return {
+        "feedback_count": adaptation.get("feedback_count", 0),
+        "priorities": priorities,
+        "active_guardrails": active_guardrails,
+        "framework_preferences": framework_prefs,
+        "top_frameworks": top_frameworks,
+        "issue_resolution": issue_freq,
+        "retry_threshold": adaptation.get("retry_threshold", 5.0),
     }
