@@ -43,6 +43,19 @@ async function apiFetch(input: string, init: RequestInit = {}): Promise<Response
   return attempt;
 }
 
+/**
+ * Extract a human-readable error message from a failed API response.
+ * FastAPI returns ``{"detail": "..."}`` for HTTPException; falls back
+ * to the provided label + status code if the body can't be parsed.
+ */
+async function apiError(res: Response, label: string): Promise<Error> {
+  try {
+    const body = await res.json();
+    if (body?.detail) return new Error(body.detail);
+  } catch { /* body not JSON — fall through */ }
+  return new Error(`${label} (${res.status})`);
+}
+
 export interface HealthResponse {
   status: string;
   provider: string;
@@ -186,7 +199,7 @@ export interface LinkedRepo {
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await apiFetch(`${BASE}/api/health`);
-  if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Health check failed');
   return res.json();
 }
 
@@ -264,7 +277,7 @@ export async function startOptimization(
 
 export async function fetchOptimization(id: string): Promise<OptimizationRecord> {
   const res = await apiFetch(`${BASE}/api/optimize/${id}`);
-  if (!res.ok) throw new Error(`Fetch optimization failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch optimization failed');
   return res.json();
 }
 
@@ -304,7 +317,7 @@ export async function patchOptimization(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error(`Patch optimization failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Patch optimization failed');
   return res.json();
 }
 
@@ -317,7 +330,7 @@ export async function retryOptimization(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ strategy })
   });
-  if (!res.ok) throw new Error(`Retry optimization failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Retry optimization failed');
   return res;
 }
 
@@ -339,13 +352,13 @@ export async function fetchHistory(params: HistoryParams = {}): Promise<HistoryR
   if (params.status) searchParams.set('status', params.status);
 
   const res = await apiFetch(`${BASE}/api/history?${searchParams.toString()}`);
-  if (!res.ok) throw new Error(`Fetch history failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch history failed');
   return res.json();
 }
 
 export async function deleteOptimization(id: string): Promise<void> {
   const res = await apiFetch(`${BASE}/api/history/${id}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Delete optimization failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Delete optimization failed');
 }
 
 export interface BatchDeleteResponse {
@@ -369,19 +382,19 @@ export async function batchDeleteOptimizations(ids: string[]): Promise<BatchDele
 
 export async function fetchHistoryTrash(offset = 0, limit = 20): Promise<HistoryResponse> {
   const res = await apiFetch(`${BASE}/api/history/trash?offset=${offset}&limit=${limit}`);
-  if (!res.ok) throw new Error(`Trash fetch failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Trash fetch failed');
   return res.json();
 }
 
 export async function restoreOptimization(id: string): Promise<void> {
   const res = await apiFetch(`${BASE}/api/history/${id}/restore`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Restore failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Restore failed');
 }
 
 export async function fetchHistoryStats(project?: string): Promise<HistoryStats> {
   const params = project ? `?project=${encodeURIComponent(project)}` : '';
   const res = await apiFetch(`${BASE}/api/history/stats${params}`);
-  if (!res.ok) throw new Error(`Fetch stats failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch stats failed');
   return res.json();
 }
 
@@ -389,13 +402,13 @@ export async function fetchHistoryStats(project?: string): Promise<HistoryStats>
 
 export async function fetchGitHubAuthStatus(): Promise<GitHubAuthStatus> {
   const res = await apiFetch(`${BASE}/auth/github/me`);
-  if (!res.ok) throw new Error(`GitHub auth check failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'GitHub auth check failed');
   return res.json();
 }
 
 export async function logoutGitHub(): Promise<void> {
   const res = await apiFetch(`${BASE}/auth/github/logout`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`GitHub logout failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'GitHub logout failed');
   // Clear in-memory JWT — refresh cookie is cleared server-side.
   auth.clearToken();
 }
@@ -406,7 +419,7 @@ export async function refreshGitHubToken(): Promise<{
   expires_at?: string;
 }> {
   const res = await apiFetch(`${BASE}/auth/github/token/refresh`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Token refresh failed');
   return res.json();
 }
 
@@ -418,7 +431,7 @@ export function getGitHubLoginUrl(): string {
 
 export async function fetchGitHubRepos(): Promise<RepoInfo[]> {
   const res = await apiFetch(`${BASE}/api/github/repos`);
-  if (!res.ok) throw new Error(`Fetch repos failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch repos failed');
   return res.json();
 }
 
@@ -428,19 +441,19 @@ export async function linkRepo(full_name: string, branch?: string): Promise<Link
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ full_name, branch })
   });
-  if (!res.ok) throw new Error(`Link repo failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Link repo failed');
   return res.json();
 }
 
 export async function fetchLinkedRepo(): Promise<LinkedRepo | null> {
   const res = await apiFetch(`${BASE}/api/github/repos/linked`);
-  if (!res.ok) throw new Error(`Fetch linked repo failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch linked repo failed');
   return res.json();
 }
 
 export async function unlinkRepo(): Promise<void> {
   const res = await apiFetch(`${BASE}/api/github/repos/unlink`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Unlink repo failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Unlink repo failed');
 }
 
 // ---- Settings ----
@@ -456,7 +469,7 @@ export interface AppSettings {
 
 export async function fetchSettings(): Promise<AppSettings> {
   const res = await apiFetch(`${BASE}/api/settings`);
-  if (!res.ok) throw new Error(`Fetch settings failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch settings failed');
   return res.json();
 }
 
@@ -468,7 +481,7 @@ export async function updateSettings(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error(`Update settings failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Update settings failed');
   return res.json();
 }
 
@@ -500,7 +513,7 @@ export interface SaveApiKeyResponse {
 /** Always public — used by UI to check provider setup state. */
 export async function getProviderConfig(): Promise<ProviderConfigResponse> {
   const res = await globalThis.fetch(`${BASE}/api/provider/config`);
-  if (!res.ok) throw new Error(`Provider config check failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Provider config check failed');
   return res.json();
 }
 
@@ -527,7 +540,7 @@ export async function saveApiKey(apiKey: string): Promise<SaveApiKeyResponse> {
 /** Remove saved API key. JWT required. */
 export async function deleteApiKey(): Promise<SaveApiKeyResponse> {
   const res = await apiFetch(`${BASE}/api/provider/api-key`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Delete API key failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Delete API key failed');
   return res.json();
 }
 
@@ -549,13 +562,13 @@ export interface ProviderStatusResponse {
 
 export async function fetchProviderDetect(): Promise<ProviderDetectResponse> {
   const res = await apiFetch(`${BASE}/api/providers/detect`);
-  if (!res.ok) throw new Error(`Provider detect failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Provider detect failed');
   return res.json();
 }
 
 export async function fetchProviderStatus(): Promise<ProviderStatusResponse> {
   const res = await apiFetch(`${BASE}/api/providers/status`);
-  if (!res.ok) throw new Error(`Provider status failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Provider status failed');
   return res.json();
 }
 
@@ -590,7 +603,7 @@ export async function fetchRepoTree(
   const res = await apiFetch(
     `${BASE}/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree?${params}`
   );
-  if (!res.ok) throw new Error(`Fetch repo tree failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch repo tree failed');
   return res.json();
 }
 
@@ -605,7 +618,7 @@ export async function fetchFileContent(
   const res = await apiFetch(
     `${BASE}/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/files/${encodedPath}?${params}`
   );
-  if (!res.ok) throw new Error(`Fetch file content failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch file content failed');
   return res.json();
 }
 
@@ -618,7 +631,7 @@ export async function fetchRepoBranches(owner: string, repo: string): Promise<Re
   const res = await apiFetch(
     `${BASE}/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`
   );
-  if (!res.ok) throw new Error(`Fetch branches failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Fetch branches failed');
   return res.json();
 }
 
@@ -633,7 +646,7 @@ export interface GitHubAppConfig {
 /** Always public — no JWT needed. Used by AuthGate to check bootstrap state. */
 export async function fetchGitHubAppConfig(): Promise<GitHubAppConfig> {
   const res = await globalThis.fetch(`${BASE}/api/github/app-config`);
-  if (!res.ok) throw new Error(`GitHub app config check failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'GitHub app config check failed');
   return res.json();
 }
 
@@ -776,7 +789,7 @@ export async function trackOnboardingEvent(
 /** GET /auth/token — exchanges one-time server-side session token for JWT after OAuth callback. */
 export async function getAuthToken(): Promise<{ access_token: string; token_type: string }> {
   const res = await globalThis.fetch(`${BASE}/auth/token`, { credentials: 'include' });
-  if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Token exchange failed');
   return res.json();
 }
 
@@ -797,7 +810,7 @@ export async function patchAuthMe(data: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Profile update failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Profile update failed');
   return res.json();
 }
 
@@ -819,7 +832,7 @@ export interface AuthMeResponse {
 
 export async function fetchAuthMe(): Promise<AuthMeResponse> {
   const res = await apiFetch(`${BASE}/auth/me`);
-  if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Profile fetch failed');
   return res.json();
 }
 
@@ -829,7 +842,7 @@ export async function fetchAuthMe(): Promise<AuthMeResponse> {
  */
 export async function logoutAllDevices(): Promise<{ revoked_sessions: number }> {
   const res = await apiFetch(`${BASE}/auth/sessions`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Logout all failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Logout all failed');
   const data = await res.json();
   // Clear in-memory token — all server-side sessions are now revoked.
   auth.clearToken();
@@ -842,7 +855,7 @@ export async function logoutAllDevices(): Promise<{ revoked_sessions: number }> 
  */
 export async function logoutDevice(): Promise<{ revoked_count: number }> {
   const res = await apiFetch(`${BASE}/auth/logout`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Logout failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Logout failed');
   const data = await res.json();
   auth.clearToken();
   return data;
@@ -870,7 +883,7 @@ export async function submitFeedback(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Submit feedback failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Submit feedback failed');
   return res.json();
 }
 
@@ -878,7 +891,7 @@ export async function getFeedback(
   optimizationId: string
 ): Promise<{ feedback: any | null; aggregate: any }> {
   const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/feedback`);
-  if (!res.ok) throw new Error(`Get feedback failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Get feedback failed');
   return res.json();
 }
 
@@ -890,13 +903,13 @@ export async function getFeedbackHistory(
   if (params.limit) qs.set('limit', String(params.limit));
   if (params.rating !== undefined) qs.set('rating', String(params.rating));
   const res = await apiFetch(`${BASE}/api/feedback/history?${qs}`);
-  if (!res.ok) throw new Error(`Feedback history failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Feedback history failed');
   return res.json();
 }
 
 export async function getFeedbackStats(): Promise<any> {
   const res = await apiFetch(`${BASE}/api/feedback/stats`);
-  if (!res.ok) throw new Error(`Feedback stats failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Feedback stats failed');
   return res.json();
 }
 
@@ -1008,7 +1021,7 @@ export async function listBranches(
   optimizationId: string
 ): Promise<{ branches: any[]; total: number }> {
   const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/branches`);
-  if (!res.ok) throw new Error(`List branches failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'List branches failed');
   return res.json();
 }
 
@@ -1017,7 +1030,7 @@ export async function getBranch(
   branchId: string
 ): Promise<any> {
   const res = await apiFetch(`${BASE}/api/optimize/${optimizationId}/branches/${branchId}`);
-  if (!res.ok) throw new Error(`Get branch failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Get branch failed');
   return res.json();
 }
 
@@ -1030,7 +1043,7 @@ export async function selectBranch(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Select branch failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Select branch failed');
   return res.json();
 }
 
@@ -1042,7 +1055,7 @@ export async function compareBranches(
   const res = await apiFetch(
     `${BASE}/api/optimize/${optimizationId}/branches/compare?branch_a=${encodeURIComponent(branchA)}&branch_b=${encodeURIComponent(branchB)}`
   );
-  if (!res.ok) throw new Error(`Compare branches failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Compare branches failed');
   return res.json();
 }
 
@@ -1090,7 +1103,7 @@ export async function compareOptimizations(idA: string, idB: string): Promise<Co
   const res = await apiFetch(
     `${BASE}/api/compare?a=${encodeURIComponent(idA)}&b=${encodeURIComponent(idB)}`
   );
-  if (!res.ok) throw new Error(`Compare failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Compare failed');
   return res.json();
 }
 
@@ -1109,7 +1122,7 @@ export async function mergeOptimizations(
     signal: controller.signal,
   });
   if (!res.ok) {
-    onError(new Error(`Merge failed: ${res.status}`));
+    onError(await apiError(res, 'Merge failed'));
     return controller;
   }
 
@@ -1157,6 +1170,6 @@ export async function acceptMerge(
       merged_prompt: mergedPrompt,
     }),
   });
-  if (!res.ok) throw new Error(`Accept merge failed: ${res.status}`);
+  if (!res.ok) throw await apiError(res, 'Accept merge failed');
   return res.json();
 }
