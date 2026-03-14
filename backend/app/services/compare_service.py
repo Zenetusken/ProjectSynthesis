@@ -312,7 +312,7 @@ def compute_modifiers(a: Any, b: Any) -> list[str]:
     elif repo_a and repo_b and repo_a != repo_b:
         modifiers.append("repo_changed")
 
-    # Adapted: check if time gap > 1hr between the two
+    # Adapted: time gap > 1hr AND feedback exists between runs
     created_a = getattr(a, "created_at", None)
     created_b = getattr(b, "created_at", None)
     if created_a and created_b:
@@ -330,7 +330,9 @@ def compute_modifiers(a: Any, b: Any) -> list[str]:
             dt_b = _to_dt(created_b)
             if dt_a and dt_b:
                 gap = abs((dt_b - dt_a).total_seconds())
-                if gap > 3600:
+                # Check both time gap AND feedback between runs
+                adaptation = extract_adaptation(a, b)
+                if gap > 3600 and adaptation.feedbacks_between > 0:
                     modifiers.append("adapted")
         except (ValueError, TypeError):
             pass
