@@ -22,7 +22,7 @@
     const stored = localStorage.getItem(STEP_KEY);
     if (stored) {
       const n = parseInt(stored, 10);
-      if (n >= 1 && n <= 4) return n;
+      if (n >= 1 && n <= 5) return n;
     }
     return 1;
   })());
@@ -52,7 +52,7 @@
   const stages = pipelineStages.map(s => ({ ...s, name: s.name.toUpperCase() }));
 
   function nextStep() {
-    if (step < 4) {
+    if (step < 5) {
       const durationMs = Date.now() - stepEnteredAt;
       trackOnboardingEvent(`wizard_step_${step}`, { duration_ms: durationMs });
       step++;
@@ -269,7 +269,116 @@
     </div>
 
   {:else if step === 4}
-    <!-- Step 4: First Action -->
+    <!-- Step 4: Train Your Pipeline -->
+    <div class="mb-4">
+      <h2 class="section-heading text-neon-cyan mb-1">Train Your Pipeline</h2>
+      <p class="font-mono text-[9px] text-text-dim">Every rating teaches the system what quality means to you.</p>
+    </div>
+
+    <!-- The Loop: 3-node flow diagram -->
+    <div class="flex items-center gap-1 mb-4">
+      <div class="flex-1 border border-border-subtle p-1.5 text-center">
+        <div class="text-[13px] mb-0.5">👍</div>
+        <div class="font-display text-[9px] uppercase text-text-primary">Rate Result</div>
+        <div class="font-mono text-[8px] text-text-dim mt-0.5">Thumbs up or down</div>
+      </div>
+      <span class="text-text-dim/30 text-xs shrink-0">→</span>
+      <div class="flex-1 border border-neon-cyan/20 bg-neon-cyan/[0.03] p-1.5 text-center">
+        <div class="text-[13px] mb-0.5">⚙</div>
+        <div class="font-display text-[9px] uppercase text-neon-cyan">Pipeline Adapts</div>
+        <div class="font-mono text-[8px] text-text-dim mt-0.5">Weights shift to your style</div>
+      </div>
+      <span class="text-text-dim/30 text-xs shrink-0">→</span>
+      <div class="flex-1 border border-neon-green/20 bg-neon-green/[0.03] p-1.5 text-center">
+        <div class="text-[13px] mb-0.5">✦</div>
+        <div class="font-display text-[9px] uppercase text-neon-green">Better Output</div>
+        <div class="font-mono text-[8px] text-text-dim mt-0.5">Next run matches you</div>
+      </div>
+    </div>
+
+    <!-- Mini mock-up: feedback strip + priority bars -->
+    <div class="border border-border-subtle p-1.5 mb-4 space-y-2">
+      <div class="font-mono text-[8px] text-text-dim/60 uppercase tracking-widest">Live Preview</div>
+      <!-- Mock feedback strip -->
+      <div class="flex items-center gap-2 px-1 py-0.5 border-b border-border-subtle/50 pb-1.5">
+        <div class="flex gap-1">
+          <span class="w-5 h-5 border border-neon-green/40 bg-neon-green/8 flex items-center justify-center text-[10px]">+</span>
+          <span class="w-5 h-5 border border-border-subtle flex items-center justify-center text-[10px] text-text-dim">−</span>
+        </div>
+        <span class="w-px h-3 bg-border-subtle"></span>
+        <span class="w-[5px] h-[5px] rounded-full bg-neon-cyan"></span>
+        <span class="font-mono text-[8px] text-text-dim">Adapted (3 feedbacks)</span>
+      </div>
+      <!-- Mock priority bars -->
+      <div class="grid grid-cols-5 gap-1">
+        <div class="flex flex-col items-center">
+          <div class="w-full relative" style="height: 24px;">
+            <div class="absolute bottom-0 left-0 right-0 border border-neon-cyan/40 bg-neon-cyan/15" style="height: 22px;"></div>
+          </div>
+          <span class="text-[7px] font-mono text-neon-cyan mt-0.5">CLR</span>
+          <span class="text-[7px] font-mono text-neon-green">+8%</span>
+        </div>
+        <div class="flex flex-col items-center">
+          <div class="w-full relative" style="height: 24px;">
+            <div class="absolute bottom-0 left-0 right-0 border border-neon-yellow/30 bg-neon-yellow/12" style="height: 18px;"></div>
+          </div>
+          <span class="text-[7px] font-mono text-neon-yellow mt-0.5">FTH</span>
+          <span class="text-[7px] font-mono text-neon-green">+5%</span>
+        </div>
+        <div class="flex flex-col items-center">
+          <div class="w-full relative" style="height: 24px;">
+            <div class="absolute bottom-0 left-0 right-0 border border-neon-purple/25 bg-neon-purple/10" style="height: 14px;"></div>
+          </div>
+          <span class="text-[7px] font-mono text-neon-purple mt-0.5">SPC</span>
+        </div>
+        <div class="flex flex-col items-center">
+          <div class="w-full relative" style="height: 24px;">
+            <div class="absolute bottom-0 left-0 right-0 border border-text-dim/25 bg-text-dim/15" style="height: 10px;"></div>
+          </div>
+          <span class="text-[7px] font-mono text-text-dim mt-0.5">STR</span>
+        </div>
+        <div class="flex flex-col items-center">
+          <div class="w-full relative" style="height: 24px;">
+            <div class="absolute bottom-0 left-0 right-0 border border-text-dim/25 bg-text-dim/15" style="height: 8px;"></div>
+          </div>
+          <span class="text-[7px] font-mono text-text-dim mt-0.5">CNC</span>
+        </div>
+      </div>
+      <p class="font-mono text-[8px] text-text-dim/60 text-center">Your ratings shift dimension priorities — the pipeline focuses on what matters to you</p>
+    </div>
+
+    <!-- Pro tips -->
+    <div class="space-y-1.5 mb-4">
+      <div class="step-box">
+        <span class="shrink-0 w-5 text-center text-[11px]">👍</span>
+        <div>
+          <div class="font-display text-[10px] uppercase text-text-primary">Thumbs Up Auto-Submits</div>
+          <div class="font-mono text-[9px] text-text-dim mt-0.5">One click reinforces the optimization style — no form needed</div>
+        </div>
+      </div>
+      <div class="step-box">
+        <span class="shrink-0 w-5 text-center text-[11px]">👎</span>
+        <div>
+          <div class="font-display text-[10px] uppercase text-text-primary">Thumbs Down Opens Detail Mode</div>
+          <div class="font-mono text-[9px] text-text-dim mt-0.5">Flag specific issues — lost terms, wrong tone, too verbose</div>
+        </div>
+      </div>
+      <div class="step-box">
+        <span class="shrink-0 w-5 text-center text-[11px]">📊</span>
+        <div>
+          <div class="font-display text-[10px] uppercase text-text-primary">Inspector → Adaptation</div>
+          <div class="font-mono text-[9px] text-text-dim mt-0.5">See your priority bars, active guardrails, and framework preferences evolve</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button onclick={prevStep} class="btn-outline-subtle px-3 py-2 font-mono text-[10px] uppercase">BACK</button>
+      <button onclick={nextStep} class="flex-1 btn-primary px-4 py-2 font-mono text-[11px] uppercase tracking-[0.07em]">NEXT</button>
+    </div>
+
+  {:else if step === 5}
+    <!-- Step 5: First Action -->
     <div class="mb-4">
       <h2 class="section-heading text-neon-cyan mb-1">Ready to Forge?</h2>
       <p class="font-mono text-[9px] text-text-dim">Choose how to get started.</p>
@@ -345,7 +454,7 @@
 
   <!-- Step indicator -->
   <div class="flex items-center justify-center gap-1.5 mt-4">
-    {#each [1, 2, 3, 4] as s}
+    {#each [1, 2, 3, 4, 5] as s}
       <div class="w-1.5 h-1.5 {s === step ? 'bg-neon-cyan' : s < step ? 'bg-neon-cyan/30' : 'bg-border-subtle'} transition-colors"></div>
     {/each}
   </div>
