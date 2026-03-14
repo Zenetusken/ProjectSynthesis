@@ -6,8 +6,8 @@
   import { patchOptimization } from '$lib/api/client';
   import { STRATEGY_HEX } from '$lib/utils/strategy';
   import CopyButton from '$lib/components/shared/CopyButton.svelte';
-  import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import ScoreBar from '$lib/components/shared/ScoreBar.svelte';
+  import { marked } from 'marked';
   import DiffView from '$lib/components/shared/DiffView.svelte';
   import StrategyBadge from '$lib/components/shared/StrategyBadge.svelte';
   import TraceView from '$lib/components/pipeline/TraceView.svelte';
@@ -23,6 +23,14 @@
 
   type ArtifactSubTab = 'optimized' | 'diff' | 'scores' | 'trace';
   let activeSubTab = $state<ArtifactSubTab>('optimized');
+
+  // Configure marked for brand-compliant rendering
+  marked.setOptions({ breaks: true, gfm: true });
+
+  // Parsed markdown HTML from streaming text (reactive)
+  let renderedMarkdown = $derived(
+    forge.streamingText ? marked.parse(forge.streamingText) as string : ''
+  );
   let titleInputEl = $state<HTMLInputElement | undefined>();
 
   const subTabs: { id: ArtifactSubTab; label: string }[] = [
@@ -56,38 +64,123 @@
     }
   });
 
-  // Load result assessment from SSE adaptation data when forge completes
+  // Load result assessment from SSE adaptation data when forge completes.
+  // This effect is reactive to both forge completion AND adaptation data changes,
+  // so if result_assessment SSE arrives after the complete event, it still updates.
   $effect(() => {
     if (forge.overallScore != null && !forge.isForging && forge.stageResults['validate']) {
-      // Build a basic assessment from available data if no SSE assessment arrived
       const validateData = forge.stageResults['validate']?.data as Record<string, unknown> | undefined;
       const adaptationData = forge.stageResults['adaptation']?.data as Record<string, unknown> | undefined;
 
+      // Prefer real SSE assessment from the backend
       if (adaptationData?.result_assessment) {
         resultAssessment = adaptationData.result_assessment;
       } else if (validateData) {
-        // Build minimal assessment from validation scores
+        // Build enriched fallback from all available pipeline data
         const scores = (validateData.scores || {}) as Record<string, number>;
         const overall = forge.overallScore ?? 0;
         const verdict = overall >= 7.5 ? 'strong' : overall >= 6.0 ? 'solid' : overall >= 4.5 ? 'mixed' : 'weak';
+        const strategyData = forge.stageResults['strategy']?.data as Record<string, unknown> | undefined;
+        const framework = (strategyData?.primary_framework as string) || null;
+
+        // Derive weights from adaptation state if available, else use defaults
+        const adaptWeights = (feedback.adaptationState?.dimensionWeights ?? {}) as Record<string, number>;
+        const defaultWeight = 0.2;
+
+        // Build dimension insights with real weights and score-based assessment
+        const dimEntries = Object.entries(scores).filter(([k]) => k !== 'overall_score');
+        const avgScore = dimEntries.length > 0
+          ? dimEntries.reduce((s, [, v]) => s + v, 0) / dimEntries.length
+          : 5;
+
+        // Rank-based priority: sort dimensions by weight, assign tiers by rank position
+        const weightRanked = dimEntries
+          .map(([dim]) => ({ dim, weight: adaptWeights[dim] ?? defaultWeight }))
+          .sort((a, b) => b.weight - a.weight);
+        const priorityMap: Record<string, string> = {};
+        weightRanked.forEach((item, idx) => {
+          if (idx === 0) priorityMap[item.dim] = 'high';           // Top 1 = TOP PRIORITY
+          else if (idx >= weightRanked.length - 1) priorityMap[item.dim] = 'low';  // Bottom 1 = LOW
+          else priorityMap[item.dim] = 'normal';                    // Middle = BALANCED
+        });
+
+        const insights = dimEntries.map(([dim, score]) => {
+          const weight = adaptWeights[dim] ?? defaultWeight;
+
+          // Score-based assessment text
+          let assessmentText = `${score.toFixed(1)}/10`;
+          if (score >= 9) assessmentText = `Excellent — ${score.toFixed(1)}/10`;
+          else if (score >= 7) assessmentText = `Above average — ${score.toFixed(1)}/10`;
+          else if (score >= 5) assessmentText = `Average — ${score.toFixed(1)}/10`;
+          else assessmentText = `Below average — ${score.toFixed(1)}/10`;
+
+          return {
+            dimension: dim,
+            score,
+            weight,
+            label: dim.replace(/_score$/, '').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+            assessment: assessmentText,
+            is_weak: score < 5,
+            is_strong: score >= 8,
+            delta_from_previous: null as number | null,
+            framework_avg: null as number | null,
+            user_priority: priorityMap[dim] ?? 'normal',
+          };
+        });
+
+        // Build improvement signals for ALL dimensions so the component
+        // can read elasticity for every dimension row.
+        // Rank-based elasticity: sort by score ascending, assign based on
+        // rank position so scores always produce visually distinct values.
+        const sortedByScore = [...dimEntries].sort(([, a], [, b]) => a - b);
+        const elasticityByRank = [0.75, 0.55, 0.40, 0.28, 0.18]; // 5 tiers: ELASTIC→LOW
+        const improvementSignals = sortedByScore.map(([dim, score], rankIdx) => {
+          const elasticity = elasticityByRank[Math.min(rankIdx, elasticityByRank.length - 1)];
+          return {
+            dimension: dim,
+            current_score: score,
+            potential_gain: Math.min(10 - score, 2.0),
+            elasticity,
+            effort_label: score < 5 ? 'significant' : score < 7 ? 'moderate' : score < 9 ? 'incremental' : 'minimal',
+            suggestion: score >= 10
+              ? `${dim.replace(/_score$/, '').replace(/_/g, ' ')} is at maximum`
+              : `Improve ${dim.replace(/_score$/, '').replace(/_/g, ' ')} from ${score.toFixed(0)} toward ${Math.min(10, score + 2).toFixed(0)}`,
+          };
+        });
+
+        // Build headline from top dimensions (mention ties)
+        const sortedByTopScore = [...insights].sort((a, b) => b.score - a.score);
+        const topScore = sortedByTopScore[0]?.score ?? 0;
+        const topDims = sortedByTopScore.filter((d) => d.score === topScore);
+        let headline: string;
+        if (topDims.length >= 2) {
+          headline = `${topDims[0].label} and ${topDims[1].label} lead at ${topScore.toFixed(1)}`;
+        } else if (topDims.length === 1) {
+          headline = `${topDims[0].label} leads at ${topScore.toFixed(1)} — overall ${verdict}`;
+        } else {
+          headline = `Overall ${verdict} at ${overall.toFixed(1)}/10`;
+        }
+
+        // Build next actions based on verdict
+        const nextActions: Array<{ action: string; rationale: string; priority: string; category: string }> = [];
+        if (verdict === 'strong' || verdict === 'solid') {
+          nextActions.push({ action: 'Rate this result', rationale: 'Feedback trains the pipeline toward your preferences', priority: 'primary', category: 'thumbs_up' });
+        }
+        if (improvementSignals.length > 0) {
+          const topImp = improvementSignals[0];
+          nextActions.push({
+            action: `Refine ${topImp.dimension.replace(/_score$/, '')}`,
+            rationale: `${topImp.effort_label} effort — could gain +${topImp.potential_gain.toFixed(1)}`,
+            priority: 'secondary',
+            category: 'refine',
+          });
+        }
+
         resultAssessment = {
           verdict,
           confidence: 'medium',
-          headline: `Score: ${overall.toFixed(1)}/10`,
-          dimension_insights: Object.entries(scores)
-            .filter(([k]) => k !== 'overall_score')
-            .map(([dim, score]) => ({
-              dimension: dim,
-              score,
-              weight: 0.2,
-              label: dim.replace(/_score$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-              assessment: `${score.toFixed(1)}/10`,
-              is_weak: score < 5,
-              is_strong: score >= 8,
-              delta_from_previous: null,
-              framework_avg: null,
-              user_priority: 'normal',
-            })),
+          headline,
+          dimension_insights: insights,
           trade_offs: [],
           retry_journey: {
             total_attempts: 1,
@@ -95,16 +188,15 @@
             score_trajectory: [overall],
             gate_sequence: [],
             momentum_trend: 'stable',
-            summary: 'Single attempt.',
+            summary: 'First optimization — no retry history.',
           },
           framework_fit: null,
-          improvement_signals: [],
-          next_actions: [],
+          improvement_signals: improvementSignals,
+          next_actions: nextActions,
         };
       }
 
       // Load issue suggestions from adaptation data
-      // Backend emits {suggestions: [...]} wrapper; extract the inner array
       if (adaptationData?.issue_suggestions) {
         const issueData = adaptationData.issue_suggestions as any;
         issueSuggestions = issueData?.suggestions ?? issueData ?? [];
@@ -297,12 +389,12 @@
   onkeydown={(e) => { if (e.key === 'Escape') handleDocClick(); }}
 >
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 py-2 border-b border-border-subtle shrink-0 gap-2">
+  <div class="flex items-center justify-between px-2 py-1 border-b border-border-subtle shrink-0 gap-1.5">
     <div class="flex items-center gap-2 min-w-0">
       {#if editingTitle && forge.optimizationId}
         <input
           name="artifact-title"
-          class="text-sm font-semibold text-text-primary bg-transparent border-b
+          class="text-xs font-semibold text-text-primary bg-transparent border-b
                  border-neon-cyan/50 focus:outline-none max-w-[200px]"
           bind:this={titleInputEl}
           bind:value={titleInput}
@@ -315,7 +407,7 @@
       {:else}
         <div class="group flex items-center gap-1.5 min-w-0">
           <h2
-            class="text-sm font-semibold text-text-primary shrink-0
+            class="text-xs font-semibold text-text-primary shrink-0
                    {forge.optimizationId ? 'cursor-pointer hover:text-neon-cyan/80 transition-colors' : ''}"
             ondblclick={() => {
               if (forge.optimizationId) { titleInput = displayTitle; editingTitle = true; }
@@ -407,16 +499,13 @@
       {#if !forge.isForging && forge.optimizationId && refinement.branchCount > 1}
         <BranchIndicator optimizationId={forge.optimizationId} />
       {/if}
-      {#if forge.overallScore != null}
-        <ScoreCircle score={forge.overallScore} size={28} />
-      {/if}
     </div>
   </div>
 
   <!-- Tags row -->
   {#if forge.optimizationId}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="flex items-center flex-wrap gap-1 px-4 py-1.5 border-b border-border-subtle bg-bg-secondary/30 min-h-[30px]">
+    <div class="flex items-center flex-wrap gap-1 px-2 py-0.5 border-b border-border-subtle bg-bg-secondary/30">
       {#each pendingTags as tag}
         <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono border border-neon-cyan/30 text-neon-cyan/80 bg-neon-cyan/5">
           {tag}
@@ -454,10 +543,10 @@
   {/if}
 
   <!-- Sub-tab bar -->
-  <div class="flex items-center h-8 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
+  <div class="flex items-center h-7 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
     {#each subTabs as st}
       <button
-        class="px-3 py-1 text-xs transition-colors
+        class="px-2.5 py-0.5 text-[11px] transition-colors
           {activeSubTab === st.id
             ? 'text-neon-cyan border-b border-neon-cyan bg-bg-primary'
             : 'text-text-dim hover:text-text-secondary'}"
@@ -469,19 +558,27 @@
   </div>
 
   <!-- Sub-tab content -->
-  <div class="flex-1 overflow-y-auto p-4" style="overscroll-behavior: contain;">
+  <div class="flex-1 overflow-y-auto p-2" style="overscroll-behavior: contain;">
     {#if activeSubTab === 'optimized'}
       {#if forge.streamingText}
-        <div class="bg-bg-card border border-border-subtle rounded-lg p-4">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs text-text-secondary font-medium">Optimized Prompt</span>
+        <div class="bg-bg-card border border-border-subtle p-1.5">
+          <div class="flex items-center justify-between mb-0.5">
+            <span class="text-[9px] text-text-dim font-mono uppercase tracking-wider">Optimized Prompt</span>
             <CopyButton text={forge.streamingText} />
           </div>
-          <p class="text-[13px] text-text-primary font-sans whitespace-pre-wrap leading-relaxed">{forge.streamingText}</p>
+          <div class="prose-synth text-xs text-text-primary font-sans leading-normal">
+            {@html renderedMarkdown}
+          </div>
         </div>
+        <!-- Result Assessment — inside scrollable content for alignment -->
+        {#if forge.optimizationId && !forge.isForging && resultAssessment}
+          <div class="mt-1.5">
+            <ResultAssessment assessment={resultAssessment} />
+          </div>
+        {/if}
       {:else}
-        <div class="text-center py-12">
-          <p class="text-sm text-text-dim">No artifact generated yet. Synthesize a prompt first.</p>
+        <div class="text-center py-8">
+          <p class="text-xs text-text-dim">No artifact generated yet. Synthesize a prompt first.</p>
         </div>
       {/if}
 
@@ -489,8 +586,8 @@
       {#if forge.rawPrompt && forge.streamingText}
         <DiffView original={forge.rawPrompt} modified={forge.streamingText} />
       {:else}
-        <div class="text-center py-12">
-          <p class="text-sm text-text-dim">Run a synthesis to see the diff comparison.</p>
+        <div class="text-center py-8">
+          <p class="text-xs text-text-dim">Run a synthesis to see the diff comparison.</p>
         </div>
       {/if}
 
@@ -523,12 +620,7 @@
     {/if}
   </div>
 
-  <!-- Result Assessment (between content and feedback strip) -->
-  {#if forge.optimizationId && !forge.isForging && resultAssessment}
-    <div class="px-4 pb-2">
-      <ResultAssessment assessment={resultAssessment} />
-    </div>
-  {/if}
+  <!-- ResultAssessment moved inside scrollable content for alignment -->
 
   {#if forge.optimizationId && !forge.isForging && forge.streamingText}
     <FeedbackInline

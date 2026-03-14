@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { slide } from 'svelte/transition';
   import { feedback } from '$lib/stores/feedback.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { toast } from '$lib/stores/toast.svelte';
+  import ResizableTextarea from '$lib/components/shared/ResizableTextarea.svelte';
 
   let {
     optimizationId,
@@ -50,13 +52,7 @@
   let suggestedIds = $derived(new Set(issueSuggestions.map((s) => s.issue_id)));
 
   // Entrance animation
-  let visible = $state(false);
-  $effect(() => {
-    // Trigger spring entrance on mount
-    requestAnimationFrame(() => {
-      visible = true;
-    });
-  });
+  // Transition handled by svelte transition:slide on the container
 
   function setRating(value: -1 | 0 | 1) {
     feedback.setRating(value);
@@ -85,15 +81,15 @@
       toast.success(msg, 5000);
       onclose?.();
     } else if (feedback.error) {
-      toast.error(`Feedback failed: ${feedback.error}`);
+      toast.error(`Feedback failed: ${feedback.error}`, 10000, {
+        label: 'Retry',
+        onClick: () => handleSave(),
+      });
     }
   }
 
   function handleClose() {
-    visible = false;
-    setTimeout(() => {
-      onclose?.();
-    }, 200);
+    onclose?.();
   }
 </script>
 
@@ -103,54 +99,50 @@
   Spring entrance (300ms), accelerating exit (200ms).
 -->
 <div
-  class="border-t border-border-subtle bg-bg-card overflow-hidden transition-all"
-  class:tier2-enter={visible}
-  class:tier2-exit={!visible}
-  style="transform-origin: top;"
+  class="border-t border-border-subtle bg-bg-card overflow-hidden"
+  transition:slide={{ duration: 200 }}
 >
-  <div class="p-2 space-y-3">
-    <!-- Rating bar: 3 buttons -->
-    <div class="flex items-center gap-2">
-      <span class="text-[10px] font-mono text-text-dim uppercase">Rating</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors duration-200
-                 {currentRating === 1
-                   ? 'border-neon-green bg-neon-green/8 text-neon-green'
-                   : 'border-border-subtle text-text-dim hover:border-neon-green/40 hover:text-neon-green'}"
-          onclick={() => setRating(1)}
-          role="radio"
-          aria-pressed={currentRating === 1}
-          aria-label="Positive"
-          data-testid="feedback-tier2-positive"
-        >+</button>
-        <button
-          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors duration-200
-                 {currentRating === 0
-                   ? 'border-neon-cyan bg-neon-cyan/8 text-neon-cyan'
-                   : 'border-border-subtle text-text-dim hover:border-neon-cyan/40 hover:text-neon-cyan'}"
-          onclick={() => setRating(0)}
-          role="radio"
-          aria-pressed={currentRating === 0}
-          aria-label="Neutral"
-          data-testid="feedback-tier2-neutral"
-        >=</button>
-        <button
-          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors duration-200
-                 {currentRating === -1
-                   ? 'border-neon-red bg-neon-red/8 text-neon-red'
-                   : 'border-border-subtle text-text-dim hover:border-neon-red/40 hover:text-neon-red'}"
-          onclick={() => setRating(-1)}
-          role="radio"
-          aria-pressed={currentRating === -1}
-          aria-label="Negative"
-          data-testid="feedback-tier2-negative"
-        >-</button>
-      </div>
+  <div class="p-2 space-y-2">
+    <!-- Rating bar: 3 buttons — compact inline -->
+    <div class="flex items-center gap-1.5">
+      <span class="text-[9px] font-mono text-text-dim uppercase w-10 shrink-0">Rating</span>
+      <button
+        class="inline-flex items-center justify-center w-6 h-5 text-[10px] font-mono border transition-colors duration-200
+               {currentRating === 1
+                 ? 'border-neon-green bg-neon-green/8 text-neon-green'
+                 : 'border-border-subtle text-text-dim hover:border-neon-green/40 hover:text-neon-green'}"
+        onclick={() => setRating(1)}
+        role="radio"
+        aria-pressed={currentRating === 1}
+        aria-label="Positive"
+        data-testid="feedback-tier2-positive"
+      >+</button>
+      <button
+        class="inline-flex items-center justify-center w-6 h-5 text-[10px] font-mono border transition-colors duration-200
+               {currentRating === 0
+                 ? 'border-neon-cyan bg-neon-cyan/8 text-neon-cyan'
+                 : 'border-border-subtle text-text-dim hover:border-neon-cyan/40 hover:text-neon-cyan'}"
+        onclick={() => setRating(0)}
+        role="radio"
+        aria-pressed={currentRating === 0}
+        aria-label="Neutral"
+        data-testid="feedback-tier2-neutral"
+      >=</button>
+      <button
+        class="inline-flex items-center justify-center w-6 h-5 text-[10px] font-mono border transition-colors duration-200
+               {currentRating === -1
+                 ? 'border-neon-red bg-neon-red/8 text-neon-red'
+                 : 'border-border-subtle text-text-dim hover:border-neon-red/40 hover:text-neon-red'}"
+        onclick={() => setRating(-1)}
+        role="radio"
+        aria-pressed={currentRating === -1}
+        aria-label="Negative"
+        data-testid="feedback-tier2-negative"
+      >-</button>
     </div>
 
     <!-- Issue checkboxes in 2-column grid -->
-    <div class="grid grid-cols-2 gap-x-4 gap-y-[3px]">
+    <div class="grid grid-cols-2 gap-x-3 gap-y-px">
       <!-- Fidelity group -->
       <div role="group" aria-label="Fidelity issues">
         <p class="text-[9px] font-display font-bold uppercase tracking-wider mb-1 text-neon-yellow">Fidelity</p>
@@ -230,115 +222,69 @@
       </div>
     </div>
 
-    <!-- Dimension override grid: 5 columns -->
-    <div>
-      <p class="text-[9px] font-display font-bold uppercase tracking-wider text-text-dim mb-1">Dimension Overrides</p>
-      <div class="grid grid-cols-5 gap-1">
-        {#each DIMENSIONS as dim}
-          {@const baseScore = validateScores[dim.key]}
-          {@const overrideVal = dimensionOverrides[dim.key]}
-          {@const displayVal = overrideVal ?? (baseScore != null ? Math.round(baseScore) : '—')}
-          {@const isOverridden = dim.key in dimensionOverrides}
-          <div
-            class="flex flex-col items-center p-1 border transition-colors duration-200
-                   {isOverridden
-                     ? 'border-neon-purple/50 bg-neon-purple/5'
-                     : 'border-border-subtle'}"
-            style="padding: 8px 4px;"
-          >
-            <span class="text-[9px] font-mono text-text-dim">{dim.abbr}</span>
-            <span class="text-xs font-mono {isOverridden ? 'text-neon-purple' : 'text-text-primary'}">
-              {displayVal}
-            </span>
-            <div class="flex items-center gap-0.5 mt-1">
-              <button
-                class="w-4 h-4 inline-flex items-center justify-center text-[10px] border border-border-subtle
-                       text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors duration-200"
-                onclick={() => adjustOverride(dim.key, -1)}
-                aria-label="Decrease {dim.label}"
-                data-testid="feedback-dim-{dim.abbr.toLowerCase()}-dec"
-              >-</button>
-              <button
-                class="w-4 h-4 inline-flex items-center justify-center text-[10px] border border-border-subtle
-                       text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors duration-200"
-                onclick={() => adjustOverride(dim.key, 1)}
-                aria-label="Increase {dim.label}"
-                data-testid="feedback-dim-{dim.abbr.toLowerCase()}-inc"
-              >+</button>
-            </div>
-          </div>
-        {/each}
-      </div>
+    <!-- Dimension overrides — compact inline rows -->
+    <div class="space-y-0.5">
+      <p class="text-[9px] font-display font-bold uppercase tracking-wider text-text-dim">Overrides</p>
+      {#each DIMENSIONS as dim}
+        {@const baseScore = validateScores[dim.key]}
+        {@const overrideVal = dimensionOverrides[dim.key]}
+        {@const displayVal = overrideVal ?? (baseScore != null ? Math.round(baseScore) : 5)}
+        {@const isOverridden = dim.key in dimensionOverrides}
+        <div class="flex items-center gap-1 h-5">
+          <span class="text-[9px] font-mono w-7 shrink-0 {isOverridden ? 'text-neon-cyan' : 'text-text-dim'}">{dim.abbr}</span>
+          <div class="flex-1 h-px bg-border-subtle"></div>
+          <button
+            class="w-4 h-4 inline-flex items-center justify-center text-[9px] border border-border-subtle
+                   text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors duration-200 shrink-0"
+            onclick={() => adjustOverride(dim.key, -1)}
+            aria-label="Decrease {dim.label}"
+            data-testid="feedback-dim-{dim.abbr.toLowerCase()}-dec"
+          >−</button>
+          <span class="text-[10px] font-mono w-7 text-center shrink-0 {isOverridden ? 'text-neon-cyan' : 'text-text-primary'}">
+            {displayVal}
+          </span>
+          <button
+            class="w-4 h-4 inline-flex items-center justify-center text-[9px] border border-border-subtle
+                   text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors duration-200 shrink-0"
+            onclick={() => adjustOverride(dim.key, 1)}
+            aria-label="Increase {dim.label}"
+            data-testid="feedback-dim-{dim.abbr.toLowerCase()}-inc"
+          >+</button>
+        </div>
+      {/each}
     </div>
 
-    <!-- Comment textarea -->
-    <div>
-      <textarea
-        class="w-full bg-bg-primary border border-border-subtle text-[11px] font-mono text-text-primary
-               p-1.5 focus:outline-none focus:border-neon-cyan/40 resize-none"
-        rows="2"
-        placeholder="Optional comment..."
+    <!-- Comment + action bar — compact grid -->
+    <div class="flex gap-1.5 items-end">
+      <ResizableTextarea
         bind:value={feedback.currentFeedback.comment}
-        data-testid="feedback-comment"
-      ></textarea>
-    </div>
-
-    <!-- Action bar -->
-    <div class="flex items-center gap-2">
+        resize="drag"
+        minHeight={24}
+        maxHeight={128}
+        mono
+        fontSize="text-[10px]"
+        placeholder="Comment..."
+        testid="feedback-comment"
+        class="bg-bg-primary p-1 flex-1"
+      />
       <button
-        class="btn-outline-cyan flex-1 py-1.5 text-[11px] font-mono uppercase tracking-wider
-               disabled:opacity-40 disabled:cursor-not-allowed"
+        class="shrink-0 h-6 px-2.5 border border-neon-cyan text-neon-cyan text-[9px] font-mono uppercase tracking-wider
+               hover:bg-neon-cyan/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         onclick={handleSave}
         disabled={feedback.currentFeedback.submitting || currentRating === null}
         data-testid="feedback-save"
       >
-        {feedback.currentFeedback.submitting ? 'Saving...' : 'Save Feedback'}
+        {feedback.currentFeedback.submitting ? 'Saving...' : 'Save'}
       </button>
       <button
-        class="px-3 py-1.5 text-[11px] font-mono text-text-dim hover:text-text-secondary transition-colors duration-200"
+        class="shrink-0 h-6 px-2 text-[9px] font-mono text-text-dim hover:text-text-secondary transition-colors duration-200"
         onclick={handleClose}
         data-testid="feedback-cancel"
       >
-        Cancel
+        ✕
       </button>
     </div>
   </div>
 </div>
 
-<style>
-  .tier2-enter {
-    animation: tier2SlideIn 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-  .tier2-exit {
-    animation: tier2SlideOut 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  }
-  @keyframes tier2SlideIn {
-    from {
-      opacity: 0;
-      max-height: 0;
-      transform: scaleY(0.8);
-    }
-    to {
-      opacity: 1;
-      max-height: 500px;
-      transform: scaleY(1);
-    }
-  }
-  @keyframes tier2SlideOut {
-    from {
-      opacity: 1;
-      max-height: 500px;
-      transform: scaleY(1);
-    }
-    to {
-      opacity: 0;
-      max-height: 0;
-      transform: scaleY(0.8);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .tier2-enter, .tier2-exit {
-      animation-duration: 0.01ms !important;
-    }
-  }
-</style>
+<!-- Transitions handled by svelte transition:slide -->

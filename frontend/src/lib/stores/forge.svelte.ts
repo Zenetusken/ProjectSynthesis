@@ -45,6 +45,8 @@ export interface ForgeRecord {
   duration_ms?: number | null;
   stage_durations?: Record<string, { duration_ms?: number; token_count?: number }> | null;
   total_tokens?: number | null;
+  // Stream status
+  stream_status?: string | null;
   // Metadata
   tags?: string[] | null;
 }
@@ -88,6 +90,8 @@ class ForgeStore {
   stageResults = $state<Record<string, StageResult>>({});
   streamingText = $state('');
   optimizeStreaming = $state<boolean | null>(null);
+  streamComplete = $state(false);
+  authoritativePrompt = $state<string | null>(null);
   rawPrompt = $state('');
   optimizationId = $state<string | null>(null);
   completionSeq = $state(0);
@@ -153,6 +157,8 @@ class ForgeStore {
     this.stageResults = {};
     this.streamingText = '';
     this.optimizeStreaming = null;
+    this.streamComplete = false;
+    this.authoritativePrompt = null;
     this.rawPrompt = '';
     this.optimizationId = null;
     this.overallScore = null;
@@ -182,6 +188,8 @@ class ForgeStore {
     if (stage === 'optimize') {
       this.streamingText = '';
       this.optimizeStreaming = null;
+      this.streamComplete = false;
+      this.authoritativePrompt = null;
     }
     if (this.liveStageText[stage] !== undefined) {
       this.liveStageText = { ...this.liveStageText, [stage]: '' };
@@ -220,6 +228,7 @@ class ForgeStore {
   }
 
   appendStreamingText(chunk: string) {
+    if (this.streamComplete) return;
     this.streamingText += chunk;
   }
 
@@ -274,7 +283,7 @@ class ForgeStore {
     return {
       id,
       raw_prompt: this.rawPrompt,
-      optimized_prompt: this.streamingText,
+      optimized_prompt: this.authoritativePrompt || this.streamingText,
       overall_score: this.overallScore,
       // Analyze
       task_type: (this.stageResults?.analyze?.data?.task_type as string) ?? null,
@@ -310,6 +319,8 @@ class ForgeStore {
       duration_ms: durationMs ?? null,
       total_tokens: totalTokens ?? null,
       stage_durations: Object.keys(stageDurations).length > 0 ? stageDurations : null,
+      // Stream status
+      stream_status: (this.stageResults?.optimize?.data?.stream_status as string) ?? null,
       // Metadata
       tags: this.tags.length > 0 ? [...this.tags] : null,
     };
@@ -611,6 +622,10 @@ class ForgeStore {
         break;
       }
       case 'optimization':
+        // Mark stream complete to prevent late step_progress chunks from
+        // appending after the authoritative prompt text has arrived (H1 race).
+        this.streamComplete = true;
+        this.authoritativePrompt = (data.optimized_prompt as string) || null;
         this.setStageComplete('optimize', { stage: 'optimize', data, duration: data.duration_ms as number | undefined });
         // Only overwrite if streaming didn't already populate the text
         // (batch mode / JSON fallback still needs atomic replacement)

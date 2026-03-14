@@ -54,8 +54,8 @@
   }
 </script>
 
-<div class="space-y-3">
-  <h3 class="font-display text-[12px] font-bold uppercase text-text-dim">Branches</h3>
+<div class="space-y-2">
+  <h3 class="section-heading">Branches</h3>
 
   {#if tree.length === 0}
     <p class="text-xs text-text-dim">No branches yet.</p>

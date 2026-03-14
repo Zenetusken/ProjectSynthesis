@@ -26,33 +26,38 @@
 
   let sessionState = $derived.by(() => {
     if (refinement.refinementStreaming) return 'active';
+    // No turns yet — show idle, not exhausted
+    const hasTurns = refinement.branches.some((b) => b.turnCount > 0);
+    if (!hasTurns) return 'idle';
     if (refinement.branches.some((b) => b.status === 'selected')) return 'compacted';
     return 'exhausted';
   });
 
   const SESSION_STATE_LABELS: Record<string, string> = {
     active: 'Active',
+    idle: 'Idle',
     compacted: 'Compacted',
     exhausted: 'Exhausted',
   };
 
   const SESSION_STATE_COLORS: Record<string, string> = {
     active: 'border-neon-cyan text-neon-cyan',
+    idle: 'border-text-dim/50 text-text-dim/50',
     compacted: 'border-neon-indigo text-neon-indigo',
     exhausted: 'border-text-dim text-text-dim',
   };
 </script>
 
-<div class="space-y-3">
+<div class="space-y-1.5">
   <div class="flex items-center justify-between">
-    <h3 class="font-display text-[12px] font-bold uppercase text-text-dim">Refinement</h3>
+    <h3 class="section-heading">Refinement</h3>
     <span
-      class="border text-[9px] font-mono uppercase px-1.5 py-0.5 {SESSION_STATE_COLORS[sessionState] ?? 'border-text-dim text-text-dim'}"
+      class="border text-[8px] font-mono uppercase px-1 py-px {SESSION_STATE_COLORS[sessionState] ?? 'border-text-dim text-text-dim'}"
     >{SESSION_STATE_LABELS[sessionState] ?? sessionState}</span>
   </div>
 
   {#if allTurns.length === 0}
-    <p class="text-xs text-text-dim">No refinement turns yet.</p>
+    <p class="text-[10px] text-text-dim">No refinement turns yet.</p>
   {:else}
     <div class="space-y-1.5">
       {#each allTurns as item}

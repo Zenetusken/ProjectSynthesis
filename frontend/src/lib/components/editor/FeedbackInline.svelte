@@ -39,7 +39,10 @@
       if (confirmation) {
         toast.success(confirmation.summary, 3000);
       } else if (feedback.error) {
-        toast.error(`Feedback failed: ${feedback.error}`);
+        toast.error(`Feedback failed: ${feedback.error}`, 10000, {
+          label: 'Retry',
+          onClick: () => handleThumbUp(),
+        });
       }
     }
   }
@@ -168,13 +171,14 @@
   >
     {#if refinement.branchCount > 0}
       <span class="text-neon-purple">&#x25C8;</span>
-      <span>{refinement.branchCount}</span>
+      <span class="text-neon-purple">{refinement.branchCount}</span>
+      <span class="w-px h-3 bg-border-subtle" aria-hidden="true"></span>
     {:else}
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5" />
         <path stroke-linecap="round" stroke-linejoin="round" d="M17.5 2.5a2.121 2.121 0 0 1 3 3L12 14l-4 1 1-4 7.5-7.5z" />
       </svg>
     {/if}
-    Refine
+    <span>Refine</span>
   </button>
 </div>

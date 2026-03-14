@@ -7,13 +7,46 @@
   import { refinement } from "$lib/stores/refinement.svelte";
   import { getStrategyHex } from "$lib/utils/strategy";
   import ScoreCircle from "$lib/components/shared/ScoreCircle.svelte";
-  import ScoreBar from "$lib/components/shared/ScoreBar.svelte";
   import { getScoreColor } from "$lib/utils/colors";
   import Tip from "$lib/components/shared/Tip.svelte";
   import InspectorFeedback from "$lib/components/layout/InspectorFeedback.svelte";
   import InspectorRefinement from "$lib/components/layout/InspectorRefinement.svelte";
   import InspectorBranches from "$lib/components/layout/InspectorBranches.svelte";
   import InspectorAdaptation from "$lib/components/layout/InspectorAdaptation.svelte";
+
+  // ── Drag-resize state ───────────────────────────────────────────────
+  let _resizing = $state(false);
+  let _startX = 0;
+  let _startW = 0;
+
+  function _onResizeStart(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    _resizing = true;
+    _startX = e.clientX;
+    _startW = workbench.inspectorWidth;
+
+    function onMove(ev: MouseEvent) {
+      // Inspector is on the right — dragging left increases width
+      const delta = _startX - ev.clientX;
+      workbench.setInspectorWidth(_startW + delta);
+    }
+
+    function onUp() {
+      _resizing = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    // Use window mouse events for reliable tracking outside the handle
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    // Prevent text selection and set cursor during drag
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
 
   let strategyRecommendations = $derived.by(() => {
     // Prefer real forge strategy result when available
@@ -88,87 +121,87 @@
 </script>
 
 <aside
-  class="h-full bg-bg-secondary border-l border-border-subtle flex flex-col overflow-hidden transition-all duration-200"
+  class="h-full bg-bg-secondary border-l border-border-subtle flex overflow-hidden"
   class:w-0={workbench.inspectorCollapsed}
   class:opacity-0={workbench.inspectorCollapsed}
+  class:transition-all={!_resizing}
+  class:duration-200={!_resizing}
   style="width: {workbench.inspectorCssWidth}"
   aria-label="Inspector"
   data-tour="inspector"
 >
   {#if !workbench.inspectorCollapsed}
+    <!-- Drag-resize handle — 6px hit zone on the left edge, 2px visible line on hover -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="h-9 flex items-center px-3 border-b border-border-subtle shrink-0"
+      class="resize-handle shrink-0 cursor-col-resize relative select-none"
+      style="width: 6px;"
+      onmousedown={_onResizeStart}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize inspector panel"
+      title="Drag to resize"
     >
-      <span class="font-display text-[12px] font-bold uppercase text-text-dim"
+      <div class="absolute inset-y-0 left-0 w-[2px] bg-transparent transition-colors duration-150 resize-line"></div>
+    </div>
+
+    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+    <div
+      class="h-8 flex items-center px-2 border-b border-border-subtle shrink-0"
+    >
+      <span class="font-display text-[11px] font-bold uppercase text-text-dim"
         >Inspector</span
       >
     </div>
 
-    <div class="flex-1 overflow-y-auto p-3 space-y-4" style="overscroll-behavior: contain;">
+    <div class="flex-1 overflow-y-auto p-2 space-y-2" style="overscroll-behavior: contain;">
       {#if forge.isForging || forge.overallScore != null}
-        <!-- Pipeline status -->
-        <div class="space-y-2">
-          <h3 class="section-heading">Pipeline</h3>
-
-          {#if forge.overallScore != null}
-            <div
-              class="flex items-center gap-3 p-2 bg-bg-card border border-border-subtle"
-            >
-              <ScoreCircle score={forge.overallScore} size={28} />
-              <div>
-                <div class="text-sm font-medium text-text-primary">
-                  Overall Score
-                </div>
-                <div class="text-xs text-text-dim">
-                  {forge.completedStages}/{forge.visibleStages.length} stages completed
-                </div>
+        <!-- Pipeline status — compact horizontal layout -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <h3 class="section-heading">Pipeline</h3>
+            {#if forge.overallScore != null}
+              <div class="flex items-center gap-1.5">
+                <ScoreCircle score={forge.overallScore} size={20} />
+                <span class="text-[10px] font-mono text-text-dim">
+                  {forge.completedStages}/{forge.visibleStages.length}
+                </span>
               </div>
-            </div>
-          {/if}
+            {/if}
+          </div>
 
-          {#each forge.stages.filter((s) => !(s === "explore" && forge.stageStatuses[s] === "idle")) as stage}
-            {@const status = forge.stageStatuses[stage]}
-            <div class="flex items-center gap-2 text-xs">
-              <span
-                class="w-2 h-2 rounded-full shrink-0 {status === 'done'
-                  ? 'bg-neon-green'
-                  : status === 'running'
-                    ? 'bg-neon-cyan animate-status-pulse'
-                    : status === 'error'
-                      ? 'bg-neon-red'
-                      : status === 'timed_out'
-                        ? 'bg-neon-yellow'
-                        : status === 'cancelled'
-                          ? 'bg-text-dim/40'
-                          : status === 'skipped'
-                            ? 'bg-text-dim/20'
-                            : 'bg-text-dim/20'}"
-              ></span>
-              <span
-                class="capitalize {status === 'running'
-                  ? 'text-neon-cyan'
-                  : status === 'done'
-                    ? 'text-text-primary'
-                    : status === 'error'
-                      ? 'text-neon-red'
-                      : status === 'timed_out'
-                        ? 'text-neon-yellow'
-                        : 'text-text-dim'}"
-                >{stage}{status === "skipped"
-                  ? " — skipped"
-                  : status === "timed_out"
-                    ? " — timed out"
-                    : status === "cancelled"
-                      ? " — cancelled"
-                      : status === "error"
-                        ? " — error"
-                        : ""}</span
-              >
-            </div>
-          {/each}
+          <div class="flex flex-wrap gap-x-3 gap-y-0.5">
+            {#each forge.stages.filter((s) => !(s === "explore" && forge.stageStatuses[s] === "idle")) as stage}
+              {@const status = forge.stageStatuses[stage]}
+              <div class="flex items-center gap-1 text-[10px]">
+                <span
+                  class="w-1.5 h-1.5 rounded-full shrink-0 {status === 'done'
+                    ? 'bg-neon-green'
+                    : status === 'running'
+                      ? 'bg-neon-cyan animate-status-pulse'
+                      : status === 'error'
+                        ? 'bg-neon-red'
+                        : status === 'timed_out'
+                          ? 'bg-neon-yellow'
+                          : 'bg-text-dim/20'}"
+                ></span>
+                <span
+                  class="capitalize {status === 'running'
+                    ? 'text-neon-cyan'
+                    : status === 'done'
+                      ? 'text-text-primary'
+                      : status === 'error'
+                        ? 'text-neon-red'
+                        : status === 'timed_out'
+                          ? 'text-neon-yellow'
+                          : 'text-text-dim'}"
+                >{stage}</span>
+              </div>
+            {/each}
+          </div>
         </div>
 
-        <!-- Score breakdown -->
+        <!-- Scores — compact inline rows with thin bars -->
         {#if forge.stageResults["validate"]}
           {@const validation =
             (forge.stageResults["validate"]?.data as Record<string, unknown>) ||
@@ -176,63 +209,58 @@
           {@const scores = (validation.scores || {}) as Record<string, number>}
           {#key forge.overallScore}
             <div
-              class="space-y-2"
+              class="space-y-1"
               style="animation: fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;"
             >
               <h3 class="section-heading">Scores</h3>
               {#each Object.entries(scores).filter(([k]) => k !== "overall_score") as [key, val]}
                 {@const scoreVal = typeof val === "number" ? val : 0}
                 {@const scoreLabel = key.replace(/_score$/, "").replace(/_/g, " ")}
-                <div class="space-y-1">
-                  <div class="flex justify-between text-xs">
-                    <span class="text-text-secondary capitalize"
-                      >{scoreLabel}</span
-                    >
-                    <span class="font-mono text-text-primary"
-                      >{scoreVal}/10</span
-                    >
-                  </div>
-                  <div
-                    class="relative h-1.5 bg-bg-primary overflow-hidden"
-                    style="--bar-accent: {getScoreColor(scoreVal)}33;"
+                <div class="flex items-center gap-1.5 h-5">
+                  <span class="text-[10px] text-text-secondary capitalize w-20 shrink-0 truncate"
+                    >{scoreLabel}</span
                   >
-                    <ScoreBar score={scoreVal} max={10} />
+                  <div class="flex-1 h-1 bg-bg-primary overflow-hidden">
                     <div
-                      class="bar-glass absolute inset-0 pointer-events-none"
+                      class="h-full"
+                      style="width: {scoreVal * 10}%; background-color: {getScoreColor(scoreVal)};"
                     ></div>
                   </div>
+                  <span class="font-mono text-[10px] text-text-primary w-7 text-right shrink-0"
+                    >{scoreVal}/10</span
+                  >
                 </div>
               {/each}
             </div>
           {/key}
         {/if}
 
-        <!-- Feedback panel — visible when optimization is loaded -->
+        <!-- Feedback panel — merged with score overrides -->
         {#if forge.overallScore != null}
           <InspectorFeedback />
         {/if}
 
-        <!-- Refinement turn history — visible when there are refinement turns -->
+        <!-- Refinement turn history -->
         {#if refinement.branches.length > 0}
           <InspectorRefinement />
         {/if}
 
-        <!-- Branch tree — visible when there is more than one branch -->
+        <!-- Branch tree -->
         {#if refinement.branchCount > 1}
           <InspectorBranches />
         {/if}
 
-        <!-- Adaptation transparency — visible when adaptation data is available or user requested -->
+        <!-- Adaptation transparency -->
         {#if feedback.adaptationSummary !== null || feedback.showAdaptationPanel}
           <InspectorAdaptation />
         {/if}
 
-        <!-- Original Prompt -->
+        <!-- Original Prompt — compact -->
         {#if forge.rawPrompt}
-          <div class="space-y-2">
+          <div class="space-y-1">
             <h3 class="section-heading">Original Prompt</h3>
             <div
-              class="text-xs text-text-secondary bg-bg-card border border-border-subtle p-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words"
+              class="text-[10px] text-text-secondary bg-bg-card border border-border-subtle p-1.5 max-h-20 overflow-y-auto whitespace-pre-wrap break-words leading-snug"
             >
               {forge.rawPrompt}
             </div>
@@ -308,15 +336,15 @@
               {@const mostUsedStrategy = Object.keys(strategyCounts).sort(
                 (a, b) => strategyCounts[b] - strategyCounts[a],
               )[0]}
-              <div class="text-xs space-y-1.5">
-                <div class="flex justify-between">
+              <div class="space-y-0.5">
+                <div class="flex items-center justify-between h-5 text-[10px]">
                   <span class="text-text-dim">Total runs</span>
                   <span class="font-mono text-text-primary"
                     >{history.totalCount || history.entries.length}</span
                   >
                 </div>
                 {#if avgScore}
-                  <div class="flex justify-between">
+                  <div class="flex items-center justify-between h-5 text-[10px]">
                     <span class="text-text-dim">Avg score</span>
                     <span class="font-mono text-text-primary"
                       >{avgScore}/10</span
@@ -324,7 +352,7 @@
                   </div>
                 {/if}
                 {#if mostUsedStrategy}
-                  <div class="flex justify-between">
+                  <div class="flex items-center justify-between h-5 text-[10px]">
                     <span class="text-text-dim">Top strategy</span>
                     <span class="font-mono text-text-primary capitalize"
                       >{mostUsedStrategy}</span
@@ -332,7 +360,7 @@
                   </div>
                 {/if}
                 {#if bestEntry}
-                  <div class="flex justify-between">
+                  <div class="flex items-center justify-between h-5 text-[10px]">
                     <span class="text-text-dim">Best run</span>
                     <span class="font-mono text-text-primary"
                       >{bestEntry.overall_score}/10</span
@@ -349,29 +377,29 @@
         <!-- Document Info -->
         <div class="space-y-2">
           <h3 class="section-heading">Document Info</h3>
-          <div class="text-xs text-text-secondary space-y-1">
-            <div class="flex justify-between">
-              <span>Type</span>
+          <div class="space-y-0.5">
+            <div class="flex items-center justify-between h-5 text-[10px]">
+              <span class="text-text-dim">Type</span>
               <span class="font-mono text-text-primary capitalize"
                 >{editor.activeTab.type}</span
               >
             </div>
-            <div class="flex justify-between">
-              <span>Characters</span>
+            <div class="flex items-center justify-between h-5 text-[10px]">
+              <span class="text-text-dim">Characters</span>
               <span class="font-mono text-text-primary"
                 >{(editor.activeTab.promptText || "").length}</span
               >
             </div>
-            <div class="flex justify-between">
-              <span>Words</span>
+            <div class="flex items-center justify-between h-5 text-[10px]">
+              <span class="text-text-dim">Words</span>
               <span class="font-mono text-text-primary"
                 >{(editor.activeTab.promptText || "")
                   .split(/\s+/)
                   .filter(Boolean).length}</span
               >
             </div>
-            <div class="flex justify-between">
-              <span>Status</span>
+            <div class="flex items-center justify-between h-5 text-[10px]">
+              <span class="text-text-dim">Status</span>
               <span class="font-mono text-text-primary"
                 >{editor.activeTab.dirty ? "Modified" : "Clean"}</span
               >
@@ -380,7 +408,7 @@
         </div>
       {:else}
         <div
-          class="flex flex-col items-center justify-center text-center py-12"
+          class="flex flex-col items-center justify-center text-center py-8"
         >
           <svg
             class="w-10 h-10 mb-3 opacity-30"
@@ -402,5 +430,16 @@
         </div>
       {/if}
     </div>
+    </div><!-- close flex-1 wrapper -->
   {/if}
 </aside>
+
+<style>
+  .resize-handle:hover .resize-line,
+  .resize-handle:active .resize-line {
+    background-color: rgba(0, 229, 255, 0.4);
+  }
+  .resize-handle:active .resize-line {
+    background-color: rgba(0, 229, 255, 0.6);
+  }
+</style>
