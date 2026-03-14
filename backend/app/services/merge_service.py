@@ -143,13 +143,17 @@ def build_merge_system_prompt(compare: CompareResponse) -> str:
                 f"merge should combine structural strengths of both"
             )
 
+    a_opt_notes = strategy.a_optimization_notes or "none"
+    b_opt_notes = strategy.b_optimization_notes or "none"
     sections.append(
         f"## STRATEGY INTELLIGENCE\n"
         f"A: {strategy.a_framework or 'unknown'} (selection: {strategy.a_source or 'unknown'})\n"
         f"  Rationale: {strategy.a_rationale or 'none'}\n"
+        f"  Optimizer notes: {a_opt_notes}\n"
         f"  Guardrails: {a_guardrails_str}\n"
         f"B: {strategy.b_framework or 'unknown'} (selection: {strategy.b_source or 'unknown'})\n"
         f"  Rationale: {strategy.b_rationale or 'none'}\n"
+        f"  Optimizer notes: {b_opt_notes}\n"
         f"  Guardrails: {b_guardrails_str}\n"
         f"Cross-framework analysis: {cross_fw}"
     )
@@ -168,8 +172,11 @@ def build_merge_system_prompt(compare: CompareResponse) -> str:
     else:
         roi = "Neither has codebase context — merge operates on prompt text alone"
 
+    a_task = ctx.a_task_type or "unknown"
+    b_task = ctx.b_task_type or "unknown"
     sections.append(
         f"## CONTEXT INTELLIGENCE\n"
+        f"Task type: A={a_task}, B={b_task}\n"
         f"Repo: A={a_repo_str}, B={b_repo_str}\n"
         f"Codebase context: A={'yes' if ctx.a_has_codebase else 'no'}, "
         f"B={'yes' if ctx.b_has_codebase else 'no'}\n"

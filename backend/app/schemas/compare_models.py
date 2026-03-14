@@ -36,6 +36,8 @@ class EfficiencyComparison(BaseModel):
     b_cost: float | None
     a_score_per_token: float | None
     b_score_per_token: float | None
+    a_stage_tokens: dict[str, int] | None = None  # per-stage token breakdown
+    b_stage_tokens: dict[str, int] | None = None
 
 
 class StrategyComparison(BaseModel):
@@ -43,10 +45,12 @@ class StrategyComparison(BaseModel):
     a_source: str | None
     a_rationale: str | None
     a_guardrails: list[str]
+    a_optimization_notes: str | None = None  # what the optimizer actually did
     b_framework: str | None
     b_source: str | None
     b_rationale: str | None
     b_guardrails: list[str]
+    b_optimization_notes: str | None = None
 
 
 class ContextComparison(BaseModel):
@@ -56,6 +60,8 @@ class ContextComparison(BaseModel):
     b_has_codebase: bool
     a_instruction_count: int
     b_instruction_count: int
+    a_task_type: str | None = None
+    b_task_type: str | None = None
 
 
 class ValidationComparison(BaseModel):

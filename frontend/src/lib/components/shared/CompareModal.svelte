@@ -34,6 +34,8 @@
     b_cost: number | null;
     a_score_per_token: number | null;
     b_score_per_token: number | null;
+    a_stage_tokens: Record<string, number> | null;
+    b_stage_tokens: Record<string, number> | null;
   }
 
   interface Strategy {
@@ -41,10 +43,12 @@
     a_source: string | null;
     a_rationale: string | null;
     a_guardrails: string[];
+    a_optimization_notes: string | null;
     b_framework: string | null;
     b_source: string | null;
     b_rationale: string | null;
     b_guardrails: string[];
+    b_optimization_notes: string | null;
   }
 
   interface Context {
@@ -54,6 +58,8 @@
     b_has_codebase: boolean;
     a_instruction_count: number;
     b_instruction_count: number;
+    a_task_type: string | null;
+    b_task_type: string | null;
   }
 
   interface Adaptation {
@@ -565,6 +571,9 @@
             </span>
             <span class="font-mono text-[9px] text-text-dim">
               {fmtDuration(eff.a_duration_ms)} / {fmtDuration(eff.b_duration_ms)}
+              {#if eff.a_tokens != null || eff.b_tokens != null}
+                &middot; {fmtTokens(eff.a_tokens)} / {fmtTokens(eff.b_tokens)} tok
+              {/if}
             </span>
           </button>
           {#if openAccordions.efficiency}
@@ -601,6 +610,21 @@
                   </div>
                 </div>
               </div>
+              <!-- Per-stage token breakdown -->
+              {#if eff.a_stage_tokens || eff.b_stage_tokens}
+                {@const allStages = [...new Set([...Object.keys(eff.a_stage_tokens ?? {}), ...Object.keys(eff.b_stage_tokens ?? {})])]}
+                <div class="mb-1.5">
+                  <div class="font-mono text-[8px] text-text-dim uppercase mb-0.5">Tokens by Stage</div>
+                  {#each allStages as stage}
+                    <div class="flex items-center justify-between h-4 font-mono text-[9px]" style="font-variant-numeric: tabular-nums;">
+                      <span class="text-text-dim capitalize w-16 shrink-0">{stage}</span>
+                      <span class="text-neon-purple/80 w-12 text-right">{fmtTokens(eff.a_stage_tokens?.[stage] ?? null)}</span>
+                      <span class="text-text-dim/30 mx-1">/</span>
+                      <span class="text-neon-blue/80 w-12 text-right">{fmtTokens(eff.b_stage_tokens?.[stage] ?? null)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
               <!-- Cost + Score/Token (hidden when no data) -->
               {#if eff.a_cost != null || eff.b_cost != null || eff.a_score_per_token != null || eff.b_score_per_token != null}
                 <div class="flex gap-4 font-mono text-[10px]" style="font-variant-numeric: tabular-nums;">
@@ -650,7 +674,9 @@
                       <span class="font-mono text-[7px] px-1 border border-border-subtle text-text-dim uppercase">{strat.a_source}</span>
                     {/if}
                   </div>
-                  {#if strat.a_rationale}
+                  {#if strat.a_optimization_notes}
+                    <div class="font-mono text-[9px] text-text-secondary leading-snug max-h-16 overflow-hidden">{strat.a_optimization_notes}</div>
+                  {:else if strat.a_rationale}
                     <div class="font-mono text-[9px] text-text-secondary leading-snug max-h-12 overflow-hidden">{strat.a_rationale}</div>
                   {/if}
                   {#if strat.a_guardrails.length > 0}
@@ -669,7 +695,9 @@
                       <span class="font-mono text-[7px] px-1 border border-border-subtle text-text-dim uppercase">{strat.b_source}</span>
                     {/if}
                   </div>
-                  {#if strat.b_rationale}
+                  {#if strat.b_optimization_notes}
+                    <div class="font-mono text-[9px] text-text-secondary leading-snug max-h-16 overflow-hidden">{strat.b_optimization_notes}</div>
+                  {:else if strat.b_rationale}
                     <div class="font-mono text-[9px] text-text-secondary leading-snug max-h-12 overflow-hidden">{strat.b_rationale}</div>
                   {/if}
                   {#if strat.b_guardrails.length > 0}
@@ -700,6 +728,18 @@
           </button>
           {#if openAccordions.context}
             <div transition:slide={{ duration: 200 }} class="px-2 pb-2">
+              <!-- Task type -->
+              {#if ctx.a_task_type || ctx.b_task_type}
+                <div class="mb-1.5">
+                  <div class="font-mono text-[8px] text-text-dim uppercase mb-0.5">Task Type</div>
+                  <div class="flex gap-4 font-mono text-[10px]" style="font-variant-numeric: tabular-nums;">
+                    <span class="text-neon-purple/80">{ctx.a_task_type ?? '\u2014'}</span>
+                    {#if ctx.a_task_type !== ctx.b_task_type}
+                      <span class="text-neon-blue/80">{ctx.b_task_type ?? '\u2014'}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
               <!-- Repo delta -->
               <div class="mb-1.5">
                 <div class="font-mono text-[8px] text-text-dim uppercase mb-0.5">Repo Context</div>

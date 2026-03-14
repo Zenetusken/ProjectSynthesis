@@ -190,11 +190,43 @@ def extract_structural(opt: Any) -> dict:
 # ── 5. extract_efficiency ────────────────────────────────────────────────
 
 def extract_efficiency(opt: Any) -> dict:
-    """Extract timing, token counts, cost, and score-per-token."""
+    """Extract timing, token counts, cost, and score-per-token.
+
+    Falls back to summing per-stage token counts from ``stage_durations``
+    when the pipeline-wide ``total_input_tokens``/``total_output_tokens``
+    columns are not populated (e.g. CLI provider).
+    """
     duration_ms = getattr(opt, "duration_ms", None)
     input_tokens = getattr(opt, "total_input_tokens", None) or 0
     output_tokens = getattr(opt, "total_output_tokens", None) or 0
     total_tokens = (input_tokens + output_tokens) if (input_tokens or output_tokens) else None
+
+    # Fallback: sum per-stage token counts from stage_durations JSON
+    stage_tokens: dict[str, int] | None = None
+    raw_stages = getattr(opt, "stage_durations", None)
+    if raw_stages:
+        if isinstance(raw_stages, str):
+            try:
+                import json as _json
+                raw_stages = _json.loads(raw_stages)
+            except (ValueError, TypeError):
+                raw_stages = None
+        if isinstance(raw_stages, dict):
+            stage_tokens = {}
+            fallback_total = 0
+            for stage_name, stage_data in raw_stages.items():
+                if isinstance(stage_data, dict):
+                    # Prefer input_tokens+output_tokens; fall back to token_count
+                    s_in = stage_data.get("input_tokens", 0) or 0
+                    s_out = stage_data.get("output_tokens", 0) or 0
+                    s_count = stage_data.get("token_count", 0) or 0
+                    stage_tok = (s_in + s_out) if (s_in or s_out) else s_count
+                    if stage_tok:
+                        stage_tokens[stage_name] = stage_tok
+                        fallback_total += stage_tok
+            if total_tokens is None and fallback_total > 0:
+                total_tokens = fallback_total
+
     cost = getattr(opt, "estimated_cost_usd", None)
     overall = getattr(opt, "overall_score", None)
 
@@ -207,13 +239,14 @@ def extract_efficiency(opt: Any) -> dict:
         "tokens": total_tokens,
         "cost": cost,
         "score_per_token": score_per_token,
+        "stage_tokens": stage_tokens if stage_tokens else None,
     }
 
 
 # ── 6. extract_strategy ──────────────────────────────────────────────────
 
 def extract_strategy(opt: Any) -> dict:
-    """Extract framework, strategy source, rationale, guardrails, secondary frameworks, and approach notes."""
+    """Extract framework, strategy source, rationale, guardrails, and optimizer notes."""
     guardrails = _parse_json_field(getattr(opt, "active_guardrails", None), default=[])
     secondary = _parse_json_field(getattr(opt, "secondary_frameworks", None), default=[])
     return {
@@ -223,13 +256,14 @@ def extract_strategy(opt: Any) -> dict:
         "guardrails": guardrails if isinstance(guardrails, list) else [],
         "secondary_frameworks": secondary if isinstance(secondary, list) else [],
         "approach_notes": getattr(opt, "approach_notes", None),
+        "optimization_notes": getattr(opt, "optimization_notes", None),
     }
 
 
 # ── 7. extract_context ───────────────────────────────────────────────────
 
 def extract_context(opt: Any) -> dict:
-    """Extract repo linkage, codebase context, and instruction count."""
+    """Extract repo linkage, codebase context, task type, and instruction count."""
     repo = getattr(opt, "linked_repo_full_name", None)
     codebase = getattr(opt, "codebase_context_snapshot", None)
     has_codebase = bool(codebase)
@@ -241,6 +275,7 @@ def extract_context(opt: Any) -> dict:
         "repo": repo,
         "has_codebase": has_codebase,
         "instruction_count": instruction_count,
+        "task_type": getattr(opt, "task_type", None),
     }
 
 
@@ -674,6 +709,8 @@ async def compute_comparison(
         b_cost=eff_b["cost"],
         a_score_per_token=eff_a["score_per_token"],
         b_score_per_token=eff_b["score_per_token"],
+        a_stage_tokens=eff_a.get("stage_tokens"),
+        b_stage_tokens=eff_b.get("stage_tokens"),
     )
 
     # Build strategy comparison
@@ -682,10 +719,12 @@ async def compute_comparison(
         a_source=strat_a["source"],
         a_rationale=strat_a["rationale"],
         a_guardrails=strat_a["guardrails"],
+        a_optimization_notes=strat_a.get("optimization_notes"),
         b_framework=strat_b["framework"],
         b_source=strat_b["source"],
         b_rationale=strat_b["rationale"],
         b_guardrails=strat_b["guardrails"],
+        b_optimization_notes=strat_b.get("optimization_notes"),
     )
 
     # Build context comparison
@@ -696,6 +735,8 @@ async def compute_comparison(
         b_has_codebase=ctx_b["has_codebase"],
         a_instruction_count=ctx_a["instruction_count"],
         b_instruction_count=ctx_b["instruction_count"],
+        a_task_type=ctx_a.get("task_type"),
+        b_task_type=ctx_b.get("task_type"),
     )
 
     # Build validation comparison
@@ -905,18 +946,22 @@ async def stream_comparison(
         a_tokens=eff_a["tokens"], b_tokens=eff_b["tokens"],
         a_cost=eff_a["cost"], b_cost=eff_b["cost"],
         a_score_per_token=eff_a["score_per_token"], b_score_per_token=eff_b["score_per_token"],
+        a_stage_tokens=eff_a.get("stage_tokens"), b_stage_tokens=eff_b.get("stage_tokens"),
     )
     strategy_comparison = StrategyComparison(
         a_framework=strat_a["framework"], a_source=strat_a["source"],
         a_rationale=strat_a["rationale"], a_guardrails=strat_a["guardrails"],
+        a_optimization_notes=strat_a.get("optimization_notes"),
         b_framework=strat_b["framework"], b_source=strat_b["source"],
         b_rationale=strat_b["rationale"], b_guardrails=strat_b["guardrails"],
+        b_optimization_notes=strat_b.get("optimization_notes"),
     )
     context_comparison = ContextComparison(
         a_repo=ctx_a["repo"], b_repo=ctx_b["repo"],
         a_has_codebase=ctx_a["has_codebase"], b_has_codebase=ctx_b["has_codebase"],
         a_instruction_count=ctx_a["instruction_count"],
         b_instruction_count=ctx_b["instruction_count"],
+        a_task_type=ctx_a.get("task_type"), b_task_type=ctx_b.get("task_type"),
     )
     validation_comparison = ValidationComparison(
         a_verdict=val_a["verdict"], b_verdict=val_b["verdict"],
