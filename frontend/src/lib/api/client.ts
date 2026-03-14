@@ -1107,6 +1107,55 @@ export async function compareOptimizations(idA: string, idB: string): Promise<Co
   return res.json();
 }
 
+/** SSE streaming compare — emits real progress events, then the final result. */
+export async function streamCompareOptimizations(
+  idA: string,
+  idB: string,
+  onStep: (step: string, label: string) => void,
+  onResult: (data: CompareResponse) => void,
+  onError: (err: Error) => void,
+): Promise<AbortController> {
+  const controller = new AbortController();
+  const res = await apiFetch(`${BASE}/api/compare/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ a: idA, b: idB }),
+    signal: controller.signal,
+  });
+  if (!res.ok) {
+    onError(await apiError(res, 'Compare failed'));
+    return controller;
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'step') onStep(event.step, event.label);
+            else if (event.type === 'result') onResult(event.data as CompareResponse);
+          } catch { /* skip malformed */ }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') onError(err as Error);
+    }
+  })();
+
+  return controller;
+}
+
 export async function mergeOptimizations(
   idA: string,
   idB: string,

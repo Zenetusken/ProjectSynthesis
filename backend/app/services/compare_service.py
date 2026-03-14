@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 import numpy as np
 
@@ -802,6 +802,207 @@ async def compute_comparison(
         b_is_trashed=getattr(b, "deleted_at", None) is not None,
         guidance=guidance,
     )
+
+
+# ── 15. stream_comparison (SSE generator) ─────────────────────────────────
+
+async def stream_comparison(
+    a: Any,
+    b: Any,
+    provider: "LLMProvider | None" = None,
+) -> AsyncGenerator[dict, None]:
+    """Yield real progress events during comparison, then the final result.
+
+    Each event is a dict with ``type`` = ``"step"`` or ``"result"``.
+    Step events have ``step`` (id) and ``label`` (display text).
+    The result event has ``data`` (full CompareResponse as dict).
+    """
+    yield {"type": "step", "step": "similarity", "label": "Computing semantic similarity..."}
+    raw_a = getattr(a, "raw_prompt", "") or ""
+    raw_b = getattr(b, "raw_prompt", "") or ""
+    similarity, used_embeddings = await compute_similarity(raw_a, raw_b)
+
+    yield {"type": "step", "step": "classification", "label": "Classifying relationship..."}
+    fw_a = getattr(a, "primary_framework", None)
+    fw_b = getattr(b, "primary_framework", None)
+    situation = classify_situation(similarity, fw_a, fw_b, used_embeddings=used_embeddings)
+
+    yield {"type": "step", "step": "extraction", "label": "Extracting score intelligence..."}
+    scores_a = extract_scores(a)
+    scores_b = extract_scores(b)
+    struct_a = extract_structural(a)
+    struct_b = extract_structural(b)
+    eff_a = extract_efficiency(a)
+    eff_b = extract_efficiency(b)
+    strat_a = extract_strategy(a)
+    strat_b = extract_strategy(b)
+    ctx_a = extract_context(a)
+    ctx_b = extract_context(b)
+    val_a = extract_validation(a)
+    val_b = extract_validation(b)
+    adaptation = extract_adaptation(a, b)
+    modifiers = compute_modifiers(a, b)
+
+    yield {"type": "step", "step": "insights", "label": "Generating insights and directives..."}
+
+    # Build score comparison (same logic as compute_comparison)
+    deltas: dict[str, float | None] = {}
+    ceilings: list[str] = []
+    floors: list[str] = []
+    for dim in _SCORE_DIMS:
+        sa = scores_a.get(dim)
+        sb = scores_b.get(dim)
+        if sa is not None and sb is not None:
+            deltas[dim] = round(sa - sb, 2)
+            if sa >= 9 and sb >= 9:
+                ceilings.append(dim)
+            if sa < 5 and sb < 5:
+                floors.append(dim)
+        else:
+            deltas[dim] = None
+
+    overall_a = scores_a.get("overall")
+    overall_b = scores_b.get("overall")
+    overall_delta = (
+        round(overall_a - overall_b, 2)
+        if overall_a is not None and overall_b is not None
+        else None
+    )
+    winner = None
+    if overall_delta is not None:
+        winner = "a" if overall_delta > 0 else ("b" if overall_delta < 0 else None)
+
+    score_comparison = ScoreComparison(
+        dimensions=list(_SCORE_DIMS.keys()),
+        a_scores=scores_a, b_scores=scores_b, deltas=deltas,
+        overall_delta=overall_delta, winner=winner,
+        ceilings=ceilings, floors=floors,
+    )
+
+    # Build sub-models
+    structural_comparison = StructuralComparison(
+        a_input_words=struct_a["input_words"], b_input_words=struct_b["input_words"],
+        a_output_words=struct_a["output_words"], b_output_words=struct_b["output_words"],
+        a_expansion=struct_a["expansion"], b_expansion=struct_b["expansion"],
+        a_complexity=struct_a["complexity"], b_complexity=struct_b["complexity"],
+    )
+    efficiency_comparison = EfficiencyComparison(
+        a_duration_ms=eff_a["duration_ms"], b_duration_ms=eff_b["duration_ms"],
+        a_tokens=eff_a["tokens"], b_tokens=eff_b["tokens"],
+        a_cost=eff_a["cost"], b_cost=eff_b["cost"],
+        a_score_per_token=eff_a["score_per_token"], b_score_per_token=eff_b["score_per_token"],
+    )
+    strategy_comparison = StrategyComparison(
+        a_framework=strat_a["framework"], a_source=strat_a["source"],
+        a_rationale=strat_a["rationale"], a_guardrails=strat_a["guardrails"],
+        b_framework=strat_b["framework"], b_source=strat_b["source"],
+        b_rationale=strat_b["rationale"], b_guardrails=strat_b["guardrails"],
+    )
+    context_comparison = ContextComparison(
+        a_repo=ctx_a["repo"], b_repo=ctx_b["repo"],
+        a_has_codebase=ctx_a["has_codebase"], b_has_codebase=ctx_b["has_codebase"],
+        a_instruction_count=ctx_a["instruction_count"],
+        b_instruction_count=ctx_b["instruction_count"],
+    )
+    validation_comparison = ValidationComparison(
+        a_verdict=val_a["verdict"], b_verdict=val_b["verdict"],
+        a_issues=val_a["issues"], b_issues=val_b["issues"],
+        a_changes_made=val_a["changes_made"], b_changes_made=val_b["changes_made"],
+        a_is_improvement=val_a["is_improvement"],
+        b_is_improvement=val_b["is_improvement"],
+    )
+
+    # Aggregated dicts for insight generation
+    scores_data = {
+        "deltas": deltas, "floors": floors, "ceilings": ceilings,
+        "a_scores": scores_a, "b_scores": scores_b,
+    }
+    structural_data = {
+        "a_input_words": struct_a["input_words"],
+        "b_input_words": struct_b["input_words"],
+        "a_expansion": struct_a["expansion"],
+        "b_expansion": struct_b["expansion"],
+    }
+    efficiency_data = {
+        "a_duration_ms": eff_a["duration_ms"],
+        "b_duration_ms": eff_b["duration_ms"],
+    }
+    strategy_data = {
+        "a_framework": strat_a["framework"],
+        "b_framework": strat_b["framework"],
+    }
+    context_data = {
+        "a_repo": ctx_a["repo"], "b_repo": ctx_b["repo"],
+        "a_has_codebase": ctx_a["has_codebase"],
+        "b_has_codebase": ctx_b["has_codebase"],
+    }
+    validation_data = {
+        "a_verdict": val_a["verdict"], "b_verdict": val_b["verdict"],
+        "a_issues": val_a["issues"], "b_issues": val_b["issues"],
+    }
+    adaptation_data = {
+        "feedbacks_between": adaptation.feedbacks_between,
+        "weight_shifts": adaptation.weight_shifts,
+    }
+
+    top_insights = generate_top_insights(
+        scores=scores_data, structural=structural_data,
+        efficiency=efficiency_data, strategy=strategy_data,
+        context=context_data, validation=validation_data,
+        adaptation=adaptation_data, situation=situation,
+    )
+    merge_directives = generate_merge_directives(
+        scores=scores_data, structural=structural_data,
+        efficiency=efficiency_data, strategy=strategy_data,
+        context=context_data, validation=validation_data,
+    )
+    cross_patterns = (
+        generate_cross_patterns(a, b, scores_data)
+        if situation == "CROSS" else []
+    )
+    insight_headline = _build_insight_headline(
+        situation, overall_delta, fw_a, fw_b, similarity,
+    )
+
+    # LLM guidance — the bottleneck
+    guidance = None
+    if provider is not None:
+        yield {
+            "type": "step", "step": "guidance",
+            "label": "LLM generating guidance...",
+        }
+        guidance = await _generate_llm_guidance(
+            provider=provider,
+            situation=situation,
+            scores_a=scores_a, scores_b=scores_b,
+            strategy_a=strat_a, strategy_b=strat_b,
+            top_insights=top_insights,
+            merge_directives=merge_directives,
+        )
+
+    yield {"type": "step", "step": "complete", "label": "Analysis complete"}
+
+    result = CompareResponse(
+        situation=situation,
+        situation_label=_SITUATION_LABELS[situation],
+        insight_headline=insight_headline,
+        modifiers=modifiers,
+        a=a.to_dict() if hasattr(a, "to_dict") else {},
+        b=b.to_dict() if hasattr(b, "to_dict") else {},
+        scores=score_comparison,
+        structural=structural_comparison,
+        efficiency=efficiency_comparison,
+        strategy=strategy_comparison,
+        context=context_comparison,
+        validation=validation_comparison,
+        adaptation=adaptation,
+        top_insights=top_insights,
+        cross_patterns=cross_patterns,
+        a_is_trashed=getattr(a, "deleted_at", None) is not None,
+        b_is_trashed=getattr(b, "deleted_at", None) is not None,
+        guidance=guidance,
+    )
+    yield {"type": "result", "data": result.model_dump()}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────

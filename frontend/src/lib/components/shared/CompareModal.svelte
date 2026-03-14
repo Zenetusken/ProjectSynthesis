@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import {
-    compareOptimizations,
+    streamCompareOptimizations,
     mergeOptimizations,
     acceptMerge,
     type CompareResponse,
@@ -81,27 +81,11 @@
   let mergeTokens = $state(0);
   let mergeModel = $state('');
   let mergeController = $state<AbortController | null>(null);
+  let compareController = $state<AbortController | null>(null);
   let accepting = $state(false);
 
-  // Loading step rotation
-  const loadingSteps = [
-    'Computing semantic similarity...',
-    'Extracting score intelligence...',
-    'Analyzing strategy effectiveness...',
-    'Evaluating context impact...',
-    'Generating merge directives...',
-  ];
-  let loadingStepIndex = $state(0);
-
-  // Cycle loading step every 800ms while loading
-  $effect(() => {
-    if (!loading) return;
-    loadingStepIndex = 0;
-    const interval = setInterval(() => {
-      loadingStepIndex = (loadingStepIndex + 1) % loadingSteps.length;
-    }, 800);
-    return () => clearInterval(interval);
-  });
+  // Real streaming progress from SSE
+  let currentStep = $state('Connecting...');
 
   // Accordion open state — all collapsed initially
   let openAccordions = $state<Record<string, boolean>>({
@@ -120,23 +104,39 @@
   let aOpt = $derived(compareData?.a as Record<string, unknown> | undefined);
   let bOpt = $derived(compareData?.b as Record<string, unknown> | undefined);
 
-  // ---- Fetch compare data on mount ----
+  // ---- Fetch compare data via SSE stream ----
   onMount(() => {
     loadCompare();
     return () => {
       mergeController?.abort();
+      compareController?.abort();
     };
   });
 
   async function loadCompare() {
     loading = true;
+    currentStep = 'Connecting...';
     try {
-      compareData = await compareOptimizations(idA, idB);
+      compareController = await streamCompareOptimizations(
+        idA,
+        idB,
+        (step: string, label: string) => {
+          currentStep = label;
+        },
+        (data: CompareResponse) => {
+          compareData = data;
+          loading = false;
+        },
+        (err: Error) => {
+          toast.error(`Compare failed: ${err.message}`);
+          onclose();
+        },
+      );
     } catch (err) {
       toast.error(`Compare failed: ${(err as Error).message}`);
       onclose();
     } finally {
-      loading = false;
+      // loading is set to false in the onResult callback
     }
   }
 
@@ -298,7 +298,7 @@
   tabindex="-1"
 >
   <div
-    class="border border-border-subtle bg-bg-card w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+    class="border border-border-subtle bg-bg-card w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col {loading ? 'min-h-[40vh]' : ''}"
     onclick={(e) => e.stopPropagation()}
     role="presentation"
   >
@@ -345,20 +345,20 @@
       {/if}
     </div>
 
-    <!-- Loading: branded thinking block with rotating step -->
+    <!-- Loading: real SSE progress -->
     {#if loading}
       <div class="flex-1 flex items-center justify-center">
-        <div class="w-72 space-y-3">
+        <div class="w-80 space-y-3">
           <!-- Indeterminate progress bar -->
           <div class="h-0.5 w-full bg-border-subtle overflow-hidden">
             <div class="h-full w-1/3 bg-neon-cyan/40 animate-indeterminate"></div>
           </div>
-          <!-- Single rotating step -->
+          <!-- Real step from SSE stream -->
           <div class="flex items-center gap-2 justify-center">
             <span class="w-3 h-3 rounded-full shrink-0 border-t animate-spin" style="border-color: transparent; border-top-color: #00e5ff;"></span>
-            {#key loadingStepIndex}
+            {#key currentStep}
               <span class="font-mono text-[10px] text-text-dim" style="animation: list-item-in 0.15s cubic-bezier(0.16,1,0.3,1) both;">
-                {loadingSteps[loadingStepIndex]}
+                {currentStep}
               </span>
             {/key}
           </div>

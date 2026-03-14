@@ -17,7 +17,7 @@ from app.models.optimization import Optimization
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.compare_models import CompareResponse, MergeAcceptRequest, MergeAcceptResponse
 from app.services.cache_service import get_cache
-from app.services.compare_service import compute_comparison
+from app.services.compare_service import compute_comparison, stream_comparison
 from app.services.merge_service import stream_merge
 from app.services.settings_service import load_settings
 
@@ -57,9 +57,17 @@ async def compare_optimizations(
     opt_a = await _fetch_user_optimization(a, current_user.id)
     opt_b = await _fetch_user_optimization(b, current_user.id)
     if not opt_a.optimized_prompt or not opt_b.optimized_prompt:
-        raise HTTPException(status_code=422, detail="Cannot compare incomplete optimizations — both must have an optimized prompt")
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot compare incomplete optimizations"
+            " — both must have an optimized prompt",
+        )
     if opt_a.overall_score is None or opt_b.overall_score is None:
-        raise HTTPException(status_code=422, detail="Cannot compare unscored optimizations — both must have validation scores")
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot compare unscored optimizations"
+            " — both must have validation scores",
+        )
 
     cache = get_cache()
     key = _cache_key(a, b)
@@ -71,6 +79,63 @@ async def compare_optimizations(
     result = await compute_comparison(opt_a, opt_b, provider)
     await cache.set(key, result.model_dump(), ttl_seconds=300)
     return result
+
+
+@router.post("/api/compare/stream")
+async def stream_compare(
+    request: Request,
+    body: dict,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    _rl: None = Depends(RateLimit(lambda: "10/minute")),
+):
+    """SSE streaming compare — emits real progress events during analysis."""
+    id_a = body.get("a", "")
+    id_b = body.get("b", "")
+    if id_a == id_b:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot compare an optimization with itself",
+        )
+    opt_a = await _fetch_user_optimization(id_a, current_user.id)
+    opt_b = await _fetch_user_optimization(id_b, current_user.id)
+    if not opt_a.optimized_prompt or not opt_b.optimized_prompt:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot compare incomplete optimizations"
+            " \u2014 both must have an optimized prompt",
+        )
+    if opt_a.overall_score is None or opt_b.overall_score is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot compare unscored optimizations"
+            " \u2014 both must have validation scores",
+        )
+
+    # Check cache — if cached, emit result immediately
+    cache = get_cache()
+    key = _cache_key(id_a, id_b)
+    cached = await cache.get(key)
+
+    async def event_stream():
+        if cached:
+            yield f"data: {json.dumps({'type': 'step', 'step': 'cached', 'label': 'Loading cached analysis...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'result', 'data': cached})}\n\n"
+            return
+
+        provider = request.app.state.provider
+        result_data = None
+        async for event in stream_comparison(opt_a, opt_b, provider):
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("type") == "result":
+                result_data = event.get("data")
+
+        # Cache the result
+        if result_data:
+            await cache.set(key, result_data, ttl_seconds=300)
+
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream",
+    )
 
 
 @router.post("/api/compare/merge")
