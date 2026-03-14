@@ -331,20 +331,20 @@
     forge.startForge(tab.promptText);
     editor.setSubTab('pipeline');
 
-    const chips = context.getChips();
+    const chips = context.chips;
     const repoChip = chips.find(c => c.type === 'repo');
     const repoFullName = (repoChip?.label?.includes('/') ? repoChip.label : null)
       ?? github.selectedRepo
       ?? undefined;
     const repoBranch = github.selectedBranch ?? github.currentRepo?.default_branch ?? undefined;
 
-    const fileChips = context.chips.filter(c => c.type === 'file' && c.content);
+    const fileChips = chips.filter(c => c.type === 'file' && c.content);
     const fileContexts = fileChips.map(c => ({ name: c.label, content: c.content! }));
 
-    const instructionChips = context.chips.filter(c => c.type === 'instruction' && c.content);
+    const instructionChips = chips.filter(c => c.type === 'instruction' && c.content);
     const instructions = instructionChips.map(c => c.content!);
 
-    const urlChips = context.chips.filter(c => c.type === 'url' && c.content);
+    const urlChips = chips.filter(c => c.type === 'url' && c.content);
     const urlContexts = urlChips.map(c => c.content!);
 
     const controller = await startOptimization(

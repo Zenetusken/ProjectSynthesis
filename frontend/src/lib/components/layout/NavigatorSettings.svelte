@@ -149,11 +149,17 @@
 
   async function handleToggle(key: keyof AppSettings, value: boolean) {
     if (!settings) return;
+    // Optimistic update — prevents controlled-checkbox flicker where Svelte
+    // re-renders with the stale value before the PATCH response arrives,
+    // causing the toggle to visually revert and confuse click sequencing.
+    const prev = settings[key];
+    settings = { ...settings, [key]: value };
     saving = true;
     try {
       settings = await updateSettings({ [key]: value });
       toast.success('Settings saved');
     } catch (err) {
+      settings = { ...settings, [key]: prev };
       toast.error('Failed to save setting');
     } finally {
       saving = false;

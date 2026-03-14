@@ -435,7 +435,7 @@
           The optimization pipeline needs an LLM provider. Open Settings to enter your Anthropic API key.
         </p>
         <button
-          onclick={() => { handleComplete('write'); setTimeout(() => workbench.setActivity('settings'), 100); }}
+          onclick={async () => { await handleComplete('write'); workbench.setActivity('settings'); }}
           disabled={saving}
           class="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono text-neon-cyan border border-neon-cyan/30 hover:bg-neon-cyan/5 transition-colors"
         >

@@ -31,10 +31,6 @@ class ContextStore {
     this.chips = this.chips.filter(c => c.id !== id);
   }
 
-  getChips(): ContextChip[] {
-    return this.chips;
-  }
-
   clear() {
     this.chips = [];
   }
