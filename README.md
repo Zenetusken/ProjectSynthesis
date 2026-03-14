@@ -22,7 +22,7 @@ Your prompts carry intent, but most of it gets lost in translation. Project Synt
 
 Link a GitHub repository and it goes deeper: it reads your codebase, maps the architecture, and bakes that context directly into the prompt. The result reads like it was written by someone who already knows your code.
 
-Every optimization streams in real time, scores across multiple quality dimensions, and gives you a diff so you can see exactly what changed and why.
+Everything happens inside a data-dense, VS Code-style IDE — prompts stream in real time, scores render across multiple quality dimensions, and diffs show exactly what changed and why. The interface is built for the same people who live in terminals and code editors: compact, keyboard-driven, and information-rich without getting in the way.
 
 ## 🚀 Getting Started
 
@@ -67,8 +67,8 @@ Project Synthesis is under **active development**. The core pipeline is stable a
 
 What you can count on today:
 - ✅ Five-stage optimization pipeline with real-time SSE streaming
-- ✅ Quality feedback loops — rate results, report issues, and the pipeline adapts to your preferences. Progressive damping, framework-aware elasticity, and issue guardrails close the loop from first feedback
-- ✅ Result intelligence — every optimization gets a verdict, confidence score, dimension insights, trade-off analysis, and actionable next steps via progressive disclosure UI
+- ✅ Adaptive feedback loops — rate results, flag issues, and the pipeline learns your quality priorities over time
+- ✅ Result intelligence — post-optimization verdict engine with dimension-level insights, trade-off detection, and guided next actions
 - ✅ GitHub repository integration with semantic codebase indexing
 - ✅ 20-tool MCP server for CLI-native workflows
 - ✅ Works with Claude Max subscription (zero API cost) or Anthropic API key
