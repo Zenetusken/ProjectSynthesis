@@ -124,6 +124,12 @@ class ClaudeCLIProvider(LLMProvider):
         # timeout cancels the consuming task mid-stream.
         assert proc.stdout is not None
         _output_chars = 0
+        # Track real usage from API stream events (message_start / message_delta)
+        _real_input_tokens = 0
+        _real_output_tokens = 0
+        _real_cache_read = 0
+        _real_cache_creation = 0
+        _has_real_usage = False
         try:
             async for line_bytes in proc.stdout:
                 line = line_bytes.decode("utf-8", errors="replace").strip()
@@ -134,24 +140,52 @@ class ClaudeCLIProvider(LLMProvider):
                 except _json.JSONDecodeError:
                     continue
 
-                # Only yield text content deltas; skip thinking, signatures, etc.
                 if event.get("type") != "stream_event":
                     continue
                 inner = event.get("event", {})
-                if inner.get("type") != "content_block_delta":
+                inner_type = inner.get("type")
+
+                # Extract real token usage from API passthrough events
+                if inner_type == "message_start":
+                    msg_usage = (inner.get("message") or {}).get("usage", {})
+                    if msg_usage.get("input_tokens"):
+                        _real_input_tokens = msg_usage["input_tokens"]
+                        _real_cache_read = msg_usage.get("cache_read_input_tokens", 0)
+                        _real_cache_creation = msg_usage.get("cache_creation_input_tokens", 0)
+                        _has_real_usage = True
+                    continue
+                if inner_type == "message_delta":
+                    delta_usage = inner.get("usage", {})
+                    if delta_usage.get("output_tokens"):
+                        _real_output_tokens = delta_usage["output_tokens"]
+                        _has_real_usage = True
+                    continue
+
+                # Yield text content deltas; skip thinking, signatures, etc.
+                if inner_type != "content_block_delta":
                     continue
                 delta = inner.get("delta", {})
                 if delta.get("type") == "text_delta" and delta.get("text"):
                     _output_chars += len(delta["text"])
                     yield delta["text"]
         finally:
-            # Set estimated usage before cleanup
-            _usage_var.set(CompletionUsage(
-                input_tokens=max(1, (len(system) + len(user)) // 4),
-                output_tokens=max(1, _output_chars // 4),
-                is_estimated=True,
-                model=model,
-            ))
+            # Prefer real usage from API events; fall back to char-based estimate
+            if _has_real_usage:
+                _usage_var.set(CompletionUsage(
+                    input_tokens=_real_input_tokens,
+                    output_tokens=_real_output_tokens,
+                    cache_read_input_tokens=_real_cache_read,
+                    cache_creation_input_tokens=_real_cache_creation,
+                    is_estimated=False,
+                    model=model,
+                ))
+            else:
+                _usage_var.set(CompletionUsage(
+                    input_tokens=max(1, (len(system) + len(user)) // 4),
+                    output_tokens=max(1, _output_chars // 4),
+                    is_estimated=True,
+                    model=model,
+                ))
             # Kill the subprocess if it's still running (e.g. generator cancelled)
             if proc.returncode is None:
                 try:

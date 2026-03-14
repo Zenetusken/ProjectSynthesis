@@ -197,14 +197,14 @@ class PipelineAccumulator:
         else:
             self.updates["status"] = "completed"
 
-        # Write accumulated usage/cost columns
-        if self.usage_totals.total_tokens > 0:
-            self.updates["total_input_tokens"] = self.usage_totals.input_tokens
-            self.updates["total_output_tokens"] = self.usage_totals.output_tokens
-            self.updates["total_cache_read_tokens"] = self.usage_totals.cache_read_input_tokens
-            self.updates["total_cache_creation_tokens"] = self.usage_totals.cache_creation_input_tokens
-            self.updates["estimated_cost_usd"] = self.usage_totals.estimated_cost_usd()
-            self.updates["usage_is_estimated"] = self.usage_totals.is_estimated
+        # Always write accumulated usage/cost columns — NULL columns cause
+        # downstream display issues in compare modal and history stats.
+        self.updates["total_input_tokens"] = self.usage_totals.input_tokens
+        self.updates["total_output_tokens"] = self.usage_totals.output_tokens
+        self.updates["total_cache_read_tokens"] = self.usage_totals.cache_read_input_tokens
+        self.updates["total_cache_creation_tokens"] = self.usage_totals.cache_creation_input_tokens
+        self.updates["estimated_cost_usd"] = self.usage_totals.estimated_cost_usd()
+        self.updates["usage_is_estimated"] = self.usage_totals.is_estimated
 
         return self.updates
 
