@@ -26,8 +26,8 @@
   aria-label="Navigator"
 >
   {#if !workbench.navigatorCollapsed}
-    <div class="h-9 flex items-center px-3 border-b border-border-subtle shrink-0">
-      <span class="font-display text-[12px] font-bold uppercase text-text-dim">
+    <div class="h-8 flex items-center px-2 border-b border-border-subtle shrink-0">
+      <span class="font-display text-[11px] font-bold uppercase text-text-dim">
         {titles[workbench.activeActivity] || workbench.activeActivity}
       </span>
     </div>

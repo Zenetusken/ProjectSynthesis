@@ -298,12 +298,12 @@
 
 <div class="flex flex-col h-full">
   <!-- Textarea -->
-  <div class="flex-1 p-4 relative" bind:this={containerRef}>
+  <div class="flex-1 p-2 relative" bind:this={containerRef}>
     <textarea
       id="prompt-textarea"
       name="prompt-text"
       bind:this={textareaRef}
-      class="w-full h-full bg-bg-input text-text-primary text-sm font-sans leading-relaxed resize-none border border-border-subtle rounded-lg p-3 focus:outline-none focus:border-neon-cyan/60 placeholder:text-text-dim/50 transition-colors duration-300"
+      class="w-full h-full bg-bg-input text-text-primary text-xs font-sans leading-normal resize-none border border-border-subtle p-1.5 focus:outline-none focus:border-neon-cyan/40 placeholder:text-text-dim/50 transition-colors duration-200"
       placeholder="Enter your prompt…"
       value={tab.promptText || ''}
       oninput={handleInput}
@@ -365,13 +365,13 @@
 
   <!-- Action row -->
   <div class="flex flex-col border-t border-border-subtle bg-bg-secondary/30 shrink-0">
-    <div class="flex items-center justify-between px-4 py-2">
+    <div class="flex items-center justify-between px-2 py-1.5">
     <div class="flex items-center gap-2" data-tour="strategy">
       <!-- Strategy selector -->
       <select
         id="strategy-select"
         name="strategy"
-        class="bg-bg-input border border-border-subtle rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-neon-cyan/30 cursor-pointer appearance-none"
+        class="bg-bg-input border border-border-subtle px-2 py-1 text-[11px] text-text-primary focus:outline-none focus:border-neon-cyan/30 cursor-pointer appearance-none"
         style="background-image: url(data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238b8ba8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;"
         bind:value={strategy}
       >
@@ -396,7 +396,7 @@
     <div class="flex items-center gap-2">
       {#if forge.isForging}
         <button
-          class="px-3 py-1.5 rounded-lg text-xs font-medium bg-neon-red/10 text-neon-red border border-neon-red/20 hover:bg-neon-red/20 transition-all"
+          class="px-2.5 py-1 text-[11px] font-medium bg-neon-red/10 text-neon-red border border-neon-red/20 hover:bg-neon-red/20 transition-colors"
           onclick={handleCancel}
         >
           Cancel
@@ -404,7 +404,7 @@
       {/if}
 
       <button
-        class="btn-forge px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200
+        class="btn-forge px-3 py-1 text-[11px] font-semibold transition-colors duration-200
           {forge.isForging
             ? 'opacity-40 cursor-not-allowed'
             : 'hover:-translate-y-px active:translate-y-0'}

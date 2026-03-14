@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { slide } from 'svelte/transition';
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
@@ -240,9 +241,9 @@
 
 <div class="flex flex-col h-full" role="presentation">
   <!-- Top-level tab bar: History | Trash -->
-  <div class="flex items-center h-8 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
+  <div class="flex items-center h-7 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
     <button
-      class="px-3 py-1 text-xs transition-colors
+      class="px-2.5 py-0.5 text-[11px] transition-colors
         {!history.showTrash
           ? 'text-neon-cyan border-b border-neon-cyan bg-bg-primary'
           : 'text-text-dim hover:text-text-secondary'}"
@@ -251,7 +252,7 @@
       History
     </button>
     <button
-      class="px-3 py-1 text-xs transition-colors
+      class="px-2.5 py-0.5 text-[11px] transition-colors
         {history.showTrash
           ? 'text-neon-cyan border-b border-neon-cyan bg-bg-primary'
           : 'text-text-dim hover:text-text-secondary'}"
@@ -292,7 +293,7 @@
   {:else}
     <!-- Stats summary -->
     {#if stats}
-      <div class="px-2 py-1.5 border-b border-border-subtle bg-bg-secondary/50">
+      <div class="px-2 py-1 border-b border-border-subtle bg-bg-secondary/50">
         <div class="flex items-center justify-between text-[10px] text-text-dim">
           <span>{stats.total_optimizations} total</span>
           {#if stats.average_score != null}
@@ -325,7 +326,7 @@
     {/if}
 
     <!-- Search + Sort -->
-    <div class="p-2 border-b border-border-subtle space-y-1.5">
+    <div class="p-2 border-b border-border-subtle space-y-1">
       <input
         type="text"
         name="history-search"
@@ -334,7 +335,7 @@
         oninput={(e) => debouncedSearch((e.target as HTMLInputElement).value)}
       />
       {#if showFilters}
-        <div class="space-y-1.5 pt-1 border-t border-border-subtle">
+        <div class="space-y-1 pt-1 border-t border-border-subtle" transition:slide={{ duration: 200 }}>
           <!-- Min/Max Score -->
           <div class="flex items-center gap-1">
             <span class="text-[10px] text-text-dim w-14 shrink-0">Score:</span>
@@ -627,9 +628,9 @@
   {/if}
 
   <!-- Footer -->
-  <div class="p-2 border-t border-border-subtle">
+  <div class="h-7 flex items-center justify-center border-t border-border-subtle shrink-0">
     <button
-      class="w-full text-xs text-text-dim hover:text-neon-cyan transition-colors py-1"
+      class="text-[10px] font-mono text-text-dim hover:text-neon-cyan transition-colors"
       onclick={loadHistory}
     >
       Refresh

@@ -15,10 +15,10 @@
 
 <div class="flex flex-col h-full">
   <!-- Sub-tab bar -->
-  <div class="flex items-center h-8 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
+  <div class="flex items-center h-7 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
     {#each subTabs as st}
       <button
-        class="px-3 py-1 text-xs rounded-t transition-colors
+        class="px-2.5 py-0.5 text-[11px] transition-colors
           {editor.activeSubTab === st.id
             ? 'text-neon-cyan border-b border-neon-cyan bg-bg-primary'
             : 'text-text-dim hover:text-text-secondary'}"

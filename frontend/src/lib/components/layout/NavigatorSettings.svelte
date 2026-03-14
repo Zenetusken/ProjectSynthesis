@@ -489,7 +489,7 @@
     </button>
 
     {#if openSections.provider}
-      <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
+      <div class="px-2 pb-1.5 pt-0.5 space-y-1" transition:slide={slideIn}>
         {#if workbench.providerModel}
           <div class="text-[10px] text-text-dim font-mono">{workbench.providerModel}</div>
         {/if}
@@ -537,7 +537,7 @@
     </button>
 
     {#if openSections.apiKey}
-      <div class="px-4 pb-2 pt-0.5 space-y-1.5" transition:slide={slideIn}>
+      <div class="px-2 pb-1.5 pt-0.5 space-y-1" transition:slide={slideIn}>
         <!-- Status -->
         {#if providerCfg?.api_key.configured}
           <div class="flex items-center gap-1.5">
@@ -646,7 +646,7 @@
     </button>
 
     {#if openSections.github}
-      <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
+      <div class="px-2 pb-1.5 pt-0.5 space-y-1" transition:slide={slideIn}>
         {#if github.isConnected}
           <div class="flex items-center justify-between gap-2">
             <span class="text-[10px] text-text-dim">OAuth App</span>
@@ -695,7 +695,7 @@
     </button>
 
     {#if openSections.githubApp}
-      <div class="px-4 pb-2 pt-0.5 space-y-1.5" transition:slide={slideIn}>
+      <div class="px-2 pb-1.5 pt-0.5 space-y-1" transition:slide={slideIn}>
         <!-- Actions -->
         <button
           class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan
@@ -803,7 +803,7 @@
       <div class="flex-1 h-px bg-border-subtle/30"></div>
     </div>
 
-    <div class="px-2 space-y-1.5">
+    <div class="px-2 space-y-1">
       <!-- Model -->
       <div class="space-y-0.5">
         <label class="font-mono text-[8px] text-text-dim/50 uppercase tracking-wider block" for="s-model">Model</label>
@@ -930,7 +930,7 @@
       </button>
 
       {#if openSections.onboarding}
-        <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
+        <div class="px-2 pb-1.5 pt-0.5 space-y-1" transition:slide={slideIn}>
           <button
             onclick={() => { workbench.showOnboarding = true; }}
             class="w-full flex items-center justify-between px-2 py-1
@@ -976,7 +976,7 @@
       </button>
 
       {#if openSections.session}
-        <div class="px-4 pb-2 pt-0.5 space-y-1" transition:slide={slideIn}>
+        <div class="px-2 pb-1.5 pt-0.5 space-y-1" transition:slide={slideIn}>
           <button
             onclick={handleLogoutDevice}
             disabled={loggingOut}

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ResizableTextarea from '$lib/components/shared/ResizableTextarea.svelte';
+
   interface ChainStep {
     id: string;
     promptName: string;
@@ -83,13 +85,13 @@
           </select>
         </div>
 
-        <textarea
-          id="step-prompt-{i}"
-          name="step-prompt-{i}"
-          class="w-full bg-bg-input border border-border-subtle px-3 py-2 text-sm text-text-primary font-mono resize-none focus:outline-none focus:border-neon-cyan/30 h-20"
-          placeholder="Enter prompt for {step.promptName}..."
+        <ResizableTextarea
           bind:value={step.prompt}
-        ></textarea>
+          mono
+          fontSize="text-sm"
+          placeholder="Enter prompt for {step.promptName}..."
+          class="h-20 px-3 py-2"
+        />
         {#if i < steps.length - 1}
           <div class="flex justify-center mt-2">
             <svg class="w-4 h-4 text-neon-cyan/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">

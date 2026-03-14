@@ -131,7 +131,7 @@
   }
 </script>
 
-<div class="flex items-center gap-1.5 px-4 py-1.5 border-b border-border-subtle bg-bg-secondary/30 shrink-0 min-h-[32px]">
+<div class="flex items-center gap-1.5 px-2 py-1 border-b border-border-subtle bg-bg-secondary/30 shrink-0 min-h-[28px]">
   <span class="font-display text-[10px] font-bold text-text-dim uppercase mr-1">Context</span>
 
   {#if context.chips.length === 0}

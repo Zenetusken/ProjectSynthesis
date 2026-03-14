@@ -31,7 +31,7 @@ class WorkbenchStore {
   navigatorCollapsed = $state(loadBool('pf_navigatorCollapsed', false));
   inspectorCollapsed = $state(loadBool('pf_inspectorCollapsed', false));
   navigatorWidth = $state(Math.max(160, Math.min(480, loadNumber('pf_navigatorWidth', 240))));
-  inspectorWidth = $state(Math.max(180, Math.min(480, loadNumber('pf_inspectorWidth', 280))));
+  inspectorWidth = $state(Math.max(200, Math.min(600, loadNumber('pf_inspectorWidth', 280))));
   provider = $state<'claude_cli' | 'anthropic_api' | 'unknown'>('unknown');
   providerModel = $state('');
   isConnected = $state(false);
@@ -87,7 +87,7 @@ class WorkbenchStore {
   }
 
   setInspectorWidth(w: number) {
-    this.inspectorWidth = Math.max(180, Math.min(480, w));
+    this.inspectorWidth = Math.max(200, Math.min(600, w));
     if (typeof window !== 'undefined') {
       localStorage.setItem('pf_inspectorWidth', String(this.inspectorWidth));
     }

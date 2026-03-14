@@ -165,7 +165,7 @@
     <div class="flex items-center justify-between px-1 py-1">
       <span class="font-display text-[11px] font-bold uppercase text-text-dim">Workspace</span>
       <button
-        class="w-5 h-5 flex items-center justify-center rounded text-text-dim hover:text-text-secondary hover:bg-bg-hover"
+        class="w-5 h-5 flex items-center justify-center text-text-dim hover:text-text-secondary hover:bg-bg-hover"
         aria-label="New file"
         onclick={() => editor.openTab({ id: `prompt-${Date.now()}`, label: 'New Prompt', type: 'prompt', promptText: '', dirty: false })}
       >
@@ -178,7 +178,7 @@
     {#if promptFiles.length > 0}
       {#each promptFiles as file, i}
         <button
-          class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          class="w-full flex items-center gap-2 px-2 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
           data-file-item
           onclick={() => openFile(file)}
           onkeydown={handleTreeKeydown}
@@ -210,7 +210,7 @@
 
       {#each forgeFiles as file, i}
         <button
-          class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          class="w-full flex items-center gap-2 px-2 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
           data-file-item
           onclick={() => openFile(file)}
           onkeydown={handleTreeKeydown}
@@ -231,7 +231,7 @@
       <div class="flex items-center justify-between px-1 py-1">
         <span class="font-display text-[11px] font-bold uppercase text-text-dim">Repository</span>
         <button
-          class="w-5 h-5 flex items-center justify-center rounded text-text-dim hover:text-text-secondary hover:bg-bg-hover"
+          class="w-5 h-5 flex items-center justify-center text-text-dim hover:text-text-secondary hover:bg-bg-hover"
           aria-label="Refresh repo tree"
           onclick={loadRepoTree}
         >
@@ -248,7 +248,7 @@
       {:else if repoTree.length > 0}
         {#each repoTree as entry}
           <button
-            class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+            class="w-full flex items-center gap-2 px-2 py-1 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
             data-file-item
             title={entry.path}
             onclick={() => openRepoFile(entry.path)}

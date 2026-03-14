@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { slide } from 'svelte/transition';
   import { refinement } from '$lib/stores/refinement.svelte';
+  import ResizableTextarea from '$lib/components/shared/ResizableTextarea.svelte';
 
   const DIMENSIONS = [
     { key: 'clarity_score',     abbr: 'CLR' },
@@ -19,44 +21,23 @@
     refinement.startRefine(optimizationId, trimmed);
     message = '';
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleSend();
-    }
-  }
 </script>
 
 {#if refinement.refinementOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="refinement-well border-t border-border-subtle bg-bg-secondary"
+    class="border-t border-border-subtle bg-bg-secondary"
     class:refinement-streaming={refinement.refinementStreaming}
-    style="animation: slide-up-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;"
+    transition:slide={{ duration: 200 }}
   >
-    <!-- Header row: label + close -->
-    <div class="flex items-center justify-between px-3 pt-2.5 pb-1.5">
-      <span class="text-[10px] font-mono uppercase tracking-wider text-text-dim">Refine</span>
-      <button
-        class="w-5 h-5 flex items-center justify-center text-text-dim hover:text-text-secondary transition-colors border border-transparent hover:border-border-subtle"
-        onclick={() => refinement.closeRefinement()}
-        aria-label="Close refinement panel"
-        title="Close"
-      >
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/>
-          <line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/>
-        </svg>
-      </button>
-    </div>
-
-    <!-- Protected dimensions chips -->
-    <div class="flex flex-wrap gap-1.5 px-3 pb-2">
+    <!-- Header + dims + close — single compact row -->
+    <div class="flex items-center gap-1.5 px-2 py-1.5">
+      <span class="text-[9px] font-mono uppercase tracking-wider text-text-dim shrink-0">Refine</span>
+      <div class="w-px h-3 bg-border-subtle shrink-0" aria-hidden="true"></div>
       {#each DIMENSIONS as dim}
         {@const isProtected = refinement.protectedDimensions.includes(dim.key)}
         <button
-          class="chip px-2 py-0.5 text-[10px] font-mono border transition-colors"
+          class="px-1 py-px text-[9px] font-mono border transition-colors shrink-0"
           class:chip-protected={isProtected}
           class:chip-default={!isProtected}
           onclick={() => refinement.toggleProtectDimension(dim.key)}
@@ -66,33 +47,47 @@
           {dim.abbr}
         </button>
       {/each}
-      <span class="text-[9px] font-mono text-text-dim self-center ml-0.5">protect dims</span>
+      <span class="text-[8px] font-mono text-text-dim/50 shrink-0">protect</span>
+      <div class="flex-1"></div>
+      <button
+        class="w-4 h-4 flex items-center justify-center text-text-dim hover:text-text-secondary transition-colors shrink-0"
+        onclick={() => refinement.closeRefinement()}
+        aria-label="Close refinement panel"
+        title="Close"
+      >
+        <svg width="8" height="8" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+          <line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/>
+          <line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/>
+        </svg>
+      </button>
     </div>
 
-    <!-- Input well -->
-    <div class="input-well mx-3 mb-2 border" class:streaming-border={refinement.refinementStreaming}>
-      <textarea
-        class="w-full bg-bg-input px-3 py-2 text-[12px] text-text-primary font-sans resize-none
-               placeholder:text-text-dim focus:outline-none block"
-        placeholder="Describe how to improve..."
-        rows="3"
-        disabled={refinement.refinementStreaming}
+    <!-- Input + send -->
+    <div class="mx-2 mb-1.5 border" class:streaming-border={refinement.refinementStreaming} style="border-color: rgba(74, 74, 106, 0.2);">
+      <ResizableTextarea
         bind:value={message}
-        onkeydown={handleKeydown}
-        aria-label="Refinement message"
-      ></textarea>
+        resize="drag"
+        minHeight={40}
+        maxHeight={300}
+        placeholder="Describe how to improve..."
+        disabled={refinement.refinementStreaming}
+        onsubmit={handleSend}
+        ariaLabel="Refinement message"
+      />
 
       <!-- Send row -->
-      <div class="flex items-center justify-between px-3 py-1.5 border-t border-border-subtle bg-bg-card">
-        <span class="text-[9px] font-mono text-text-dim">
+      <div class="flex items-center justify-between px-2 py-1 border-t border-border-subtle bg-bg-card">
+        <span class="text-[8px] font-mono text-text-dim">
           {#if refinement.refinementStreaming}
             <span class="text-neon-cyan/60">streaming...</span>
           {:else}
-            <kbd>⌘ Enter</kbd> to send
+            <kbd class="text-[8px]">&#8984; Enter</kbd>
           {/if}
         </span>
         <button
-          class="btn-primary px-3 py-1 text-[11px] font-mono disabled:opacity-40 disabled:cursor-not-allowed"
+          class="h-5 px-2 text-[9px] font-mono border border-neon-cyan text-neon-cyan
+                 hover:bg-neon-cyan/10 transition-colors
+                 disabled:opacity-40 disabled:cursor-not-allowed"
           disabled={refinement.refinementStreaming || !message.trim()}
           onclick={handleSend}
           aria-label="Send refinement"
@@ -105,14 +100,12 @@
 {/if}
 
 <style>
-  /* Protected chip: neon-teal (#00d4aa) */
   .chip-protected {
     background-color: rgba(0, 212, 170, 0.1);
     border-color: #00d4aa;
     color: #00d4aa;
   }
 
-  /* Default (unprotected) chip */
   .chip-default {
     background-color: transparent;
     border-color: rgba(74, 74, 106, 0.3);
@@ -124,19 +117,9 @@
     color: var(--color-text-secondary);
   }
 
-  /* Input well border states */
-  .input-well {
-    border-color: rgba(74, 74, 106, 0.2);
-  }
-
-  /* Streaming indicator: border-color oscillation (NOT glow) */
   @keyframes border-oscillate {
-    0%, 100% {
-      border-color: rgba(0, 229, 255, 0.3);
-    }
-    50% {
-      border-color: rgba(0, 212, 170, 0.3);
-    }
+    0%, 100% { border-color: rgba(0, 229, 255, 0.3); }
+    50% { border-color: rgba(0, 212, 170, 0.3); }
   }
 
   .streaming-border {

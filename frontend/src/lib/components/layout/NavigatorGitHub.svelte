@@ -37,7 +37,7 @@
   }
 </script>
 
-<div class="p-2 space-y-3">
+<div class="p-2 space-y-2">
   <GitHubStatus />
 
   {#if !github.isConnected}
@@ -57,7 +57,7 @@
         </button>
       {:else}
         <!-- Compact setup hint -->
-        <div class="border border-border-subtle px-2.5 py-2.5 space-y-2">
+        <div class="border border-border-subtle p-2 space-y-2">
           <div class="flex items-center gap-1.5">
             <span class="font-mono text-[7.5px] uppercase tracking-[0.12em] text-neon-red border border-neon-red/30 px-1 py-[2px] leading-none shrink-0">
               SETUP
