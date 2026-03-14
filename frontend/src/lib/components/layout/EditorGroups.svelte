@@ -9,28 +9,102 @@
   import { workbench } from '$lib/stores/workbench.svelte';
 
   let tabBarEl = $state<HTMLElement | null>(null);
-  let overflowCount = $state(0);
-  let showOverflowMenu = $state(false);
 
-  // ResizeObserver to detect tab overflow
-  $effect(() => {
-    if (!tabBarEl) return;
-    const obs = new ResizeObserver(() => {
-      if (!tabBarEl) return;
-      // Subtract the width of the + button (32px) and overflow button area (32px)
-      const available = tabBarEl.clientWidth - 64;
-      let used = 0;
-      let overflow = 0;
-      for (const tab of tabBarEl.querySelectorAll('[role="tab"]')) {
-        used += (tab as HTMLElement).offsetWidth;
-        if (used > available) overflow++;
+  // ── Drag-to-reorder state ─────────────────────────────────────────
+  let dragging = $state(false);
+  let dragIdx = $state(-1);
+  let dropIdx = $state(-1);
+  let dragOffsetX = $state(0);
+  let dragStartX = 0;
+  let dragTabW = 0;
+  const DRAG_DEAD_ZONE = 3; // px before drag activates
+  let dragPending = false;
+
+  function handleDragStart(e: MouseEvent, index: number) {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button')) return; // close btn
+    e.preventDefault();
+
+    dragPending = true;
+    dragIdx = index;
+    dropIdx = index;
+    dragStartX = e.clientX;
+    dragOffsetX = 0;
+
+    const tabEl = e.currentTarget as HTMLElement;
+    dragTabW = tabEl.offsetWidth;
+
+    const onMove = (ev: MouseEvent) => {
+      const offset = ev.clientX - dragStartX;
+      // Dead zone: don't activate drag until moved 3px
+      if (!dragging && Math.abs(offset) < DRAG_DEAD_ZONE) return;
+      if (!dragging) {
+        dragging = true;
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
       }
-      overflowCount = overflow;
-    });
-    obs.observe(tabBarEl);
-    return () => obs.disconnect();
+      dragOffsetX = offset;
+
+      // Calculate drop index from tab midpoints
+      if (!tabBarEl) return;
+      const tabEls = Array.from(tabBarEl.querySelectorAll('[data-tab-id]')) as HTMLElement[];
+      let newDrop = dragIdx;
+      for (let i = 0; i < tabEls.length; i++) {
+        if (i === dragIdx) continue;
+        const rect = tabEls[i].getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        if (dragIdx < i && ev.clientX > midX) newDrop = i;
+        else if (dragIdx > i && ev.clientX < midX) newDrop = i;
+      }
+      dropIdx = newDrop;
+
+      // Auto-scroll tab bar when dragging near edges
+      if (tabBarEl) {
+        const barRect = tabBarEl.getBoundingClientRect();
+        if (ev.clientX - barRect.left < 40) tabBarEl.scrollLeft -= 8;
+        else if (barRect.right - ev.clientX < 40) tabBarEl.scrollLeft += 8;
+      }
+    };
+
+    const onUp = () => {
+      if (dragging && dragIdx !== dropIdx) {
+        editor.moveTab(dragIdx, dropIdx);
+      }
+      // If we never actually dragged, treat as click
+      if (!dragging && dragPending) {
+        editor.activeTabId = editor.openTabs[index]?.id ?? null;
+      }
+      dragging = false;
+      dragPending = false;
+      dragIdx = -1;
+      dropIdx = -1;
+      dragOffsetX = 0;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function getShift(i: number): number {
+    if (!dragging || i === dragIdx) return 0;
+    if (dragIdx < dropIdx && i > dragIdx && i <= dropIdx) return -dragTabW;
+    if (dragIdx > dropIdx && i >= dropIdx && i < dragIdx) return dragTabW;
+    return 0;
+  }
+
+  // ── Scroll active tab into view ───────────────────────────────────
+  $effect(() => {
+    const id = editor.activeTabId;
+    if (!id || !tabBarEl || dragging) return;
+    const el = tabBarEl.querySelector(`[data-tab-id="${id}"]`) as HTMLElement;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   });
 
+  // ── Handlers ──────────────────────────────────────────────────────
   function handleNewTab() {
     const id = `prompt-${Date.now()}`;
     editor.openTab({
@@ -45,7 +119,6 @@
   function handleTabKeydown(e: KeyboardEvent, tabIndex: number) {
     const tabs = editor.openTabs;
     if (!tabs.length) return;
-
     let newIndex = tabIndex;
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
       e.preventDefault();
@@ -63,27 +136,42 @@
       return;
     }
     editor.activeTabId = tabs[newIndex].id;
-    // Focus the newly active tab element
     const tabEl = document.querySelector(`[data-tab-id="${tabs[newIndex].id}"]`) as HTMLElement;
     tabEl?.focus();
   }
 </script>
 
 <main class="flex flex-col h-full overflow-hidden bg-bg-primary" aria-label="Editor">
-  <!-- Tab bar -->
-  <div bind:this={tabBarEl} class="h-9 flex items-center border-b border-border-subtle bg-bg-secondary shrink-0 overflow-hidden relative" role="tablist" aria-label="Open documents">
+  <!-- Tab bar — horizontal scroll, drag-to-reorder -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    bind:this={tabBarEl}
+    class="h-8 flex items-center border-b border-border-subtle bg-bg-secondary shrink-0 overflow-x-auto tabbar-scroll relative"
+    role="tablist"
+    aria-label="Open documents"
+    onwheel={(e) => {
+      if (tabBarEl) { e.preventDefault(); tabBarEl.scrollLeft += e.deltaY; }
+    }}
+  >
     {#each editor.openTabs as tab, i (tab.id)}
       <div
-        class="flex items-center gap-1.5 px-3 h-full text-xs border-r border-border-subtle transition-colors whitespace-nowrap cursor-pointer select-none
+        class="flex items-center gap-1 px-2 h-full text-[11px] border-r border-border-subtle whitespace-nowrap select-none shrink-0
           {editor.activeTabId === tab.id
             ? 'bg-bg-primary text-text-primary border-b border-b-neon-cyan'
-            : 'text-text-dim hover:text-text-secondary hover:bg-bg-hover'}"
+            : 'text-text-dim hover:text-text-secondary hover:bg-bg-hover'}
+          {dragging && i !== dragIdx ? 'transition-transform duration-150' : ''}"
+        style="{dragging && i === dragIdx
+          ? `transform: translateX(${dragOffsetX}px); position: relative; z-index: 10; opacity: 0.85;`
+          : dragging
+            ? `transform: translateX(${getShift(i)}px);`
+            : ''}"
+        title={tab.label}
         role="tab"
         aria-selected={editor.activeTabId === tab.id}
         tabindex={editor.activeTabId === tab.id ? 0 : -1}
         data-tab-id={tab.id}
-        onclick={() => { editor.activeTabId = tab.id; }}
-        onkeydown={(e: KeyboardEvent) => handleTabKeydown(e, i)}
+        onmousedown={(e) => handleDragStart(e, i)}
+        onkeydown={(e) => handleTabKeydown(e, i)}
       >
         <!-- Tab type icon -->
         {#if tab.type === 'prompt'}
@@ -100,59 +188,29 @@
           </svg>
         {/if}
         {#if tab.dirty}
-          <span class="w-1.5 h-1.5 rounded-full bg-neon-yellow" title="Unsaved changes"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-neon-yellow shrink-0" title="Unsaved changes"></span>
         {/if}
-        <span>{tab.label}</span>
+        <span class="max-w-[80px] truncate">{tab.label}</span>
         <button
-          class="ml-1 w-4 h-4 flex items-center justify-center rounded hover:bg-bg-hover text-text-dim hover:text-text-secondary"
-          onclick={(e: MouseEvent) => { e.stopPropagation(); editor.closeTab(tab.id); }}
+          class="ml-0.5 w-4 h-4 flex items-center justify-center hover:bg-bg-hover text-text-dim hover:text-text-secondary shrink-0"
+          onclick={(e) => { e.stopPropagation(); editor.closeTab(tab.id); }}
           aria-label="Close tab"
           tabindex={-1}
         >
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
         </button>
       </div>
     {/each}
 
-    {#if overflowCount > 0}
-      <div class="relative shrink-0">
-        <button
-          class="w-8 h-full flex items-center justify-center text-text-dim hover:text-neon-cyan hover:bg-bg-hover"
-          onclick={() => showOverflowMenu = !showOverflowMenu}
-          aria-label="{overflowCount} more tabs"
-          title="{overflowCount} more tabs"
-        >
-          <span class="text-[10px] font-mono">›{overflowCount}</span>
-        </button>
-        {#if showOverflowMenu}
-          <div
-            class="absolute top-full right-0 mt-0.5 min-w-40 bg-bg-card border border-border-subtle z-[200] py-1 animate-dropdown-enter"
-            role="menu"
-            tabindex="-1"
-            onmouseleave={() => showOverflowMenu = false}
-          >
-            {#each editor.openTabs.slice(editor.openTabs.length - overflowCount) as tab}
-              <button
-                class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-                role="menuitem"
-                onclick={() => { editor.activeTabId = tab.id; showOverflowMenu = false; }}
-              >
-                {tab.label}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-
+    <!-- New tab button -->
     <button
-      class="w-8 h-full flex items-center justify-center text-text-dim hover:text-text-secondary hover:bg-bg-hover shrink-0"
+      class="w-7 h-full flex items-center justify-center text-text-dim hover:text-text-secondary hover:bg-bg-hover shrink-0"
       onclick={handleNewTab}
       aria-label="New tab"
     >
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
       </svg>
     </button>
@@ -173,7 +231,6 @@
         <ChainComposer />
       {/if}
     {:else}
-      <!-- Empty state -->
       <div class="flex flex-col items-center justify-center h-full gap-3 animate-fade-in select-none">
         <HelixMark size={56} instanceId={8} speed={-0.15} opacity={0.10} />
         <span class="text-[12px] text-text-dim">No prompt open</span>
@@ -197,3 +254,13 @@
     {/if}
   </div>
 </main>
+
+<style>
+  .tabbar-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .tabbar-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+</style>

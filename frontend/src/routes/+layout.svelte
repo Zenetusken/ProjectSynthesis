@@ -394,8 +394,10 @@
 
     // GitHub hydration moved to $effect below — runs reactively when auth.isAuthenticated becomes true
 
-    // Ensure at least one tab is open
-    editor.ensureWelcomeTab();
+    // Restore persisted tabs, or fall back to Welcome tab
+    if (!editor.loadPersistedTabs()) {
+      editor.ensureWelcomeTab();
+    }
 
     // ── Command palette — single source of truth ─────────────────────────
     // Sections: File → View → Forge → History → GitHub (insertion order).
